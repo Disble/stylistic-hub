@@ -1,0 +1,17 @@
+{
+  "tagFormat": "hub-v${version}",
+  "plugins": [
+    ["@semantic-release/commit-analyzer", { "preset": "conventionalcommits" }],
+    ["@semantic-release/release-notes-generator", { "preset": "conventionalcommits" }],
+    [
+      "@semantic-release/changelog",
+      { "changelogFile": "CHANGELOG.md", "changelogTitle": "# Stylistic Hub changelog" }
+    ],
+    ["@semantic-release/npm", { "npmPublish": false }],
+    ["@semantic-release/exec", { "prepareCmd": "bun run dist" }],
+    [
+      "@semantic-release/git",
+      { "assets": ["package.json", "CHANGELOG.md"], "message": "chore(release): hub ${nextRelease.version}" }
+    ]
+  ]
+}

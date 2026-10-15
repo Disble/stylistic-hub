@@ -1,0 +1,20 @@
+{
+  "extends": "semantic-release-monorepo",
+  "tagFormat": "server-v${version}",
+  "plugins": [
+    ["@semantic-release/commit-analyzer", { "preset": "conventionalcommits" }],
+    ["@semantic-release/release-notes-generator", { "preset": "conventionalcommits" }],
+    [
+      "@semantic-release/changelog",
+      { "changelogFile": "CHANGELOG.md", "changelogTitle": "# Local server changelog" }
+    ],
+    ["@semantic-release/npm", { "npmPublish": false }],
+    [
+      "@semantic-release/git",
+      {
+        "assets": ["package.json", "CHANGELOG.md"],
+        "message": "chore(release): server ${nextRelease.version}"
+      }
+    ]
+  ]
+}

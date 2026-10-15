@@ -1,0 +1,7 @@
+{
+  "name": "server",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Version manifest of the Local server component; semantic-release-monorepo releases it from the commits under src/backend/."
+}
