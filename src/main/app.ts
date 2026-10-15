@@ -4,6 +4,8 @@ import { HUB_PORT } from '../shared/versions'
 import { startBackend } from './backend-host'
 import { hubPaths } from './hub-paths'
 import { loadOrCreateHubToken } from './hub-token'
+import { registerProviderIpc } from './ipc-provider'
+import { createPiProvider } from './pi-provider'
 
 /** False when another hub is already running for this Windows user; this one then quits. */
 const isSingleInstance = app.requestSingleInstanceLock()
@@ -56,7 +58,7 @@ if (!isSingleInstance) {
     mainWindow.focus()
   })
 
-  void app.whenReady().then(() => {
+  void app.whenReady().then(async () => {
     const paths = hubPaths(app.getPath('userData'))
     const backend = startBackend({
       certificatesDir: paths.certificates,
@@ -65,6 +67,7 @@ if (!isSingleInstance) {
       token: loadOrCreateHubToken(paths.token)
     })
     app.on('will-quit', () => backend.stop())
+    registerProviderIpc(await createPiProvider(paths.piDir), () => mainWindow?.webContents)
     mainWindow = createWindow()
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow()

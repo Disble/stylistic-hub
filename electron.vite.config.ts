@@ -5,12 +5,12 @@ import { defineConfig } from 'electron-vite'
 /**
  * Modules the main process loads at runtime instead of bundling. A custom `external`
  * replaces electron-vite's default list, so Electron and the Node builtins are restated.
- * Pi packages join this list when they are added: they are ESM-only and resolve their
- * own files at runtime (same setup as dhub).
+ * Pi packages are ESM-only and resolve their own files at runtime (same setup as dhub).
  */
 const mainExternals = [
   'electron',
   /^electron\/.+/,
+  /^@earendil-works\/.+/,
   ...builtinModules.flatMap((name) => [name, `node:${name}`])
 ]
 

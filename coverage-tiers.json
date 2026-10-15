@@ -49,6 +49,11 @@
           "path": "src/main/backend-host.ts",
           "tier": "infrastructure",
           "reason": "Forks the utilityProcess; exercised by launching the app"
+        },
+        {
+          "path": "src/main/ipc-provider.ts",
+          "tier": "infrastructure",
+          "reason": "Electron IPC wiring, exercised by launching the app"
         }
       ]
     },

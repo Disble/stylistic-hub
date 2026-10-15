@@ -25,6 +25,7 @@
     "prepare": "lefthook install"
   },
   "dependencies": {
+    "@earendil-works/pi-coding-agent": "1.2.0",
     "@fluentui/react-components": "9.74.9",
     "@hono/node-server": "2.1.5",
     "@peculiar/x509": "2.2.0",
