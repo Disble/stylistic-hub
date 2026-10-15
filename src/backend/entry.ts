@@ -12,6 +12,7 @@ import { SqliteDocumentRepository } from './adapters/sqlite/document-repository'
 import { SqlitePreferencesRepository } from './adapters/sqlite/preferences-repository'
 import { ensureCertificates } from './adapters/tls/certificates'
 import { STYLISTIC_WORKFLOW_ID, stylisticWorkflow } from './correction/stylistic-workflow'
+import { FEEDBACK_WORKFLOW_ID, feedbackWorkflow } from './feedback/feedback-workflow'
 
 /** Arguments the main process passes when it forks this utility process. */
 const { values } = parseArgs({
@@ -47,11 +48,14 @@ const llm = createPiLlm({ complete: (m, c, o) => pi.runtime.complete(m, c, o), g
 const { key, cert } = await ensureCertificates(values.certs)
 /** The user's correction preferences, edited from the add-in's settings. */
 const preferences = new SqlitePreferencesRepository(db)
+/** Document contexts and their style profiles. */
+const documents = new SqliteDocumentRepository(db)
 /** Workflow bodies by the id the add-in uses. */
 const workflows = {
+  [FEEDBACK_WORKFLOW_ID]: feedbackWorkflow({ llm, documents }),
   [STYLISTIC_WORKFLOW_ID]: stylisticWorkflow({
     llm,
-    documents: new SqliteDocumentRepository(db),
+    documents,
     correctionInstructions: async () => preferences.getCorrectionInstructions() ?? undefined
   })
 }
