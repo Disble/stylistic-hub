@@ -16,5 +16,6 @@ execFileSync('bun', ['run', 'build:hub'], {
 })
 if (!existsSync(join(addon, 'dist', 'manifest.xml'))) throw new Error(`No dist/manifest.xml in ${addon}`)
 rmSync(target, { recursive: true, force: true })
-cpSync(join(addon, 'dist'), target, { recursive: true })
+// Source maps stay behind: the hub would serve them and they only add size to the installer.
+cpSync(join(addon, 'dist'), target, { recursive: true, filter: (source) => !source.endsWith('.map') })
 console.log(`Bundled ${addon} into ${target}`)
