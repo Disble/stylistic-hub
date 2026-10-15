@@ -10,6 +10,8 @@ export interface BackendOptions {
   /** Pi's directory, shared with the main process's sign-in. */
   piDir: string
   port: number
+  /** The built add-in, served when present. */
+  addinDir?: string | undefined
   token: string
 }
 
@@ -17,12 +19,25 @@ export interface BackendOptions {
 const BACKOFF_MS = [1000, 2000, 5000, 10_000, 30_000]
 
 /** Runs the backend in its own utility process and restarts it if it crashes. */
-export function startBackend({ certificatesDir, database, piDir, port, token }: BackendOptions): Supervisor {
+export function startBackend({
+  certificatesDir,
+  database,
+  piDir,
+  port,
+  token,
+  addinDir
+}: BackendOptions): Supervisor {
   const supervisor = createSupervisor({
     spawn: () =>
       utilityProcess.fork(
         backendPath,
-        [`--certs=${certificatesDir}`, `--db=${database}`, `--pi=${piDir}`, `--port=${port}`],
+        [
+          `--certs=${certificatesDir}`,
+          `--db=${database}`,
+          `--pi=${piDir}`,
+          `--port=${port}`,
+          ...(addinDir ? [`--addin=${addinDir}`] : [])
+        ],
         {
           serviceName: 'stylistic-backend',
           stdio: 'inherit',

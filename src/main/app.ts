@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { app, BrowserWindow, shell } from 'electron'
 import { safeExternalUrl } from '../shared/login/external-link'
@@ -6,7 +7,17 @@ import { startBackend } from './backend-host'
 import { hubPaths } from './hub-paths'
 import { loadOrCreateHubToken } from './hub-token'
 import { registerProviderIpc } from './ipc-provider'
+import { registerWordIpc } from './ipc-word'
 import { createPiProvider } from './pi-provider'
+import { createWordIntegration } from './word-integration'
+
+/**
+ * stylistic-addon's build. It ships outside the asar archive because Word reads the manifest from a
+ * real file path; in development `bun run addin:bundle` copies it into `resources/addin`.
+ */
+const ADDIN_DIR = app.isPackaged
+  ? join(process.resourcesPath, 'addin')
+  : join(app.getAppPath(), 'resources', 'addin')
 
 /** False when another hub is already running for this Windows user; this one then quits. */
 const isSingleInstance = app.requestSingleInstanceLock()
@@ -68,10 +79,14 @@ if (!isSingleInstance) {
       database: paths.database,
       piDir: paths.piDir,
       port: HUB_PORT,
+      addinDir: existsSync(ADDIN_DIR) ? ADDIN_DIR : undefined,
       token: loadOrCreateHubToken(paths.token)
     })
     app.on('will-quit', () => backend.stop())
     registerProviderIpc(await createPiProvider(paths.piDir), () => mainWindow?.webContents)
+    registerWordIpc(
+      createWordIntegration({ caFile: paths.caCert, manifestFile: join(ADDIN_DIR, 'manifest.xml') })
+    )
     mainWindow = createWindow()
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow()

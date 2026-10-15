@@ -1,3 +1,6 @@
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { openDatabase } from '../sqlite/database'
 import { SqlitePreferencesRepository } from '../sqlite/preferences-repository'
@@ -171,5 +174,40 @@ describe('createHttpApp', () => {
 
     expect(withToken.status).toBe(200)
     expect(withoutToken.status).toBe(401)
+  })
+
+  it('serves the task pane without a token but only to our Host', async () => {
+    const addinDir = mkdtempSync(join(tmpdir(), 'hub-app-addin-'))
+    writeFileSync(join(addinDir, 'taskpane.html'), '<html><head></head></html>')
+    const withAddin = createHttpApp({
+      token,
+      port,
+      serverVersion: '0.0.1',
+      engine: { start: async () => 'run', get: async () => undefined, cancel: async () => {} },
+      workflows: [],
+      preferences: new SqlitePreferencesRepository(openDatabase(':memory:')),
+      addinDir
+    })
+
+    const page = await withAddin.request(
+      '/taskpane.html',
+      { headers: { host: `localhost:${port}` } },
+      fromPeer('127.0.0.1')
+    )
+    const foreign = await withAddin.request(
+      '/taskpane.html',
+      { headers: { host: 'evil.test' } },
+      fromPeer('127.0.0.1')
+    )
+    const api = await withAddin.request(
+      '/api/health',
+      { headers: { host: `localhost:${port}` } },
+      fromPeer('127.0.0.1')
+    )
+
+    expect(page.status).toBe(200)
+    expect(await page.text()).toContain(token)
+    expect(foreign.status).toBe(403)
+    expect(api.status).toBe(401)
   })
 })

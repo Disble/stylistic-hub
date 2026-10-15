@@ -40,7 +40,9 @@ Per the "do not reinvent the wheel" principle, every piece we wrote ourselves is
 | `src/backend/adapters/http/workflow-routes.ts` | The add-in already speaks Mastra's workflow API through `@mastra/client-js`. Serving that slice (details, create-run, start, poll, cancel) keeps its `MastraAdapter` unchanged instead of writing a new client. Run ids live in memory: Mastra names a run before it starts, OpenWorkflow when it starts. |
 | `src/backend/adapters/pi/pi-llm.ts` | Pi has no structured-output call and its neutral `toolChoice` is only `auto`/`none`. The adapter turns the zod schema into a `submit` tool (`z.toJSONSchema`), forces it with each API's own `toolChoice` (10 APIs) and validates with zod. |
 | `src/shared/login/` | Not ours: copied from dhub (`src/main/domain/login.ts`, revision `bd94206`) with its tests. Pi exposes login as callbacks; this correlates them with UI prompts. Keep in sync with dhub. |
-| `src/backend/adapters/tls/certificates.ts` | Thin use of `@peculiar/x509` to issue a local CA and a localhost leaf; mkcert/devcert need an external binary or admin rights. |
+| `src/backend/adapters/tls/certificates.ts` | Thin use of `@peculiar/x509` to issue a local CA and a localhost leaf; mkcert/devcert need an external binary or admin rights. The CA's name constraints (only `localhost`, `127.0.0.1`, `::1`) are built with `@peculiar/asn1-x509`, which `@peculiar/x509` has no class for. |
+| `src/main/word-integration.ts` | `office-addin-dev-settings` writes the same sideload registry value but brings Teams publishing, prompts and usage telemetry; the hub calls Windows' own `certutil -user -addstore Root` and `reg` instead (~60 lines). |
+| `src/backend/adapters/http/addin-routes.ts` | `serveStatic` serves the add-in; the only custom part is putting the hub token into `taskpane.html` as a meta tag, so the task pane needs no sign-in. |
 
 ## Folder layout
 

@@ -6,6 +6,7 @@ import { ipRestriction } from 'hono/ip-restriction'
 import { secureHeaders } from 'hono/secure-headers'
 import type { SqlitePreferencesRepository } from '../sqlite/preferences-repository'
 import type { WorkflowEngine } from '../../ports/workflow-engine'
+import { addinRoutes } from './addin-routes'
 import { hostAllowlist } from './host-allowlist'
 import { preferencesRoutes } from './preferences-routes'
 import { workflowRoutes } from './workflow-routes'
@@ -23,6 +24,8 @@ export interface HttpAppOptions {
   /** Ids of the workflows it runs, as the add-in names them. */
   workflows: string[]
   preferences: SqlitePreferencesRepository
+  /** stylistic-addon's build, served at the root when given. */
+  addinDir?: string | undefined
 }
 
 /** Loopback peers, including the IPv4-mapped form Node reports on dual-stack sockets. */
@@ -38,7 +41,8 @@ export function createHttpApp({
   serverVersion,
   engine,
   workflows,
-  preferences
+  preferences,
+  addinDir
 }: HttpAppOptions): Hono {
   const app = new Hono()
 
@@ -55,6 +59,8 @@ export function createHttpApp({
   app.get('/api/health', (c) => c.json({ status: 'ok', version: serverVersion }))
   app.route('/api/workflows', workflowRoutes(engine, workflows))
   app.route('/user/preferences', preferencesRoutes(preferences))
+  // Registered last: the API paths above never fall through to the add-in's files.
+  if (addinDir) app.route('/', addinRoutes({ dir: addinDir, token }))
 
   return app
 }

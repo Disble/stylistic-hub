@@ -10,6 +10,7 @@ describe('hubPaths', () => {
       piDir: join(userData, 'pi'),
       database: join(userData, 'stylistic.db'),
       certificates: join(userData, 'certs'),
+      caCert: join(userData, 'certs', 'ca.pem'),
       token: join(userData, 'hub-token')
     })
   })

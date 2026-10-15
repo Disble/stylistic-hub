@@ -20,6 +20,8 @@ const { values } = parseArgs({
     certs: { type: 'string' },
     db: { type: 'string' },
     pi: { type: 'string' },
+    // Optional: without it the hub serves only the API.
+    addin: { type: 'string' },
     port: { type: 'string' }
   },
   strict: true
@@ -68,7 +70,8 @@ const app = createHttpApp({
   serverVersion: SERVER_VERSION,
   engine,
   workflows: Object.keys(workflows),
-  preferences
+  preferences,
+  addinDir: values.addin
 })
 
 // Listen on both loopback addresses and nothing else: `localhost` may resolve to either.

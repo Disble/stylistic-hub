@@ -4,6 +4,8 @@ node_modules/
 # Build output
 out/
 dist/
+# stylistic-addon's build, copied by `bun run addin:bundle`
+resources/addin/
 release/
 
 # Test and coverage

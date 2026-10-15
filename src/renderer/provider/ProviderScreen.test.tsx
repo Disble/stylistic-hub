@@ -55,7 +55,15 @@ beforeEach(() => {
       return () => listeners.delete(listener)
     }
   }
-  window.hub = { versions: { electron: '44', node: '24' }, provider: api }
+  window.hub = {
+    versions: { electron: '44', node: '24' },
+    provider: api,
+    word: {
+      status: async () => ({ available: false, caTrusted: false, addinRegistered: false }),
+      connect: async () => undefined,
+      disconnect: async () => undefined
+    }
+  }
 })
 
 afterEach(cleanup)

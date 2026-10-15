@@ -16,7 +16,15 @@ describe('App', () => {
       cancelLogin: async () => undefined,
       onLoginEvent: () => () => undefined
     }
-    window.hub = { versions: { electron: '44.7.2', node: '24.21.0' }, provider }
+    window.hub = {
+      versions: { electron: '44.7.2', node: '24.21.0' },
+      provider,
+      word: {
+        status: async () => ({ available: false, caTrusted: false, addinRegistered: false }),
+        connect: async () => undefined,
+        disconnect: async () => undefined
+      }
+    }
   })
 
   afterEach(cleanup)

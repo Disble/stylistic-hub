@@ -23,6 +23,11 @@ const bridge: HubBridge = {
       ipcRenderer.on('hub:login-event', handler)
       return () => void ipcRenderer.removeListener('hub:login-event', handler)
     }
+  },
+  word: {
+    status: () => ipcRenderer.invoke('hub:word:status'),
+    connect: () => ipcRenderer.invoke('hub:word:connect'),
+    disconnect: () => ipcRenderer.invoke('hub:word:disconnect')
   }
 }
 

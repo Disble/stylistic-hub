@@ -17,6 +17,14 @@ export interface ModelSummary {
   name: string
 }
 
+/** Where Word stands with this hub. */
+export interface WordStatus {
+  /** The add-in is bundled with the hub and the backend has written its CA. */
+  available: boolean
+  caTrusted: boolean
+  addinRegistered: boolean
+}
+
 /** The API the preload script exposes to the renderer as `window.hub`. */
 export interface HubBridge {
   versions: {
@@ -35,6 +43,12 @@ export interface HubBridge {
     cancelLogin(loginId: string): Promise<void>
     /** Subscribes to sign-in events; returns the unsubscribe function. */
     onLoginEvent(listener: (event: LoginEvent) => void): () => void
+  }
+  word: {
+    status(): Promise<WordStatus>
+    /** Trusts the hub certificate (Windows asks the user) and adds Stylistic to Word. */
+    connect(): Promise<void>
+    disconnect(): Promise<void>
   }
 }
 
