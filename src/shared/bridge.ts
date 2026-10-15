@@ -6,6 +6,7 @@ export interface HubBridge {
   }
 }
 
+/** Types `window.hub` for the renderer. */
 declare global {
   interface Window {
     hub: HubBridge

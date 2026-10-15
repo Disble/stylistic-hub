@@ -20,9 +20,12 @@ The Electron binary downloads on first run (`bunx electron --version`).
 | `bun run test` | Unit tests (vitest) |
 | `bun run dist` | Build the unsigned per-user NSIS installer into `release/` |
 
-## Git hooks
+## Git hooks and the dharness gate
 
-- `pre-commit`: Prettier check, ESLint and typecheck on staged files.
+The project uses [dharness](https://github.com/Disble/dharness) as its development harness. `dharness sync` owns `.dharness/` and the marked blocks in `eslint.config.js`; re-run it after changing tooling and to detect drift.
+
+- `pre-commit`: `dharness check` (ESLint with the dharness rules and react-doctor on the staged change, then fallow), plus Prettier and typecheck.
+- Mutation testing: `dharness mutate <path>` once a file's tests are green.
 - `commit-msg`: Conventional Commits (`feat:`, `fix:`, `docs:`…).
 - `pre-push`: the test suite.
 
@@ -30,9 +33,9 @@ The Electron binary downloads on first run (`bunx electron --version`).
 
 ```
 src/
-  main/       # Electron main process: window, tray, supervisor (desktop shell)
+  main/       # Electron main process: window, tray, supervisor (desktop shell); index.ts only re-exports app.ts
   preload/    # contextBridge API exposed to the renderer as window.hub
-  renderer/   # React + Fluent UI v9 screens (Home, Word, Server, Provider)
+  renderer/   # React + Fluent UI v9 screens (Home, Word, Server, Provider); main.tsx is the entry
   backend/    # local server in a utilityProcess; hexagonal, see architecture.md
   shared/     # types shared across processes
 ```

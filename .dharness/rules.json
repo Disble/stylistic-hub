@@ -1,0 +1,12 @@
+{
+  "schema": "dharness.rules/v1",
+  "maxFileLines": 500,
+  "roleSuffixes": [
+    ".types.ts",
+    ".constants.ts",
+    ".helpers.ts",
+    ".schema.ts"
+  ],
+  "countComments": false,
+  "countBlankLines": false
+}

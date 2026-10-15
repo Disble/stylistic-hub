@@ -1,0 +1,4 @@
+pre-commit:
+  commands:
+    dharness:
+      run: dharness check

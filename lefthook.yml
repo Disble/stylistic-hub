@@ -1,13 +1,14 @@
+# The dharness gate (ESLint, react-doctor, fallow) runs from .dharness/lefthook.yml.
+extends:
+  - .dharness/lefthook.yml
+
 pre-commit:
   parallel: true
-  jobs:
-    - name: format
+  commands:
+    format:
       glob: '*.{js,ts,tsx,json,yml,css,html}'
       run: bunx prettier --check {staged_files}
-    - name: lint
-      glob: '*.{js,ts,tsx}'
-      run: bunx eslint {staged_files}
-    - name: typecheck
+    typecheck:
       glob: '*.{ts,tsx}'
       run: bun run typecheck
 

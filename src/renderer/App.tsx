@@ -1,5 +1,6 @@
 import { FluentProvider, Text, Title1, webLightTheme } from '@fluentui/react-components'
 
+/** Root of the hub window. */
 export function App() {
   const { electron, node } = window.hub.versions
 

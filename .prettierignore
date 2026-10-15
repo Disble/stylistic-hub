@@ -7,3 +7,6 @@ reports/
 research_notes/
 odd/
 *.md
+.dharness/
+.mcp.json
+.fallowrc.json

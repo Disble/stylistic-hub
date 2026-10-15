@@ -1,0 +1,11 @@
+# dharness — this directory is written by dharness.
+# Everything here is machine-local unless it is named below, so transient files
+# (incremental reports, caches) never show up in git.
+*
+!.gitignore
+!lefthook.yml
+!fallow.jsonc
+!rules.json
+!evidence.json
+!eslint.config.mjs
+!eslint.config.cjs

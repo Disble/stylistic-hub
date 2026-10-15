@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "fallow": {
+      "command": "bunx",
+      "args": [
+        "--package",
+        "fallow@latest",
+        "fallow-mcp"
+      ]
+    }
+  }
+}

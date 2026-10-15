@@ -10,6 +10,7 @@ export interface HubPaths {
   certificates: string
 }
 
+/** Resolves every hub path from Electron's `userData` folder. */
 export function hubPaths(userData: string): HubPaths {
   return {
     piDir: join(userData, 'pi'),

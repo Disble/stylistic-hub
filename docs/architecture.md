@@ -30,7 +30,7 @@ Hono (HTTP) and Electron are the outer driving side and get no port: they are en
 
 ## Folder layout
 
-The domain-import rules are enforced by ESLint (`no-restricted-imports` in `eslint.config.js`).
+The boundaries are enforced by fallow from the zones in `.dharness/fallow.jsonc`, run by `dharness check` on every commit.
 
 ```
 src/backend/

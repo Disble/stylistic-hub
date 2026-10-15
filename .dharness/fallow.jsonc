@@ -1,0 +1,49 @@
+{
+  // dharness:presets begin — rewritten by `dharness sync`; edits here are lost.
+  // generic: dharness compares structure rather than text (mode "semantic"), raises fallow's minimum number of occurrences before a clone group is reported to 3, and caps duplication at 3%. fallow's own defaults are mild, 2 and no limit, so all three are departures rather than restatements. The floor is about the report rather than the ceiling: two occurrences is usually coincidence where three is a pattern. Those values come with two limits: the occurrence floor decides which groups are reported, not the percentage the ceiling measures, so a pair that never reaches that floor can still count against the ceiling; and a structural match covers declarations that share a shape but no logic, so a reported group is a candidate to read rather than a verdict. That ceiling is borrowed from the SonarQube gate this toolchain already answers to — different algorithms, so they corroborate a signal rather than repeat each other
+  "duplicates": {"minOccurrences":3,"mode":"semantic","threshold":3},
+  // dharness:presets end
+
+  // dharness writes this file; the architecture below is decided by analysis,
+  // not by detection. Declare `boundaries` here rather than in the project's
+  // own fallow config: `extends` merges this key field by field and replaces each
+  // `zones`/`rules` array whole, so a project declaring its own zones silently
+  // drops the ones here while these rules stay.
+  //
+  // See `dharness sync`.
+
+  // Hexagonal layout (docs/architecture.md) across Electron's processes:
+  // - domain: correction, feedback and profile rules, prompts and schemas; sees only ports.
+  // - ports: the interfaces the domain needs (LlmPort, WorkflowEngine, repositories, ProviderAuth).
+  // - adapters: one per adopted tool (Pi, OpenWorkflow, node:sqlite, Hono) implementing ports.
+  // - backend: composition root of the backend utilityProcess.
+  // - shared: message and bridge contracts shared by type across processes.
+  // - shell: Electron main process (window, tray, backend supervisor); never imports backend code.
+  // - preload / renderer: the UI side sees only the shared contracts.
+  "boundaries": {
+    "zones": [
+      { "name": "domain", "patterns": ["src/backend/correction/**", "src/backend/feedback/**", "src/backend/profile/**"] },
+      { "name": "ports", "patterns": ["src/backend/ports/**"] },
+      { "name": "adapters", "patterns": ["src/backend/adapters/**"] },
+      { "name": "backend", "patterns": ["src/backend/*.ts"] },
+      { "name": "shared", "patterns": ["src/shared/**"] },
+      { "name": "shell", "patterns": ["src/main/**"] },
+      { "name": "preload", "patterns": ["src/preload/**"] },
+      { "name": "renderer", "patterns": ["src/renderer/**"] }
+    ],
+    "rules": [
+      { "from": "domain", "allow": ["ports"] },
+      { "from": "ports", "allow": [], "allowTypeOnly": ["domain"] },
+      { "from": "adapters", "allow": ["ports", "domain"] },
+      { "from": "backend", "allow": ["domain", "ports", "adapters", "shared"] },
+      { "from": "shared", "allow": [] },
+      { "from": "shell", "allow": ["shared"] },
+      { "from": "preload", "allow": [], "allowTypeOnly": ["shared"] },
+      { "from": "renderer", "allow": [], "allowTypeOnly": ["shared"] }
+    ],
+    "coverage": {
+      "requireAllFiles": true,
+      "allowUnmatched": ["*.config.ts", "*.config.js", "resources/**"]
+    }
+  }
+}

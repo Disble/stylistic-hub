@@ -17,6 +17,7 @@
         "@types/react": "19.3.0",
         "@types/react-dom": "19.3.0",
         "@vitejs/plugin-react": "5.2.0",
+        "dharness-eslint-plugin": "^0.4.0",
         "electron": "44.7.2",
         "electron-builder": "26.15.3",
         "electron-vite": "5.0.0",
@@ -657,6 +658,8 @@
     "delayed-stream": ["delayed-stream@1.0.0", "", {}, "sha512-ZySD7Nf91aLB0RxL4KGrKHBXl7Eds1DAmEdcoVawXnLD7SDhpNgtuII2aAkg7a7QS41jxPSZ17p4VdGnMHk3MQ=="],
 
     "detect-node": ["detect-node@2.1.0", "", {}, "sha512-T0NIuQpnTvFDATNuHN5roPwSBG83rFsuO+MXXH9/3N1eFbn4wcPjttvjMLEPWJ0RGUYgQE7cGgS3tNxbqCGM7g=="],
+
+    "dharness-eslint-plugin": ["dharness-eslint-plugin@0.4.0", "", { "peerDependencies": { "eslint": ">=9" }, "optionalPeers": ["eslint"] }, "sha512-SawUAs0XlSuoAtEau+wcmxzKMGZ/UzKIG9cIM+C9Ke4b9N7Y8NJzq0jiSXj5uhxrZ0URQ+cZ5pVy4SeRXW4m6A=="],
 
     "dir-compare": ["dir-compare@4.2.0", "", { "dependencies": { "minimatch": "^3.0.5", "p-limit": "^3.1.0 " } }, "sha512-2xMCmOoMrdQIPHdsTawECdNPwlVFB9zGcz3kuhmBO6U3oU+UQjsue0i8ayLKpgBcm+hcXPMVSGUN9d+pvJ6+VQ=="],
 

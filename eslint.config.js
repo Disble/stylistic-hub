@@ -3,9 +3,27 @@ import prettier from 'eslint-config-prettier'
 import reactHooks from 'eslint-plugin-react-hooks'
 import globals from 'globals'
 import tseslint from 'typescript-eslint'
+// dharness:eslint-import begin — rewritten by `dharness sync`; edits here are lost.
+import dharnessPlugin from 'dharness-eslint-plugin'
+import dharnessLayer from './.dharness/eslint.config.mjs'
+// dharness:eslint-import end
 
-export default tseslint.config(
-  { ignores: ['out/**', 'dist/**', 'release/**', 'node_modules/**', 'research_notes/**', 'reports/**'] },
+// Architecture boundaries are enforced by fallow (.dharness/fallow.jsonc), not here.
+export default [
+  // dharness:eslint-layer begin — rewritten by `dharness sync`; edits here are lost.
+  ...dharnessLayer({ plugin: dharnessPlugin }),
+  // dharness:eslint-layer end
+  {
+    ignores: [
+      'out/**',
+      'dist/**',
+      'release/**',
+      'node_modules/**',
+      '.atl/**',
+      'research_notes/**',
+      'reports/**'
+    ]
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -18,27 +36,5 @@ export default tseslint.config(
     plugins: { 'react-hooks': reactHooks },
     rules: reactHooks.configs.recommended.rules
   },
-  {
-    // Hexagonal rule from docs/architecture.md: domain code imports no adopted tool.
-    files: ['src/backend/{correction,feedback,profile,ports}/**/*.ts'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['@earendil-works/*', 'openworkflow', 'openworkflow/*', 'hono', 'hono/*', '@hono/*'],
-              message: 'Domain code must not import adopted tools; go through a port.'
-            },
-            {
-              group: ['node:sqlite', 'electron'],
-              message: 'Domain code must not import infrastructure; go through a port.'
-            },
-            { group: ['**/adapters/**'], message: 'Domain code must not depend on adapters.' }
-          ]
-        }
-      ]
-    }
-  },
   prettier
-)
+]

@@ -27,3 +27,6 @@ Thumbs.db
 
 # Tool indexes
 .codegraph/
+
+# Local agent state (skill registry)
+.atl/
