@@ -19,7 +19,7 @@ Branch: `feat/mvp` · Delivery: `ask-on-risk` · Test runner: vitest (`bun run t
 
 | ID | Specs | Task | Route | Status | Evidence |
 |---|---|---|---|---|---|
-| T1 | S1, S8, S9 | Tooling and Electron shell skeleton (bun, electron-vite 5, TS, vitest, eslint, prettier, lefthook, electron-builder) | inline | in progress | |
+| T1 | S1, S8, S9 | Tooling and Electron shell skeleton (bun, electron-vite 5, TS, vitest, eslint, prettier, lefthook, electron-builder) | inline | done | `04feab7` · RED→GREEN `hub-paths.test.ts`; `bun run check` green; `bun run build` ok; app launched with no logged errors (window not inspected visually) |
 | T2 | S4, S7 | Backend `utilityProcess` + supervisor; Hono on `https://localhost:3000` with local CA, Host allowlist, token, loopback guards | inline | todo | |
 | T3 | S3, S4 | Storage: `node:sqlite`, `user_version` migrations, repositories | inline | todo | |
 | T4 | S5, S6 | Pi `ModelRuntime` in `userData/pi`; provider login and model choice; Provider screen | inline | todo | |
@@ -36,3 +36,4 @@ Branch: `feat/mvp` · Delivery: `ask-on-risk` · Test runner: vitest (`bun run t
 - **L2 (2026-10-15, user):** "1. Pero estas seguro de usar Mastra? A mí no me convence del todo para nuestro caso. 2. Eso se hace en la MVP. 3. También se valida en la MVP. // Pero tanto miedo te da, puedes hacer dos PoCs para 2 y 3 antes, pero pienso ya puedes intentarlas en la MVP. // Claro, haz git init y configura todo el proyecto como el dios de la programación manda."
 - **L3 (decision):** Mastra is dropped as plan B (76 MB, 30 deps, storage on an internal interface, weekly breaking releases). If OpenWorkflow fails inside the `utilityProcess`, the fallback is a small runner behind the `WorkflowEngine` port, justified by AGENTS.md rule 2: the remaining candidates (`pi-durable`, Effect workflow) are marked experimental or unstable.
 - **L4 (decision):** toolchain mirrors dhub, but respects peer ranges: electron-vite 5.0.0 requires vite ≤ 7, so vite 7.3.7 + @vitejs/plugin-react 5.2.0; typescript-eslint requires TS < 6.1, so TypeScript 5.9.3.
+- **L5 (T1, 2026-10-15):** scaffold committed in `04feab7`. The inline commit-msg regex failed under Windows sh, so it was replaced by commitlint (`@commitlint/config-conventional`), per S1. Assessment: `medium` (`executable_change`), `review_due: false` (`under_budget`); receipt-driven review is off globally, so verification was self-check only. Next: T2.
