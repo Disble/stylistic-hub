@@ -225,4 +225,52 @@ describe('ProviderScreen', () => {
     await waitFor(() => expect(api.logout).toHaveBeenCalledWith('anthropic'))
     await waitFor(() => expect(api.list).toHaveBeenCalledTimes(2))
   })
+
+  it('signs out of a provider connected with an API key', async () => {
+    providers = providers.map((p) => (p.id === 'groq' ? { ...p, configured: true } : p))
+    await renderScreen()
+
+    fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'groq' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out of Groq' }))
+
+    await waitFor(() => expect(api.logout).toHaveBeenCalledWith('groq'))
+  })
+
+  it('shows the links of an information notice', async () => {
+    await renderScreen()
+    fireEvent.click(
+      within(screen.getByRole('listitem', { name: 'ChatGPT Plus/Pro' })).getByRole('button', {
+        name: 'Sign in'
+      })
+    )
+    await waitFor(() => expect(api.startLogin).toHaveBeenCalled())
+
+    emit({
+      loginId: 'l1',
+      providerId: 'openai-codex',
+      type: 'login-notice',
+      notice: {
+        type: 'info',
+        message: 'Create a key first.',
+        links: [{ url: 'https://keys.test', label: 'Key page' }]
+      }
+    })
+
+    expect((await screen.findByRole('link', { name: 'Key page' })).getAttribute('href')).toBe(
+      'https://keys.test'
+    )
+  })
+
+  it('shows why an action failed', async () => {
+    api.setModel = vi.fn(async () => {
+      throw new Error('Model anthropic/claude-b is not available')
+    })
+    await renderScreen()
+    const select = screen.getByLabelText('Model for corrections')
+    await waitFor(() => expect((select as HTMLSelectElement).value).toBe('anthropic/claude-a'))
+
+    fireEvent.change(select, { target: { value: 'anthropic/claude-b' } })
+
+    expect(await screen.findByText('Model anthropic/claude-b is not available')).toBeTruthy()
+  })
 })

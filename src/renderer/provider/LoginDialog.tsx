@@ -59,6 +59,14 @@ function Notice({ notice }: { notice: LoginNotice }) {
       return (
         <Text as="p" block>
           {notice.message}
+          {notice.links?.map((link) => (
+            <span key={link.url}>
+              {' '}
+              <Link href={link.url} target="_blank">
+                {link.label ?? link.url}
+              </Link>
+            </span>
+          ))}
         </Text>
       )
   }

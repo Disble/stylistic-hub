@@ -2,7 +2,6 @@ import { join } from 'node:path'
 import { ModelRuntime, SettingsManager } from '@earendil-works/pi-coding-agent'
 import type { ModelSummary, ProviderSummary } from '../shared/bridge'
 import type { LoginAuthType, LoginInteraction } from '../shared/login/login'
-import { installationId } from './installation-id'
 
 /** What the Provider screen can do with Pi: sign in and out, and choose the model. */
 export interface PiProvider {
@@ -70,7 +69,9 @@ export async function createPiProvider(agentDir: string): Promise<PiProvider> {
     },
 
     async login(providerId, type, interaction) {
-      await runtime.login(providerId, type, interaction, { getDeviceId: () => installationId(agentDir) })
+      await runtime.login(providerId, type, interaction, {
+        getDeviceId: () => settings.getOrCreateDeviceId()
+      })
     },
 
     logout: (providerId) => runtime.logout(providerId)

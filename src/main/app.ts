@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, shell } from 'electron'
+import { safeExternalUrl } from '../shared/login/external-link'
 import { HUB_PORT } from '../shared/versions'
 import { startBackend } from './backend-host'
 import { hubPaths } from './hub-paths'
@@ -31,9 +32,11 @@ function createWindow(): BrowserWindow {
 
   window.once('ready-to-show', () => window.show())
 
-  // External links open in the default browser, never inside the hub window.
+  // External links open in the default browser, never inside the hub window, and only http(s):
+  // sign-in pages come from providers, so a `file:` or custom-scheme link is never opened.
   window.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url)
+    const safe = safeExternalUrl(url)
+    if (safe) void shell.openExternal(safe)
     return { action: 'deny' }
   })
 

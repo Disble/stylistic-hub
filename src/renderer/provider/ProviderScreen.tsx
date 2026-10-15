@@ -1,13 +1,14 @@
-import { Badge, Button, Card, Field, Select, Subtitle2, Text, Title2 } from '@fluentui/react-components'
+import { MessageBar, MessageBarBody, Text, Title2 } from '@fluentui/react-components'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ModelSummary, ProviderSummary } from '../../shared/bridge'
 import type { LoginAuthType } from '../../shared/login/login'
 import { LoginDialog } from './LoginDialog'
 import { loginStarted, reduceLogin, type LoginState } from './login-state'
+import { ApiKeyCard, ModelCard, SubscriptionCard } from './ProviderCards'
 
-/** Value of a model option: provider ids never contain a slash, model ids may. */
-function modelValue(model: ModelSummary): string {
-  return `${model.provider}/${model.id}`
+/** True when the provider offers this sign-in method. */
+function offers(provider: ProviderSummary, type: LoginAuthType): boolean {
+  return provider.authMethods.some((m) => m.type === type)
 }
 
 /** Sign in to the providers Pi offers and choose the model the corrections use. */
@@ -19,21 +20,18 @@ export function ProviderScreen() {
   })
   const [model, setModel] = useState<ModelSummary | undefined>()
   const [reloads, setReloads] = useState(0)
-  const [keyProvider, setKeyProvider] = useState('')
   const [login, setLogin] = useState<LoginState | undefined>()
+  const [error, setError] = useState<string | undefined>()
   const loginId = useRef<string | undefined>(undefined)
-  const { providers, models } = data
   const refresh = useCallback(() => setReloads((n) => n + 1), [])
 
   useEffect(() => {
     let live = true
-    void Promise.all([api.list(), api.listModels(), api.getModel()]).then(
-      ([nextProviders, nextModels, nextModel]) => {
-        if (!live) return
-        setData({ providers: nextProviders, models: nextModels })
-        setModel(nextModel)
-      }
-    )
+    void Promise.all([api.list(), api.listModels(), api.getModel()]).then(([providers, models, chosen]) => {
+      if (!live) return
+      setData({ providers, models })
+      setModel(chosen)
+    })
     return () => {
       live = false
     }
@@ -55,20 +53,29 @@ export function ProviderScreen() {
     [api, refresh]
   )
 
-  const startLogin = async (provider: ProviderSummary, type: LoginAuthType) => {
-    const id = await api.startLogin(provider.id, type)
-    loginId.current = id
-    setLogin(loginStarted(id, provider.id, provider.name))
+  /** Runs a user action, showing why it failed instead of losing the rejection. */
+  const run = (action: () => Promise<void>) => {
+    setError(undefined)
+    action().catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)))
   }
 
-  const chooseModel = async (value: string) => {
-    const slash = value.indexOf('/')
-    setModel(await api.setModel(value.slice(0, slash), value.slice(slash + 1)))
-  }
+  const startLogin = (provider: ProviderSummary, type: LoginAuthType) =>
+    run(async () => {
+      const id = await api.startLogin(provider.id, type)
+      loginId.current = id
+      setLogin(loginStarted(id, provider.id, provider.name))
+    })
 
-  const subscriptions = providers.filter((p) => p.authMethods.some((m) => m.type === 'oauth'))
-  const keyProviders = providers.filter((p) => p.authMethods.some((m) => m.type === 'api_key'))
-  const chosenKeyProvider = keyProviders.find((p) => p.id === keyProvider)
+  const logout = (provider: ProviderSummary) =>
+    run(async () => {
+      await api.logout(provider.id)
+      refresh()
+    })
+
+  const closeLogin = () => {
+    loginId.current = undefined
+    setLogin(undefined)
+  }
 
   return (
     <section style={{ display: 'grid', gap: 16, maxWidth: 720 }}>
@@ -79,84 +86,34 @@ export function ProviderScreen() {
         </Text>
       </header>
 
-      <Card>
-        {models.length === 0 ? (
-          <Text>Sign in to a provider to choose a model.</Text>
-        ) : (
-          <Field label="Model for corrections">
-            <Select
-              value={model ? modelValue(model) : ''}
-              onChange={(_e, data) => void chooseModel(data.value)}
-            >
-              {!model && <option value="">Choose a model</option>}
-              {models.map((m) => (
-                <option key={modelValue(m)} value={modelValue(m)}>
-                  {m.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        )}
-      </Card>
+      {error && (
+        <MessageBar intent="error">
+          <MessageBarBody>{error}</MessageBarBody>
+        </MessageBar>
+      )}
 
-      <Card>
-        <Subtitle2 as="h3">Sign in with a subscription</Subtitle2>
-        <Text>Uses your plan. Sign-in opens in your browser.</Text>
-        <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 8 }}>
-          {subscriptions.map((p) => (
-            <li key={p.id} aria-label={p.name} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Text style={{ flex: 1 }}>{p.name}</Text>
-              {p.configured ? (
-                <>
-                  <Badge appearance="tint" color="success">
-                    Connected
-                  </Badge>
-                  <Button size="small" onClick={() => void api.logout(p.id).then(refresh)}>
-                    Sign out
-                  </Button>
-                </>
-              ) : (
-                <Button size="small" onClick={() => void startLogin(p, 'oauth')}>
-                  Sign in
-                </Button>
-              )}
-            </li>
-          ))}
-        </ul>
-      </Card>
-
-      <Card>
-        <Subtitle2 as="h3">Use an API key</Subtitle2>
-        <Field label="Provider">
-          <Select value={keyProvider} onChange={(_e, data) => setKeyProvider(data.value)}>
-            <option value="">Choose a provider</option>
-            {keyProviders.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.configured ? `${p.name} (connected)` : p.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <div>
-          <Button
-            appearance="primary"
-            disabled={!chosenKeyProvider}
-            onClick={() => chosenKeyProvider && void startLogin(chosenKeyProvider, 'api_key')}
-          >
-            Sign in with an API key
-          </Button>
-        </div>
-      </Card>
+      <ModelCard
+        models={data.models}
+        model={model}
+        onChoose={(provider, modelId) => run(async () => setModel(await api.setModel(provider, modelId)))}
+      />
+      <SubscriptionCard
+        providers={data.providers.filter((p) => offers(p, 'oauth'))}
+        onSignIn={(p) => startLogin(p, 'oauth')}
+        onSignOut={logout}
+      />
+      <ApiKeyCard
+        providers={data.providers.filter((p) => offers(p, 'api_key'))}
+        onSignIn={(p) => startLogin(p, 'api_key')}
+        onSignOut={logout}
+      />
 
       {login && (
         <LoginDialog
           state={login}
           onAnswer={(promptId, value) => void api.answerPrompt(login.loginId, promptId, value)}
           onCancel={() => void api.cancelLogin(login.loginId)}
-          onClose={() => {
-            loginId.current = undefined
-            setLogin(undefined)
-          }}
+          onClose={closeLogin}
         />
       )}
     </section>
