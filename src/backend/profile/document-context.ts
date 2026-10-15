@@ -1,5 +1,13 @@
 /** Genres a document can be written in; the same list as stylistics-backend. */
-export type DocumentGenre = 'narrativa-literaria' | 'ensayo-academico' | 'periodismo-cultural' | 'general'
+export const DOCUMENT_GENRES = [
+  'narrativa-literaria',
+  'ensayo-academico',
+  'periodismo-cultural',
+  'general'
+] as const
+
+/** One of the genres. */
+export type DocumentGenre = (typeof DOCUMENT_GENRES)[number]
 
 /** Genre of a document nobody has classified yet. */
 export const DEFAULT_GENRE: DocumentGenre = 'general'

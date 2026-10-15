@@ -7,6 +7,8 @@ import { createSupervisor, type Supervisor } from './supervisor'
 export interface BackendOptions {
   certificatesDir: string
   database: string
+  /** Pi's directory, shared with the main process's sign-in. */
+  piDir: string
   port: number
   token: string
 }
@@ -15,14 +17,18 @@ export interface BackendOptions {
 const BACKOFF_MS = [1000, 2000, 5000, 10_000, 30_000]
 
 /** Runs the backend in its own utility process and restarts it if it crashes. */
-export function startBackend({ certificatesDir, database, port, token }: BackendOptions): Supervisor {
+export function startBackend({ certificatesDir, database, piDir, port, token }: BackendOptions): Supervisor {
   const supervisor = createSupervisor({
     spawn: () =>
-      utilityProcess.fork(backendPath, [`--certs=${certificatesDir}`, `--db=${database}`, `--port=${port}`], {
-        serviceName: 'stylistic-backend',
-        stdio: 'inherit',
-        env: { ...process.env, STYLISTIC_HUB_TOKEN: token }
-      }),
+      utilityProcess.fork(
+        backendPath,
+        [`--certs=${certificatesDir}`, `--db=${database}`, `--pi=${piDir}`, `--port=${port}`],
+        {
+          serviceName: 'stylistic-backend',
+          stdio: 'inherit',
+          env: { ...process.env, STYLISTIC_HUB_TOKEN: token }
+        }
+      ),
     backoffMs: BACKOFF_MS,
     onExit: ({ code, restartInMs }) =>
       console.warn(`backend exited with code ${code}; restarting in ${restartInMs} ms`)
