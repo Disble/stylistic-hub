@@ -3,6 +3,14 @@ import 'reflect-metadata'
 import { createPrivateKey, randomBytes, webcrypto, X509Certificate } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { AsnConvert } from '@peculiar/asn1-schema'
+import {
+  GeneralName,
+  GeneralSubtree,
+  GeneralSubtrees,
+  id_ce_nameConstraints,
+  NameConstraints
+} from '@peculiar/asn1-x509'
 import * as x509 from '@peculiar/x509'
 
 x509.cryptoProvider.set(webcrypto as unknown as Parameters<typeof x509.cryptoProvider.set>[0])
@@ -22,6 +30,24 @@ const FILES = { caCert: 'ca.pem', caKey: 'ca-key.pem', cert: 'localhost.pem', ke
 
 /** ECDSA P-256 with SHA-256, accepted by Chromium/WebView2 and Schannel. */
 const ALGORITHM = { name: 'ECDSA', namedCurve: 'P-256', hash: 'SHA-256' }
+
+/**
+ * The only names the CA may sign for. Windows and Chromium enforce these, so the trusted CA cannot
+ * vouch for any other site even if its key leaks. @peculiar/x509 has no class for this extension.
+ */
+const LOOPBACK_ONLY = new x509.Extension(
+  id_ce_nameConstraints,
+  true,
+  AsnConvert.serialize(
+    new NameConstraints({
+      permittedSubtrees: new GeneralSubtrees([
+        new GeneralSubtree({ base: new GeneralName({ dNSName: 'localhost' }) }),
+        new GeneralSubtree({ base: new GeneralName({ iPAddress: '127.0.0.1/32' }) }),
+        new GeneralSubtree({ base: new GeneralName({ iPAddress: '::1/128' }) })
+      ])
+    })
+  )
+)
 
 /** One day, in milliseconds. */
 const DAY = 24 * 60 * 60 * 1000
@@ -43,7 +69,8 @@ export async function ensureCertificates(dir: string, now = new Date()): Promise
   mkdirSync(dir, { recursive: true })
   const stored = readStored(dir)
 
-  if (stored && isFresh(stored.caCert, now)) {
+  // A CA written before the name constraints existed is replaced before anyone trusts it.
+  if (stored && isFresh(stored.caCert, now) && isLoopbackOnly(stored.caCert)) {
     if (leafUsable(stored, now)) {
       return { key: stored.key, cert: stored.cert, caCert: stored.caCert }
     }
@@ -131,6 +158,11 @@ async function generateKeys(): Promise<webcrypto.CryptoKeyPair> {
   return (await webcrypto.subtle.generateKey(ALGORITHM, true, ['sign', 'verify'])) as webcrypto.CryptoKeyPair
 }
 
+/** True when the CA certificate carries the loopback-only name constraints. */
+function isLoopbackOnly(caPem: string): boolean {
+  return new x509.X509Certificate(caPem).getExtension(id_ce_nameConstraints) !== null
+}
+
 /** Creates the self-signed local CA. */
 async function createCa(now: Date) {
   const keys = await generateKeys()
@@ -144,6 +176,7 @@ async function createCa(now: Date) {
     extensions: [
       new x509.BasicConstraintsExtension(true, 0, true),
       new x509.KeyUsagesExtension(x509.KeyUsageFlags.keyCertSign | x509.KeyUsageFlags.cRLSign, true),
+      LOOPBACK_ONLY,
       await x509.SubjectKeyIdentifierExtension.create(keys.publicKey)
     ]
   })

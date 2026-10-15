@@ -1,7 +1,11 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createPrivateKey, X509Certificate } from 'node:crypto'
+import { createPrivateKey, webcrypto, X509Certificate } from 'node:crypto'
+import 'reflect-metadata'
+import { AsnConvert } from '@peculiar/asn1-schema'
+import { NameConstraints } from '@peculiar/asn1-x509'
+import * as x509 from '@peculiar/x509'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { ensureCertificates } from './certificates'
 
@@ -15,6 +19,19 @@ beforeEach(() => {
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
+
+/** The names a CA certificate is allowed to sign for, read from its name constraints. */
+function permittedNames(caPem: string) {
+  const extension = new x509.X509Certificate(caPem).getExtension('2.5.29.30')
+  if (!extension) return undefined
+  const constraints = AsnConvert.parse(extension.value, NameConstraints)
+  return {
+    critical: extension.critical,
+    names: (constraints.permittedSubtrees ?? []).map(
+      (subtree) => subtree.base.dNSName ?? subtree.base.iPAddress
+    )
+  }
+}
 
 describe('ensureCertificates', () => {
   it('creates a localhost certificate signed by a local CA', async () => {
@@ -101,5 +118,45 @@ describe('ensureCertificates', () => {
     expect(corrupt.caCert).toBe(first.caCert)
     expect(missing.caCert).toBe(first.caCert)
     expect(new X509Certificate(missing.cert).checkIssued(new X509Certificate(first.caCert))).toBe(true)
+  })
+
+  it('limits the CA to the loopback names, so a leaked CA key cannot sign for other sites', async () => {
+    const result = await ensureCertificates(dir, new Date('2026-10-15T00:00:00Z'))
+
+    expect(permittedNames(result.caCert)).toEqual({
+      critical: true,
+      names: ['localhost', '127.0.0.1/32', '::1/128']
+    })
+  })
+
+  it('replaces a stored CA that has no name constraints', async () => {
+    const keys = (await webcrypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
+      'sign',
+      'verify'
+    ])) as webcrypto.CryptoKeyPair
+    const unconstrained = await x509.X509CertificateGenerator.createSelfSigned({
+      serialNumber: '01',
+      name: 'CN=Old CA',
+      notBefore: new Date('2026-10-01T00:00:00Z'),
+      notAfter: new Date('2036-10-01T00:00:00Z'),
+      keys,
+      signingAlgorithm: { name: 'ECDSA', hash: 'SHA-256' },
+      extensions: [new x509.BasicConstraintsExtension(true, 0, true)]
+    })
+    const pkcs8 = Buffer.from(await webcrypto.subtle.exportKey('pkcs8', keys.privateKey)).toString('base64')
+    await ensureCertificates(dir, new Date('2026-10-15T00:00:00Z'))
+    writeFileSync(join(dir, 'ca.pem'), unconstrained.toString('pem'))
+    writeFileSync(
+      join(dir, 'ca-key.pem'),
+      `-----BEGIN PRIVATE KEY-----
+${pkcs8}
+-----END PRIVATE KEY-----
+`
+    )
+
+    const result = await ensureCertificates(dir, new Date('2026-10-15T00:00:00Z'))
+
+    expect(result.caCert).not.toBe(unconstrained.toString('pem'))
+    expect(permittedNames(result.caCert)?.names).toContain('localhost')
   })
 })

@@ -30,6 +30,8 @@
     "@earendil-works/pi-coding-agent": "1.2.0",
     "@fluentui/react-components": "9.74.9",
     "@hono/node-server": "2.1.5",
+    "@peculiar/asn1-schema": "2.11.0",
+    "@peculiar/asn1-x509": "2.11.0",
     "@peculiar/x509": "2.2.0",
     "hono": "4.13.13",
     "openworkflow": "0.11.0",

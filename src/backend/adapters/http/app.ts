@@ -44,7 +44,8 @@ export function createHttpApp({
 
   app.use(hostAllowlist([`localhost:${port}`, `127.0.0.1:${port}`]))
   app.use(ipRestriction(getConnInfo, { allowList: LOOPBACK }))
-  app.use(secureHeaders())
+  // No HSTS: it is per host, not per port, so it would force HTTPS on the user's other localhost servers.
+  app.use(secureHeaders({ strictTransportSecurity: false }))
   // stylistics-backend served preferences outside `/api`; the add-in keeps that path.
   for (const path of ['/api/*', '/user/*']) {
     app.use(path, cors({ origin: `https://localhost:${port}` }))

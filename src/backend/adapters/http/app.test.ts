@@ -98,6 +98,12 @@ describe('createHttpApp', () => {
     expect(response.headers.get('x-content-type-options')).toBe('nosniff')
   })
 
+  it('sends no HSTS, which would force HTTPS on every localhost port in the browser', async () => {
+    const response = await health()
+
+    expect(response.headers.get('strict-transport-security')).toBeNull()
+  })
+
   it('rejects a request without a Host header', async () => {
     const response = await app.request(
       '/api/health',
