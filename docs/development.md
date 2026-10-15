@@ -21,7 +21,7 @@ The Electron binary downloads on first run (`bunx electron --version`).
 | `bun run addin:bundle [path]` | Builds stylistic-addon with `build:hub` (default `../stylistic-addon`) and copies its `dist/` into `resources/addin`, which the hub serves at `https://localhost:3000` and registers with Word |
 | `bun run check:providers [piDir]` | Sends one small structured call to every provider signed in on this hub (default `%APPDATA%/stylistic-hub/pi`); spends a few tokens per provider |
 | `bun run test:coverage` | Tests with the coverage tiers enforced (CORE 100%, IMPORTANT 80%) |
-| `bun run dist` | Build the unsigned per-user NSIS installer into `release/` |
+| `bun run dist` | Build the unsigned per-user NSIS installer into `release/`; needs `bun run addin:bundle` first and stops if `resources/addin` is missing |
 
 ## Git hooks and the dharness gate
 

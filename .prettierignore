@@ -1,6 +1,7 @@
 out/
 dist/
 release/
+resources/addin/
 node_modules/
 bun.lock
 reports/

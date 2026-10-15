@@ -18,6 +18,8 @@ export default [
       'out/**',
       'dist/**',
       'release/**',
+      // stylistic-addon's build, copied by `bun run addin:bundle`
+      'resources/addin/**',
       'node_modules/**',
       '.atl/**',
       'research_notes/**',

@@ -1,5 +1,6 @@
 {
   "extends": [".dharness/fallow.jsonc"],
-  "entry": ["src/renderer/main.tsx", "scripts/bundle-addin.ts"],
-  "ignorePatterns": [".dharness/**", "research_notes/**", "reports/**"]
+  "entry": ["src/renderer/main.tsx"],
+  // Dev scripts run by package.json belong to no hexagonal zone.
+  "ignorePatterns": [".dharness/**", "research_notes/**", "reports/**", "scripts/**"]
 }
