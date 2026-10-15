@@ -1,6 +1,6 @@
 // @peculiar/x509 resolves its parsers through tsyringe, which needs this polyfill loaded first.
 import 'reflect-metadata'
-import { randomBytes, webcrypto, X509Certificate } from 'node:crypto'
+import { createPrivateKey, randomBytes, webcrypto, X509Certificate } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as x509 from '@peculiar/x509'
@@ -44,7 +44,11 @@ export async function ensureCertificates(dir: string, now = new Date()): Promise
   const stored = readStored(dir)
 
   if (stored && isFresh(stored.caCert, now)) {
-    if (isFresh(stored.cert, now) && issuedBy(stored.cert, stored.caCert)) {
+    if (
+      isFresh(stored.cert, now) &&
+      issuedBy(stored.cert, stored.caCert) &&
+      keyMatches(stored.cert, stored.key)
+    ) {
       return { key: stored.key, cert: stored.cert, caCert: stored.caCert }
     }
     const caKey = await importPrivateKey(stored.caKey)
@@ -65,7 +69,10 @@ export async function ensureCertificates(dir: string, now = new Date()): Promise
   return { ...leaf, caCert }
 }
 
-/** Reads every stored file, or nothing when one is missing or unparsable. */
+/**
+ * Reads every stored file, or nothing when one is missing, unparsable or when the CA key does not
+ * belong to the CA certificate. A bad leaf is caught later and reissued with the same CA.
+ */
 function readStored(dir: string) {
   try {
     const read = (name: string) => readFileSync(join(dir, name), 'utf8')
@@ -75,11 +82,20 @@ function readStored(dir: string) {
       cert: read(FILES.cert),
       key: read(FILES.key)
     }
-    new X509Certificate(stored.caCert)
+    if (!keyMatches(stored.caCert, stored.caKey)) return undefined
     new X509Certificate(stored.cert)
     return stored
   } catch {
     return undefined
+  }
+}
+
+/** True when `keyPem` is the private key of the certificate in `certPem`. */
+function keyMatches(certPem: string, keyPem: string): boolean {
+  try {
+    return new X509Certificate(certPem).checkPrivateKey(createPrivateKey(keyPem))
+  } catch {
+    return false
   }
 }
 

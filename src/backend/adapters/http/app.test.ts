@@ -88,4 +88,41 @@ describe('createHttpApp', () => {
 
     expect(response.headers.get('x-content-type-options')).toBe('nosniff')
   })
+
+  it('rejects a request without a Host header', async () => {
+    const response = await app.request(
+      '/api/health',
+      { headers: { authorization: `Bearer ${token}` } },
+      fromPeer('127.0.0.1')
+    )
+
+    expect(response.status).toBe(403)
+  })
+
+  it('rejects a trailing-dot host name', async () => {
+    expect((await health({ host: `localhost.:${port}` })).status).toBe(403)
+  })
+
+  it('accepts the IPv4-mapped loopback peer of a dual-stack socket', async () => {
+    expect((await health({}, '::ffff:127.0.0.1')).status).toBe(200)
+  })
+
+  it('answers the CORS preflight of the task pane without a token', async () => {
+    const response = await app.request(
+      '/api/health',
+      {
+        method: 'OPTIONS',
+        headers: {
+          host: `localhost:${port}`,
+          origin: `https://localhost:${port}`,
+          'access-control-request-method': 'GET',
+          'access-control-request-headers': 'authorization'
+        }
+      },
+      fromPeer('127.0.0.1')
+    )
+
+    expect(response.status).toBe(204)
+    expect(response.headers.get('access-control-allow-origin')).toBe(`https://localhost:${port}`)
+  })
 })

@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { X509Certificate } from 'node:crypto'
+import { createPrivateKey, X509Certificate } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { ensureCertificates } from './certificates'
 
@@ -61,5 +61,31 @@ describe('ensureCertificates', () => {
 
     expect(second.caCert).not.toBe(first.caCert)
     expect(readFileSync(join(dir, 'ca.pem'), 'utf8')).toBe(second.caCert)
+  })
+
+  it('reissues the leaf, keeping the CA, when the leaf key does not match its certificate', async () => {
+    const now = new Date('2026-10-15T00:00:00Z')
+    const first = await ensureCertificates(dir, now)
+    const other = mkdtempSync(join(tmpdir(), 'hub-certs-other-'))
+    const foreign = await ensureCertificates(other, now)
+    rmSync(other, { recursive: true, force: true })
+    writeFileSync(join(dir, 'localhost-key.pem'), foreign.key)
+
+    const second = await ensureCertificates(dir, now)
+
+    expect(second.caCert).toBe(first.caCert)
+    expect(second.key).not.toBe(foreign.key)
+    expect(new X509Certificate(second.cert).checkPrivateKey(createPrivateKey(second.key))).toBe(true)
+  })
+
+  it('starts over when the CA key is corrupt', async () => {
+    const now = new Date('2026-10-15T00:00:00Z')
+    const first = await ensureCertificates(dir, now)
+    writeFileSync(join(dir, 'ca-key.pem'), 'garbage')
+
+    const second = await ensureCertificates(dir, now)
+
+    expect(second.caCert).not.toBe(first.caCert)
+    expect(new X509Certificate(second.cert).checkIssued(new X509Certificate(second.caCert))).toBe(true)
   })
 })

@@ -13,6 +13,8 @@ const { values } = parseArgs({
 
 /** The hub token arrives through the environment so it never shows in a process listing. */
 const token = process.env['STYLISTIC_HUB_TOKEN']
+// Child processes the backend starts later (Pi tools, for instance) must not inherit it.
+delete process.env['STYLISTIC_HUB_TOKEN']
 
 if (!values.certs || !values.port || !token) {
   console.error('backend: missing --certs, --port or STYLISTIC_HUB_TOKEN')
