@@ -6,7 +6,13 @@ const token = 'a'.repeat(64)
 /** Port the app under test serves on. */
 const port = 3000
 /** The app under test. */
-const app = createHttpApp({ token, port, serverVersion: '0.0.1' })
+const app = createHttpApp({
+  token,
+  port,
+  serverVersion: '0.0.1',
+  engine: { start: async () => 'run', get: async () => undefined, cancel: async () => {} },
+  workflows: ['stylistic-workflow']
+})
 
 /** Simulates the TCP peer @hono/node-server exposes to getConnInfo. */
 function fromPeer(remoteAddress: string) {
@@ -124,5 +130,23 @@ describe('createHttpApp', () => {
 
     expect(response.status).toBe(204)
     expect(response.headers.get('access-control-allow-origin')).toBe(`https://localhost:${port}`)
+  })
+
+  it('serves the workflow API behind the same guards', async () => {
+    const trusted = { host: `localhost:${port}`, origin: `https://localhost:${port}` }
+
+    const withToken = await app.request(
+      '/api/workflows/stylistic-workflow',
+      { headers: { ...trusted, authorization: `Bearer ${token}` } },
+      fromPeer('127.0.0.1')
+    )
+    const withoutToken = await app.request(
+      '/api/workflows/stylistic-workflow',
+      { headers: trusted },
+      fromPeer('127.0.0.1')
+    )
+
+    expect(withToken.status).toBe(200)
+    expect(withoutToken.status).toBe(401)
   })
 })

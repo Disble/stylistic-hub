@@ -4,7 +4,9 @@ import { bearerAuth } from 'hono/bearer-auth'
 import { cors } from 'hono/cors'
 import { ipRestriction } from 'hono/ip-restriction'
 import { secureHeaders } from 'hono/secure-headers'
+import type { WorkflowEngine } from '../../ports/workflow-engine'
 import { hostAllowlist } from './host-allowlist'
+import { workflowRoutes } from './workflow-routes'
 
 /** What the HTTP adapter needs from the composition root. */
 export interface HttpAppOptions {
@@ -14,6 +16,10 @@ export interface HttpAppOptions {
   port: number
   /** Version of the local server component, reported by `/api/health`. */
   serverVersion: string
+  /** Runs the workflows the task pane starts and polls. */
+  engine: WorkflowEngine
+  /** Ids of the workflows it runs, as the add-in names them. */
+  workflows: string[]
 }
 
 /** Loopback peers, including the IPv4-mapped form Node reports on dual-stack sockets. */
@@ -23,7 +29,7 @@ const LOOPBACK = ['127.0.0.1', '::1', '::ffff:127.0.0.1']
  * Builds the hub's HTTP surface. Every request must come from loopback with one of our Host
  * names; the API also requires the task pane's origin for CORS and the hub token.
  */
-export function createHttpApp({ token, port, serverVersion }: HttpAppOptions): Hono {
+export function createHttpApp({ token, port, serverVersion, engine, workflows }: HttpAppOptions): Hono {
   const app = new Hono()
 
   app.use(hostAllowlist([`localhost:${port}`, `127.0.0.1:${port}`]))
@@ -33,6 +39,7 @@ export function createHttpApp({ token, port, serverVersion }: HttpAppOptions): H
   app.use('/api/*', bearerAuth({ token }))
 
   app.get('/api/health', (c) => c.json({ status: 'ok', version: serverVersion }))
+  app.route('/api/workflows', workflowRoutes(engine, workflows))
 
   return app
 }

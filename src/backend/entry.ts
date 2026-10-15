@@ -1,8 +1,10 @@
 import { createServer } from 'node:https'
+import { dirname, join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { serve } from '@hono/node-server'
 import { SERVER_VERSION } from '../shared/versions'
 import { createHttpApp } from './adapters/http/app'
+import { createOpenWorkflowEngine } from './adapters/openworkflow/engine'
 import { openDatabase } from './adapters/sqlite/database'
 import { ensureCertificates } from './adapters/tls/certificates'
 
@@ -29,8 +31,18 @@ openDatabase(values.db).close()
 
 /** TLS material for the HTTPS listeners. */
 const { key, cert } = await ensureCertificates(values.certs)
+/** Workflow bodies by the id the add-in uses; the stylistic and feedback workflows join in T6. */
+const workflows = {}
+/** Durable runs in OpenWorkflow's own file next to the hub database. */
+const engine = await createOpenWorkflowEngine({ file: join(dirname(values.db), 'workflows.db'), workflows })
 /** The HTTP surface both listeners serve. */
-const app = createHttpApp({ token, port, serverVersion: SERVER_VERSION })
+const app = createHttpApp({
+  token,
+  port,
+  serverVersion: SERVER_VERSION,
+  engine,
+  workflows: Object.keys(workflows)
+})
 
 // Listen on both loopback addresses and nothing else: `localhost` may resolve to either.
 for (const hostname of ['127.0.0.1', '::1']) {
