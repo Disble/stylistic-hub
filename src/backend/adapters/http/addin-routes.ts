@@ -21,6 +21,8 @@ export function addinRoutes({ dir, token }: AddinRoutesOptions): Hono {
 
   routes.get('/taskpane.html', async (c) => {
     const html = await readFile(join(dir, 'taskpane.html'), 'utf8')
+    // Without the token the task pane would fail every call, so a build without </head> is an error.
+    if (!html.includes('</head>')) throw new Error('taskpane.html has no </head> to put the hub token before')
     c.header('Cache-Control', 'no-store')
     return c.html(html.replace('</head>', `<meta name="stylistic-hub-token" content="${token}"></head>`))
   })

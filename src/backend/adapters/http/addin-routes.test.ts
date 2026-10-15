@@ -4,13 +4,17 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { addinRoutes } from './addin-routes'
 
+/** Temp folder holding the built add-in and a file just outside it. */
+let root: string
 /** A built add-in, as webpack writes it. */
 let dir: string
 /** The hub token the task pane needs. */
 const token = 'b'.repeat(64)
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'hub-addin-'))
+  root = mkdtempSync(join(tmpdir(), 'hub-addin-'))
+  dir = join(root, 'dist')
+  mkdirSync(dir)
   writeFileSync(
     join(dir, 'taskpane.html'),
     '<!doctype html><html><head><title>Stylistic</title></head><body></body></html>'
@@ -18,11 +22,11 @@ beforeEach(() => {
   writeFileSync(join(dir, 'taskpane.js'), 'console.log(1)')
   mkdirSync(join(dir, 'assets'))
   writeFileSync(join(dir, 'assets', 'icon-32.png'), 'png')
-  writeFileSync(join(tmpdir(), 'hub-addin-secret.txt'), 'secret')
+  writeFileSync(join(root, 'hub-addin-secret.txt'), 'secret')
 })
 
 afterEach(() => {
-  rmSync(dir, { recursive: true, force: true })
+  rmSync(root, { recursive: true, force: true })
 })
 
 describe('addinRoutes', () => {
@@ -54,5 +58,14 @@ describe('addinRoutes', () => {
     expect((await routes.request('/../hub-addin-secret.txt')).status).toBe(404)
     expect((await routes.request('/%2e%2e/hub-addin-secret.txt')).status).toBe(404)
     expect((await routes.request('/missing.js')).status).toBe(404)
+  })
+
+  it('fails instead of serving a task pane without the token', async () => {
+    writeFileSync(join(dir, 'taskpane.html'), '<html><body></body></html>')
+
+    const response = await addinRoutes({ dir, token }).request('/taskpane.html')
+
+    expect(response.status).toBe(500)
+    expect(await response.text()).not.toContain(token)
   })
 })

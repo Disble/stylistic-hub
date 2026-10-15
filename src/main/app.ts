@@ -75,7 +75,11 @@ if (!isSingleInstance) {
 
   void app.whenReady().then(async () => {
     const paths = hubPaths(app.getPath('userData'))
-    const status = createServerStatus({ version: SERVER_VERSION, address: `https://localhost:${HUB_PORT}` })
+    const status = createServerStatus({
+      version: SERVER_VERSION,
+      address: `https://localhost:${HUB_PORT}`,
+      onChange: (current) => mainWindow?.webContents.send('hub:server-status', current)
+    })
     const backend = startBackend({
       status,
       certificatesDir: paths.certificates,
@@ -89,8 +93,7 @@ if (!isSingleInstance) {
     registerProviderIpc(await createPiProvider(paths.piDir), () => mainWindow?.webContents)
     registerScreenIpc(
       status,
-      createWordIntegration({ caFile: paths.caCert, manifestFile: join(ADDIN_DIR, 'manifest.xml') }),
-      () => mainWindow?.webContents
+      createWordIntegration({ caFile: paths.caCert, manifestFile: join(ADDIN_DIR, 'manifest.xml') })
     )
     mainWindow = createWindow()
     app.on('activate', () => {

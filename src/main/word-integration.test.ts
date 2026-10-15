@@ -183,4 +183,12 @@ describe('execute', () => {
     expect(failed.code).toBe(3)
     expect(missing.code).toBe(1)
   })
+
+  it('reports a removal that did not happen', async () => {
+    const run = commands({ 'reg query': { code: 0, stdout: `    ${addinId}    REG_SZ    ${manifestFile}` } })
+
+    await expect(createWordIntegration({ run, caFile, manifestFile }).disconnect()).rejects.toThrow(
+      /Could not remove/
+    )
+  })
 })

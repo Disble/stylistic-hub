@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -209,5 +209,6 @@ describe('createHttpApp', () => {
     expect(await page.text()).toContain(token)
     expect(foreign.status).toBe(403)
     expect(api.status).toBe(401)
+    rmSync(addinDir, { recursive: true, force: true })
   })
 })

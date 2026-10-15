@@ -86,6 +86,8 @@ export function createWordIntegration({ run = execute, caFile, manifestFile }: W
 
     async disconnect(): Promise<void> {
       await run('reg', ['delete', DEVELOPER_KEY, '/v', addinId(), '/f'])
+      // `reg delete` also fails when the value is already gone, so check the outcome instead.
+      if (await addinRegistered()) throw new Error('Could not remove Stylistic from Word')
     }
   }
 }
