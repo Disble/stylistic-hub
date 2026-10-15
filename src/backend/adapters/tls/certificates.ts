@@ -44,11 +44,7 @@ export async function ensureCertificates(dir: string, now = new Date()): Promise
   const stored = readStored(dir)
 
   if (stored && isFresh(stored.caCert, now)) {
-    if (
-      isFresh(stored.cert, now) &&
-      issuedBy(stored.cert, stored.caCert) &&
-      keyMatches(stored.cert, stored.key)
-    ) {
+    if (leafUsable(stored, now)) {
       return { key: stored.key, cert: stored.cert, caCert: stored.caCert }
     }
     const caKey = await importPrivateKey(stored.caKey)
@@ -70,23 +66,34 @@ export async function ensureCertificates(dir: string, now = new Date()): Promise
 }
 
 /**
- * Reads every stored file, or nothing when one is missing, unparsable or when the CA key does not
- * belong to the CA certificate. A bad leaf is caught later and reissued with the same CA.
+ * Reads the stored CA, or nothing when its files are missing, unparsable or do not belong
+ * together. The leaf files are read as they are; a bad leaf is reissued with the same CA.
  */
 function readStored(dir: string) {
-  try {
-    const read = (name: string) => readFileSync(join(dir, name), 'utf8')
-    const stored = {
-      caCert: read(FILES.caCert),
-      caKey: read(FILES.caKey),
-      cert: read(FILES.cert),
-      key: read(FILES.key)
+  const read = (name: string) => {
+    try {
+      return readFileSync(join(dir, name), 'utf8')
+    } catch {
+      return ''
     }
-    if (!keyMatches(stored.caCert, stored.caKey)) return undefined
-    new X509Certificate(stored.cert)
-    return stored
+  }
+  const stored = {
+    caCert: read(FILES.caCert),
+    caKey: read(FILES.caKey),
+    cert: read(FILES.cert),
+    key: read(FILES.key)
+  }
+  return keyMatches(stored.caCert, stored.caKey) ? stored : undefined
+}
+
+/** True when the stored leaf parses, is fresh, was signed by the CA and matches its key. */
+function leafUsable(stored: { caCert: string; cert: string; key: string }, now: Date): boolean {
+  try {
+    return (
+      isFresh(stored.cert, now) && issuedBy(stored.cert, stored.caCert) && keyMatches(stored.cert, stored.key)
+    )
   } catch {
-    return undefined
+    return false
   }
 }
 

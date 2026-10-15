@@ -25,7 +25,6 @@ export function openDatabase(file: string): DatabaseSync {
   const db = new DatabaseSync(file)
   try {
     db.exec('PRAGMA journal_mode = WAL')
-    db.exec('PRAGMA foreign_keys = ON')
     migrate(db)
     return db
   } catch (error) {
@@ -34,21 +33,31 @@ export function openDatabase(file: string): DatabaseSync {
   }
 }
 
-/** Applies the migrations the file has not seen, each in its own transaction. */
+/**
+ * Applies the migrations the file has not seen, each in its own write transaction. The version is
+ * read inside the transaction, so two processes opening the file at once cannot both migrate it.
+ */
 function migrate(db: DatabaseSync): void {
-  const { user_version: current } = db.prepare('PRAGMA user_version').get() as { user_version: number }
-  if (current > MIGRATIONS.length) {
-    throw new Error(`The database was written by a newer Stylistic Hub (schema ${current}); update the hub.`)
-  }
-  MIGRATIONS.slice(current).forEach((statement, offset) => {
-    db.exec('BEGIN')
+  for (;;) {
+    db.exec('BEGIN IMMEDIATE')
     try {
-      db.exec(statement)
-      db.exec(`PRAGMA user_version = ${current + offset + 1}`)
+      const { user_version: current } = db.prepare('PRAGMA user_version').get() as { user_version: number }
+      if (current > MIGRATIONS.length) {
+        throw new Error(
+          `The database was written by a newer Stylistic Hub (schema ${current}); update the hub.`
+        )
+      }
+      const next = MIGRATIONS[current]
+      if (next === undefined) {
+        db.exec('COMMIT')
+        return
+      }
+      db.exec(next)
+      db.exec(`PRAGMA user_version = ${current + 1}`)
       db.exec('COMMIT')
     } catch (error) {
       db.exec('ROLLBACK')
       throw error
     }
-  })
+  }
 }

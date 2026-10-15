@@ -53,10 +53,9 @@ describe('openDatabase', () => {
     expect(() => openDatabase(file)).toThrow(/newer/)
   })
 
-  it('enforces foreign keys and uses WAL', () => {
+  it('uses WAL', () => {
     const db = openDatabase(join(dir, 'stylistic.db'))
 
-    expect(db.prepare('PRAGMA foreign_keys').get()).toEqual({ foreign_keys: 1 })
     expect(db.prepare('PRAGMA journal_mode').get()).toEqual({ journal_mode: 'wal' })
     db.close()
   })

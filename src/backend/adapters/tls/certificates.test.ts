@@ -88,4 +88,18 @@ describe('ensureCertificates', () => {
     expect(second.caCert).not.toBe(first.caCert)
     expect(new X509Certificate(second.cert).checkIssued(new X509Certificate(second.caCert))).toBe(true)
   })
+
+  it('reissues the leaf, keeping the CA, when the leaf certificate is corrupt or missing', async () => {
+    const now = new Date('2026-10-15T00:00:00Z')
+    const first = await ensureCertificates(dir, now)
+    writeFileSync(join(dir, 'localhost.pem'), 'garbage')
+
+    const corrupt = await ensureCertificates(dir, now)
+    rmSync(join(dir, 'localhost.pem'))
+    const missing = await ensureCertificates(dir, now)
+
+    expect(corrupt.caCert).toBe(first.caCert)
+    expect(missing.caCert).toBe(first.caCert)
+    expect(new X509Certificate(missing.cert).checkIssued(new X509Certificate(first.caCert))).toBe(true)
+  })
 })
