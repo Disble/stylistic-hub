@@ -1,10 +1,24 @@
 {
   "version": 1,
   "enforcedPrefixes": [
+    "src/backend/",
     "src/main/",
     "src/renderer/"
   ],
   "features": [
+    {
+      "id": "backend",
+      "path": "src/backend/",
+      "defaultTier": "infrastructure",
+      "reason": "Composition root of the backend utilityProcess: wiring only",
+      "overrides": [
+        {
+          "path": "src/backend/adapters/",
+          "tier": "important",
+          "reason": "Glue to Pi, OpenWorkflow, node:sqlite and Hono, including the HTTP security guards"
+        }
+      ]
+    },
     {
       "id": "shell",
       "path": "src/main/",
@@ -20,6 +34,11 @@
           "path": "src/main/app.ts",
           "tier": "infrastructure",
           "reason": "Electron lifecycle wiring, exercised by launching the app"
+        },
+        {
+          "path": "src/main/backend-host.ts",
+          "tier": "infrastructure",
+          "reason": "Forks the utilityProcess; exercised by launching the app"
         }
       ]
     },

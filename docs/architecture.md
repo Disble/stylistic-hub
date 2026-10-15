@@ -28,6 +28,16 @@ Hono (HTTP) and Electron are the outer driving side and get no port: they are en
 - One adapter per adopted tool; keep it thin (glue, not engines).
 - Any new port records its reason in the table above.
 
+## Custom code and why
+
+Per the "do not reinvent the wheel" principle, every piece we wrote ourselves is listed here.
+
+| Code | Why no existing tool |
+|---|---|
+| `src/backend/adapters/http/host-allowlist.ts` | Hono ships CORS, IP restriction and bearer auth (all used) but no Host-header guard, which DNS rebinding requires. |
+| `src/main/supervisor.ts` | No maintained package restarts Electron's `utilityProcess` with backoff; ~50 lines. |
+| `src/backend/adapters/tls/certificates.ts` | Thin use of `@peculiar/x509` to issue a local CA and a localhost leaf; mkcert/devcert need an external binary or admin rights. |
+
 ## Folder layout
 
 The boundaries are enforced by fallow from the zones in `.dharness/fallow.jsonc`, run by `dharness check` on every commit.

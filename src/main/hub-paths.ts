@@ -8,6 +8,8 @@ export interface HubPaths {
   database: string
   /** Local CA and the localhost certificate used to serve the task pane. */
   certificates: string
+  /** This install's hub token, the secret the task pane presents to the API. */
+  token: string
 }
 
 /** Resolves every hub path from Electron's `userData` folder. */
@@ -15,6 +17,7 @@ export function hubPaths(userData: string): HubPaths {
   return {
     piDir: join(userData, 'pi'),
     database: join(userData, 'stylistic.db'),
-    certificates: join(userData, 'certs')
+    certificates: join(userData, 'certs'),
+    token: join(userData, 'hub-token')
   }
 }

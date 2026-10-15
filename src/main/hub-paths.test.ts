@@ -9,7 +9,8 @@ describe('hubPaths', () => {
     expect(hubPaths(userData)).toEqual({
       piDir: join(userData, 'pi'),
       database: join(userData, 'stylistic.db'),
-      certificates: join(userData, 'certs')
+      certificates: join(userData, 'certs'),
+      token: join(userData, 'hub-token')
     })
   })
 })

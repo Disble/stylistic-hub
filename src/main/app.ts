@@ -1,5 +1,9 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, shell } from 'electron'
+import { HUB_PORT } from '../shared/versions'
+import { startBackend } from './backend-host'
+import { hubPaths } from './hub-paths'
+import { loadOrCreateHubToken } from './hub-token'
 
 /** False when another hub is already running for this Windows user; this one then quits. */
 const isSingleInstance = app.requestSingleInstanceLock()
@@ -53,6 +57,13 @@ if (!isSingleInstance) {
   })
 
   void app.whenReady().then(() => {
+    const paths = hubPaths(app.getPath('userData'))
+    const backend = startBackend({
+      certificatesDir: paths.certificates,
+      port: HUB_PORT,
+      token: loadOrCreateHubToken(paths.token)
+    })
+    app.on('will-quit', () => backend.stop())
     mainWindow = createWindow()
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow()
