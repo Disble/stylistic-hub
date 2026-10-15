@@ -9,6 +9,7 @@ import { createPiLlm } from './adapters/pi/pi-llm'
 import { createChosenModel } from './adapters/pi/pi-runtime'
 import { openDatabase } from './adapters/sqlite/database'
 import { SqliteDocumentRepository } from './adapters/sqlite/document-repository'
+import { SqlitePreferencesRepository } from './adapters/sqlite/preferences-repository'
 import { ensureCertificates } from './adapters/tls/certificates'
 import { STYLISTIC_WORKFLOW_ID, stylisticWorkflow } from './correction/stylistic-workflow'
 
@@ -44,13 +45,14 @@ const llm = createPiLlm({ complete: (m, c, o) => pi.runtime.complete(m, c, o), g
 
 /** TLS material for the HTTPS listeners. */
 const { key, cert } = await ensureCertificates(values.certs)
+/** The user's correction preferences, edited from the add-in's settings. */
+const preferences = new SqlitePreferencesRepository(db)
 /** Workflow bodies by the id the add-in uses. */
 const workflows = {
-  // Correction preferences arrive with T6c.
   [STYLISTIC_WORKFLOW_ID]: stylisticWorkflow({
     llm,
     documents: new SqliteDocumentRepository(db),
-    correctionInstructions: async () => undefined
+    correctionInstructions: async () => preferences.getCorrectionInstructions() ?? undefined
   })
 }
 /** Durable runs in OpenWorkflow's own file next to the hub database. */
@@ -61,7 +63,8 @@ const app = createHttpApp({
   port,
   serverVersion: SERVER_VERSION,
   engine,
-  workflows: Object.keys(workflows)
+  workflows: Object.keys(workflows),
+  preferences
 })
 
 // Listen on both loopback addresses and nothing else: `localhost` may resolve to either.

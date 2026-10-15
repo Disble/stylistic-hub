@@ -13,6 +13,10 @@ const MIGRATIONS: readonly string[] = [
     processing_config TEXT NOT NULL
       CHECK (json_valid(processing_config) AND json_type(processing_config) = 'object'),
     profile_markdown TEXT NOT NULL
+  ) STRICT`,
+  `CREATE TABLE preferences (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    correction_instructions TEXT CHECK (length(correction_instructions) <= 4000)
   ) STRICT`
 ]
 

@@ -11,7 +11,8 @@ const app = createHttpApp({
   port,
   serverVersion: '0.0.1',
   engine: { start: async () => 'run', get: async () => undefined, cancel: async () => {} },
-  workflows: ['stylistic-workflow']
+  workflows: ['stylistic-workflow'],
+  preferences: { getCorrectionInstructions: () => null, setCorrectionInstructions: () => null }
 })
 
 /** Simulates the TCP peer @hono/node-server exposes to getConnInfo. */
@@ -145,6 +146,20 @@ describe('createHttpApp', () => {
       { headers: trusted },
       fromPeer('127.0.0.1')
     )
+
+    expect(withToken.status).toBe(200)
+    expect(withoutToken.status).toBe(401)
+  })
+
+  it('serves the preferences behind the same guards', async () => {
+    const trusted = { host: `localhost:${port}`, origin: `https://localhost:${port}` }
+
+    const withToken = await app.request(
+      '/user/preferences',
+      { headers: { ...trusted, authorization: `Bearer ${token}` } },
+      fromPeer('127.0.0.1')
+    )
+    const withoutToken = await app.request('/user/preferences', { headers: trusted }, fromPeer('127.0.0.1'))
 
     expect(withToken.status).toBe(200)
     expect(withoutToken.status).toBe(401)
