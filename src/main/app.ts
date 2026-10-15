@@ -60,6 +60,7 @@ if (!isSingleInstance) {
     const paths = hubPaths(app.getPath('userData'))
     const backend = startBackend({
       certificatesDir: paths.certificates,
+      database: paths.database,
       port: HUB_PORT,
       token: loadOrCreateHubToken(paths.token)
     })

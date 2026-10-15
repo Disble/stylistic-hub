@@ -16,6 +16,16 @@
           "path": "src/backend/adapters/",
           "tier": "important",
           "reason": "Glue to Pi, OpenWorkflow, node:sqlite and Hono, including the HTTP security guards"
+        },
+        {
+          "path": "src/backend/profile/",
+          "tier": "core",
+          "reason": "Per-document style profile read and written by both workflows"
+        },
+        {
+          "path": "src/backend/ports/",
+          "tier": "infrastructure",
+          "reason": "Interface declarations only"
         }
       ]
     },

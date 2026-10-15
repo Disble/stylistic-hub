@@ -6,6 +6,7 @@ import { createSupervisor, type Supervisor } from './supervisor'
 /** What the backend process needs to start. */
 export interface BackendOptions {
   certificatesDir: string
+  database: string
   port: number
   token: string
 }
@@ -14,10 +15,10 @@ export interface BackendOptions {
 const BACKOFF_MS = [1000, 2000, 5000, 10_000, 30_000]
 
 /** Runs the backend in its own utility process and restarts it if it crashes. */
-export function startBackend({ certificatesDir, port, token }: BackendOptions): Supervisor {
+export function startBackend({ certificatesDir, database, port, token }: BackendOptions): Supervisor {
   const supervisor = createSupervisor({
     spawn: () =>
-      utilityProcess.fork(backendPath, [`--certs=${certificatesDir}`, `--port=${port}`], {
+      utilityProcess.fork(backendPath, [`--certs=${certificatesDir}`, `--db=${database}`, `--port=${port}`], {
         serviceName: 'stylistic-backend',
         stdio: 'inherit',
         env: { ...process.env, STYLISTIC_HUB_TOKEN: token }

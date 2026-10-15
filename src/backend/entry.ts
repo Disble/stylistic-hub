@@ -3,11 +3,12 @@ import { parseArgs } from 'node:util'
 import { serve } from '@hono/node-server'
 import { SERVER_VERSION } from '../shared/versions'
 import { createHttpApp } from './adapters/http/app'
+import { openDatabase } from './adapters/sqlite/database'
 import { ensureCertificates } from './adapters/tls/certificates'
 
 /** Arguments the main process passes when it forks this utility process. */
 const { values } = parseArgs({
-  options: { certs: { type: 'string' }, port: { type: 'string' } },
+  options: { certs: { type: 'string' }, db: { type: 'string' }, port: { type: 'string' } },
   strict: true
 })
 
@@ -16,13 +17,16 @@ const token = process.env['STYLISTIC_HUB_TOKEN']
 // Child processes the backend starts later (Pi tools, for instance) must not inherit it.
 delete process.env['STYLISTIC_HUB_TOKEN']
 
-if (!values.certs || !values.port || !token) {
-  console.error('backend: missing --certs, --port or STYLISTIC_HUB_TOKEN')
+if (!values.certs || !values.db || !values.port || !token) {
+  console.error('backend: missing --certs, --db, --port or STYLISTIC_HUB_TOKEN')
   process.exit(2)
 }
 
 /** Port shared by the task pane and the API. */
 const port = Number(values.port)
+// Migrate before accepting requests. The workflows (T6) will keep this connection open.
+openDatabase(values.db).close()
+
 /** TLS material for the HTTPS listeners. */
 const { key, cert } = await ensureCertificates(values.certs)
 /** The HTTP surface both listeners serve. */
