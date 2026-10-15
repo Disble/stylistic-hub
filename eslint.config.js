@@ -4,8 +4,8 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import globals from 'globals'
 import tseslint from 'typescript-eslint'
 // dharness:eslint-import begin — rewritten by `dharness sync`; edits here are lost.
-import dharnessPlugin from 'dharness-eslint-plugin'
-import dharnessLayer from './.dharness/eslint.config.mjs'
+import dharnessPlugin from "dharness-eslint-plugin";
+import dharnessLayer from "./.dharness/eslint.config.mjs";
 // dharness:eslint-import end
 
 // Architecture boundaries are enforced by fallow (.dharness/fallow.jsonc), not here.
