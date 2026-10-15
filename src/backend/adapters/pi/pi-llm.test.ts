@@ -90,13 +90,52 @@ describe('createPiLlm', () => {
     expect(fn.mock.calls[0]?.[2]).not.toHaveProperty('toolChoice')
   })
 
+  it('leaves the tool choice alone on models where Pi always thinks, which refuse a forced tool', async () => {
+    const fn = answering(fauxAssistantMessage(fauxToolCall('submit', { verdict: 'ok', notes: [] })))
+    const thinking = {
+      ...modelOf('anthropic-messages'),
+      compat: { supportsMidConvoEffort: true }
+    } as Model<Api>
+    const llm = createPiLlm({ complete: fn, getModel: async () => thinking })
+
+    await expect(llm.structuredCall(request)).resolves.toEqual({ verdict: 'ok', notes: [] })
+    expect(fn.mock.calls[0]?.[2]).not.toHaveProperty('toolChoice')
+  })
+
+  it('accepts null for an optional field, as strict tool schemas send it', async () => {
+    const optional = z.object({ anchor: z.string(), suggestedText: z.string().optional() })
+    const fn = answering(
+      fauxAssistantMessage(fauxToolCall('submit', { anchor: 'fuistes', suggestedText: null }))
+    )
+    const llm = createPiLlm({ complete: fn, getModel: async () => modelOf('anthropic-messages') })
+
+    await expect(llm.structuredCall({ ...request, schema: optional })).resolves.toEqual({ anchor: 'fuistes' })
+  })
+
+  it('keeps null where the schema allows it', async () => {
+    const nullable = z.object({ previous: z.string().nullable() })
+    const fn = answering(fauxAssistantMessage(fauxToolCall('submit', { previous: null })))
+    const llm = createPiLlm({ complete: fn, getModel: async () => modelOf('anthropic-messages') })
+
+    await expect(llm.structuredCall({ ...request, schema: nullable })).resolves.toEqual({ previous: null })
+  })
+
+  it('sends the schema without its $schema dialect marker', async () => {
+    const fn = answering(fauxAssistantMessage(fauxToolCall('submit', { verdict: 'ok', notes: [] })))
+    const llm = createPiLlm({ complete: fn, getModel: async () => modelOf('anthropic-messages') })
+
+    await llm.structuredCall(request)
+
+    expect((fn.mock.calls[0]?.[1] as Context).tools?.[0]?.parameters).not.toHaveProperty('$schema')
+  })
+
   it('fails when the model answers with text instead of the submit call', async () => {
     const llm = createPiLlm({
       complete: answering(fauxAssistantMessage(fauxText('Here is my answer'))),
       getModel: async () => modelOf('anthropic-messages')
     })
 
-    await expect(llm.structuredCall(request)).rejects.toThrow(/did not call submit/)
+    await expect(llm.structuredCall(request)).rejects.toThrow(/did not call submit \(stop reason: \w+\)/)
   })
 
   it('fails when the submitted answer does not match the schema', async () => {
