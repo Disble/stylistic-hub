@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { HubBridge } from '../shared/bridge'
+import type { HubBridge, ServerStatus } from '../shared/bridge'
 import type { LoginEvent } from '../shared/login/login'
 
 /** The renderer-facing API, exposed as `window.hub`. */
@@ -22,6 +22,14 @@ const bridge: HubBridge = {
       const handler = (_event: unknown, event: LoginEvent) => listener(event)
       ipcRenderer.on('hub:login-event', handler)
       return () => void ipcRenderer.removeListener('hub:login-event', handler)
+    }
+  },
+  server: {
+    status: () => ipcRenderer.invoke('hub:server:status'),
+    onStatus: (listener) => {
+      const handler = (_event: unknown, status: ServerStatus) => listener(status)
+      ipcRenderer.on('hub:server-status', handler)
+      return () => void ipcRenderer.removeListener('hub:server-status', handler)
     }
   },
   word: {

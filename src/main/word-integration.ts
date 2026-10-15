@@ -35,8 +35,10 @@ export const execute: RunCommand = (command, args) =>
 export function createWordIntegration({ run = execute, caFile, manifestFile }: WordIntegrationOptions) {
   const available = () => existsSync(caFile) && existsSync(manifestFile)
   const thumbprint = () => new X509Certificate(readFileSync(caFile)).fingerprint.replaceAll(':', '')
+  const manifestValue = (tag: string) =>
+    new RegExp(`<${tag}>([^<]+)</${tag}>`).exec(readFileSync(manifestFile, 'utf8'))?.[1]
   const addinId = () => {
-    const id = /<Id>([^<]+)<\/Id>/.exec(readFileSync(manifestFile, 'utf8'))?.[1]
+    const id = manifestValue('Id')
     if (!id) throw new Error(`The add-in manifest has no <Id>: ${manifestFile}`)
     return id
   }
@@ -50,7 +52,13 @@ export function createWordIntegration({ run = execute, caFile, manifestFile }: W
   return {
     async status(): Promise<WordStatus> {
       if (!available()) return { available: false, caTrusted: false, addinRegistered: false }
-      return { available: true, caTrusted: await caTrusted(), addinRegistered: await addinRegistered() }
+      const version = manifestValue('Version')
+      return {
+        available: true,
+        caTrusted: await caTrusted(),
+        addinRegistered: await addinRegistered(),
+        ...(version ? { version } : {})
+      }
     },
 
     async connect(): Promise<void> {

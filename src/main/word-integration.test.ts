@@ -69,7 +69,12 @@ describe('createWordIntegration', () => {
     })
     const word = createWordIntegration({ run, caFile, manifestFile })
 
-    expect(await word.status()).toEqual({ available: true, caTrusted: true, addinRegistered: true })
+    expect(await word.status()).toEqual({
+      available: true,
+      caTrusted: true,
+      addinRegistered: true,
+      version: '1.0.0.0'
+    })
     expect(run).toHaveBeenCalledWith('certutil', ['-user', '-store', 'Root', thumbprint])
     expect(run).toHaveBeenCalledWith('reg', ['query', developerKey, '/v', addinId])
   })
@@ -80,7 +85,8 @@ describe('createWordIntegration', () => {
     expect(await createWordIntegration({ run, caFile, manifestFile }).status()).toEqual({
       available: true,
       caTrusted: false,
-      addinRegistered: false
+      addinRegistered: false,
+      version: '1.0.0.0'
     })
   })
 

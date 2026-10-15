@@ -1,6 +1,7 @@
 import { utilityProcess } from 'electron'
 // fallow-ignore-next-line boundary-violation -- build-time bundle path for utilityProcess.fork, not a code import
 import backendPath from '../backend/entry?modulePath'
+import type { createServerStatus } from './server-status'
 import { createSupervisor, type Supervisor } from './supervisor'
 
 /** What the backend process needs to start. */
@@ -13,6 +14,8 @@ export interface BackendOptions {
   /** The built add-in, served when present. */
   addinDir?: string | undefined
   token: string
+  /** Told when the process starts and when it exits unexpectedly. */
+  status: ReturnType<typeof createServerStatus>
 }
 
 /** Restart delays after consecutive crashes. */
@@ -25,11 +28,12 @@ export function startBackend({
   piDir,
   port,
   token,
-  addinDir
+  addinDir,
+  status
 }: BackendOptions): Supervisor {
   const supervisor = createSupervisor({
-    spawn: () =>
-      utilityProcess.fork(
+    spawn: () => {
+      const child = utilityProcess.fork(
         backendPath,
         [
           `--certs=${certificatesDir}`,
@@ -43,10 +47,15 @@ export function startBackend({
           stdio: 'inherit',
           env: { ...process.env, STYLISTIC_HUB_TOKEN: token }
         }
-      ),
+      )
+      status.started()
+      return child
+    },
     backoffMs: BACKOFF_MS,
-    onExit: ({ code, restartInMs }) =>
-      console.warn(`backend exited with code ${code}; restarting in ${restartInMs} ms`)
+    onExit: (exit) => {
+      console.warn(`backend exited with code ${exit.code}; restarting in ${exit.restartInMs} ms`)
+      status.exited(exit)
+    }
   })
   supervisor.start()
   return supervisor

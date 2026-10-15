@@ -2,13 +2,14 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { app, BrowserWindow, shell } from 'electron'
 import { safeExternalUrl } from '../shared/login/external-link'
-import { HUB_PORT } from '../shared/versions'
+import { HUB_PORT, SERVER_VERSION } from '../shared/versions'
 import { startBackend } from './backend-host'
 import { hubPaths } from './hub-paths'
 import { loadOrCreateHubToken } from './hub-token'
 import { registerProviderIpc } from './ipc-provider'
-import { registerWordIpc } from './ipc-word'
+import { registerScreenIpc } from './ipc-screens'
 import { createPiProvider } from './pi-provider'
+import { createServerStatus } from './server-status'
 import { createWordIntegration } from './word-integration'
 
 /**
@@ -74,7 +75,9 @@ if (!isSingleInstance) {
 
   void app.whenReady().then(async () => {
     const paths = hubPaths(app.getPath('userData'))
+    const status = createServerStatus({ version: SERVER_VERSION, address: `https://localhost:${HUB_PORT}` })
     const backend = startBackend({
+      status,
       certificatesDir: paths.certificates,
       database: paths.database,
       piDir: paths.piDir,
@@ -84,8 +87,10 @@ if (!isSingleInstance) {
     })
     app.on('will-quit', () => backend.stop())
     registerProviderIpc(await createPiProvider(paths.piDir), () => mainWindow?.webContents)
-    registerWordIpc(
-      createWordIntegration({ caFile: paths.caCert, manifestFile: join(ADDIN_DIR, 'manifest.xml') })
+    registerScreenIpc(
+      status,
+      createWordIntegration({ caFile: paths.caCert, manifestFile: join(ADDIN_DIR, 'manifest.xml') }),
+      () => mainWindow?.webContents
     )
     mainWindow = createWindow()
     app.on('activate', () => {

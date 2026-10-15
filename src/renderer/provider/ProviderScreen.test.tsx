@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HubBridge, ModelSummary, ProviderSummary } from '../../shared/bridge'
 import type { LoginEvent } from '../../shared/login/login'
+import { fakeHub } from '../fake-hub'
 import { ProviderScreen } from './ProviderScreen'
 
 /** Providers the fake bridge reports. */
@@ -55,15 +56,8 @@ beforeEach(() => {
       return () => listeners.delete(listener)
     }
   }
-  window.hub = {
-    versions: { electron: '44', node: '24' },
-    provider: api,
-    word: {
-      status: async () => ({ available: false, caTrusted: false, addinRegistered: false }),
-      connect: async () => undefined,
-      disconnect: async () => undefined
-    }
-  }
+  // The same object, not a copy: tests swap its methods after the screen mounts.
+  window.hub = { ...fakeHub(), provider: api }
 })
 
 afterEach(cleanup)

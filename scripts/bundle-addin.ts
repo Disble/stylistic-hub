@@ -9,7 +9,11 @@ const addon = resolve(process.argv[2] ?? '../stylistic-addon')
 /** Where the hub serves the add-in from in development and packs it from. */
 const target = resolve('resources/addin')
 
-execFileSync('bun', ['run', 'build'], { cwd: addon, stdio: 'inherit', shell: process.platform === 'win32' })
+execFileSync('bun', ['run', 'build:hub'], {
+  cwd: addon,
+  stdio: 'inherit',
+  shell: process.platform === 'win32'
+})
 if (!existsSync(join(addon, 'dist', 'manifest.xml'))) throw new Error(`No dist/manifest.xml in ${addon}`)
 rmSync(target, { recursive: true, force: true })
 cpSync(join(addon, 'dist'), target, { recursive: true })

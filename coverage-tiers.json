@@ -66,7 +66,7 @@
           "reason": "Electron IPC wiring, exercised by launching the app"
         },
         {
-          "path": "src/main/ipc-word.ts",
+          "path": "src/main/ipc-screens.ts",
           "tier": "infrastructure",
           "reason": "Electron IPC wiring, exercised by launching the app"
         }
@@ -82,6 +82,11 @@
           "path": "src/renderer/main.tsx",
           "tier": "infrastructure",
           "reason": "React mount point"
+        },
+        {
+          "path": "src/renderer/fake-hub.ts",
+          "tier": "infrastructure",
+          "reason": "Test double of window.hub, imported only by renderer tests"
         }
       ]
     }
