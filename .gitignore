@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+dist/
+release/
+
+# Test and coverage
+coverage/
+
+# Logs
+*.log
+
+# Environment and local config
+.env
+.env.*
+!.env.example
+
+# OS and editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+
+# Tool indexes
+.codegraph/
