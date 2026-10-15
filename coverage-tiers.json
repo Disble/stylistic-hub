@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "enforcedPrefixes": [
+    "src/main/",
+    "src/renderer/"
+  ],
+  "features": [
+    {
+      "id": "shell",
+      "path": "src/main/",
+      "defaultTier": "important",
+      "reason": "Electron main process: backend supervisor, paths, tray and window",
+      "overrides": [
+        {
+          "path": "src/main/index.ts",
+          "tier": "infrastructure",
+          "reason": "Pure re-export barrel"
+        },
+        {
+          "path": "src/main/app.ts",
+          "tier": "infrastructure",
+          "reason": "Electron lifecycle wiring, exercised by launching the app"
+        }
+      ]
+    },
+    {
+      "id": "renderer",
+      "path": "src/renderer/",
+      "defaultTier": "important",
+      "reason": "Hub screens: Home, Word, Server and Provider",
+      "overrides": [
+        {
+          "path": "src/renderer/main.tsx",
+          "tier": "infrastructure",
+          "reason": "React mount point"
+        }
+      ]
+    }
+  ]
+}

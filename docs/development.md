@@ -18,6 +18,7 @@ The Electron binary downloads on first run (`bunx electron --version`).
 | `bun run start` | Run the built app |
 | `bun run check` | Format check, lint, typecheck and tests — run before every push |
 | `bun run test` | Unit tests (vitest) |
+| `bun run test:coverage` | Tests with the coverage tiers enforced (CORE 100%, IMPORTANT 80%) |
 | `bun run dist` | Build the unsigned per-user NSIS installer into `release/` |
 
 ## Git hooks and the dharness gate
@@ -25,6 +26,7 @@ The Electron binary downloads on first run (`bunx electron --version`).
 The project uses [dharness](https://github.com/Disble/dharness) as its development harness. `dharness sync` owns `.dharness/` and the marked blocks in `eslint.config.js`; re-run it after changing tooling and to detect drift.
 
 - `pre-commit`: `dharness check` (ESLint with the dharness rules and react-doctor on the staged change, then fallow), plus Prettier and typecheck.
+- `pre-commit` also runs the coverage-tier gate: `coverage-tiers.json` classifies every file under `src/main/` and `src/renderer/` (and `src/backend/` from T2 on). New files in those folders must belong to a declared feature.
 - Mutation testing: `dharness mutate <path>` once a file's tests are green.
 - `commit-msg`: Conventional Commits (`feat:`, `fix:`, `docs:`…).
 - `pre-push`: the test suite.

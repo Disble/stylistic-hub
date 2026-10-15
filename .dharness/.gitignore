@@ -9,3 +9,5 @@
 !evidence.json
 !eslint.config.mjs
 !eslint.config.cjs
+!coverage-tiers.mjs
+!vitest.coverage.mjs

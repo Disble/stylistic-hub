@@ -12,3 +12,7 @@ odd/
 .fallowrc.json
 # dharness rewrites a marked block here in its own style
 eslint.config.js
+vitest.config.ts
+coverage-tiers.json
+.agents/
+.claude/

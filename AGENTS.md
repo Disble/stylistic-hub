@@ -31,3 +31,10 @@ Bun, electron-vite 5, TypeScript, vitest. Commands, hooks and layout: [`docs/dev
 ## Research artifacts
 
 - `research_notes/` and `reports/` hold research for this project. Never rewrite an earlier report; create a new one.
+
+<!-- dharness:coverage-tiers begin — rewritten by `dharness sync`; edits here are lost. -->
+Coverage targets: CORE 100%, IMPORTANT 80%, INFRASTRUCTURE 0%; classification lives
+in `coverage-tiers.json`, and the wired gate enforces it. Before changing one, read
+`.agents/skills/coverage-tiers/SKILL.md`, shipped by the same binary that wired this gate. dharness owns
+the guide that explains the tiers; this region names no path a project lacks.
+<!-- dharness:coverage-tiers end -->

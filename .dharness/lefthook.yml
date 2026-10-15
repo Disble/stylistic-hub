@@ -2,3 +2,5 @@ pre-commit:
   commands:
     dharness:
       run: dharness check
+    coverage:
+      run: bunx --no-install vitest run --coverage --config .dharness/vitest.coverage.mjs
