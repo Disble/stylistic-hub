@@ -109,4 +109,18 @@ describe('workflowRoutes', () => {
     expect((await call(`/stylistic-workflow/start?runId=${runId}`, post({ inputData: {} }))).status).toBe(409)
     expect(engine.cancel).not.toHaveBeenCalled()
   })
+
+  it('starts a run once when two starts race', async () => {
+    const engine = fakeEngine()
+    const call = routesWith(engine)
+    const runId = await createRun(call)
+
+    const responses = await Promise.all([
+      call(`/stylistic-workflow/start?runId=${runId}`, post({ inputData: {} })),
+      call(`/stylistic-workflow/start?runId=${runId}`, post({ inputData: {} }))
+    ])
+
+    expect(responses.map((r) => r.status).sort()).toEqual([200, 409])
+    expect(engine.start).toHaveBeenCalledTimes(1)
+  })
 })

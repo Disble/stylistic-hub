@@ -21,6 +21,8 @@ export interface PiLlmDeps {
   complete: CompleteFn
   /** The model chosen on the Provider screen, or nothing when none is. */
   getModel(): Promise<Model<Api> | undefined>
+  /** How long one call may take before it is abandoned; a hung call would hold a worker slot. */
+  timeoutMs?: number
 }
 
 /** Name of the only tool the model is given. */
@@ -69,7 +71,7 @@ function withoutNulls(value: unknown): unknown {
  * is forced to call, and zod validates what it submits. Custom code: Pi has no structured-output
  * call (see docs/architecture.md).
  */
-export function createPiLlm({ complete, getModel }: PiLlmDeps): LlmPort {
+export function createPiLlm({ complete, getModel, timeoutMs = 180_000 }: PiLlmDeps): LlmPort {
   return {
     async structuredCall({ system, prompt, schema, temperature, signal }) {
       const model = await getModel()
@@ -85,6 +87,7 @@ export function createPiLlm({ complete, getModel }: PiLlmDeps): LlmPort {
       const alwaysThinks = (model.compat as { supportsMidConvoEffort?: boolean } | undefined)
         ?.supportsMidConvoEffort
       const toolChoice = alwaysThinks ? undefined : FORCED_TOOL_CHOICE[model.api]
+      const timeout = AbortSignal.timeout(timeoutMs)
       const message = await complete(
         model,
         {
@@ -94,11 +97,14 @@ export function createPiLlm({ complete, getModel }: PiLlmDeps): LlmPort {
         },
         {
           ...(temperature === undefined ? {} : { temperature }),
-          ...(signal === undefined ? {} : { signal }),
+          signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
           ...(toolChoice === undefined ? {} : { toolChoice })
         } as ProviderStreamOptions
       )
 
+      if (message.stopReason === 'aborted' && timeout.aborted) {
+        throw new Error(`${model.provider}/${model.id} did not answer within ${timeoutMs / 1000} s`)
+      }
       if (message.stopReason === 'error' || message.stopReason === 'aborted') {
         throw new Error(`The model request failed: ${message.errorMessage ?? message.stopReason}`)
       }

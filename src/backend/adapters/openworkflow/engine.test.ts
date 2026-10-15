@@ -1,6 +1,8 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { OpenWorkflow } from 'openworkflow'
+import { BackendSqlite } from 'openworkflow/sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { WorkflowEngine, WorkflowState } from '../../ports/workflow-engine'
 import { createOpenWorkflowEngine } from './engine'
@@ -87,5 +89,28 @@ describe('createOpenWorkflowEngine', { timeout: 15_000 }, () => {
     await engine.cancel(id)
 
     expect(await settle(id)).toEqual({ status: 'canceled' })
+  })
+
+  it('treats canceling a finished run as done, as Mastra does', async () => {
+    const id = await engine.start('double', { n: 2 })
+    await settle(id)
+
+    await expect(engine.cancel(id)).resolves.toBeUndefined()
+    expect(await engine.get(id)).toEqual({ status: 'success', result: { doubled: 4 } })
+  })
+
+  it('cancels runs left over from a previous backend, which no client can poll any more', async () => {
+    const file = join(dir, 'leftover.db')
+    const backend = BackendSqlite.connect(file)
+    const leftover = await new OpenWorkflow({ backend })
+      .defineWorkflow<unknown, unknown>({ name: 'double' }, async () => 'never')
+      .run({ n: 1 })
+    await backend.stop()
+
+    const restarted = await createOpenWorkflowEngine({ file, workflows: { double: async () => 'ran' } })
+    const state = await restarted.get(leftover.workflowRun.id)
+    await restarted.stop()
+
+    expect(state).toEqual({ status: 'canceled' })
   })
 })

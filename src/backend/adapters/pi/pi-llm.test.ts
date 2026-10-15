@@ -161,4 +161,18 @@ describe('createPiLlm', () => {
 
     await expect(llm.structuredCall(request)).rejects.toThrow(/Choose a model/)
   })
+
+  it('gives up on a model that does not answer in time', async () => {
+    const complete = vi.fn<CompleteFn>(
+      (_model, _context, options) =>
+        new Promise((resolve) =>
+          options?.signal?.addEventListener('abort', () =>
+            resolve({ ...fauxAssistantMessage(fauxText('')), stopReason: 'aborted' })
+          )
+        )
+    )
+    const llm = createPiLlm({ complete, getModel: async () => modelOf('anthropic-messages'), timeoutMs: 20 })
+
+    await expect(llm.structuredCall(request)).rejects.toThrow(/did not answer within 0\.02 s/)
+  })
 })

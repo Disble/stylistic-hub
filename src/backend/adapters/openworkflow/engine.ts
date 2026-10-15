@@ -42,6 +42,13 @@ export async function createOpenWorkflowEngine({
       )
     ])
   )
+  // Run ids only live in the HTTP layer's memory, so runs a previous backend left open can no
+  // longer be polled; finishing them would only spend the user's tokens.
+  for (const status of ['pending', 'running', 'sleeping'] as const) {
+    for (const run of (await backend.listWorkflowRuns({ status, limit: 1000 })).data) {
+      await ow.cancelWorkflowRun(run.id)
+    }
+  }
   const worker = ow.newWorker({ concurrency })
   await worker.start()
 
@@ -61,7 +68,13 @@ export async function createOpenWorkflowEngine({
       return { status }
     },
     async cancel(runId) {
-      await ow.cancelWorkflowRun(runId)
+      try {
+        await ow.cancelWorkflowRun(runId)
+      } catch (error) {
+        // OpenWorkflow refuses to cancel a finished run; for the add-in that cancel is simply done.
+        const run = await backend.getWorkflowRun({ workflowRunId: runId })
+        if (!run || !['succeeded', 'completed', 'failed', 'canceled'].includes(run.status)) throw error
+      }
     },
     async stop() {
       await worker.stop()
