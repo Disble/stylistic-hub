@@ -1,14 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import type { PreferencesRepository } from '../../ports/preferences-repository'
+import { openDatabase } from '../sqlite/database'
+import { SqlitePreferencesRepository } from '../sqlite/preferences-repository'
 import { preferencesRoutes } from './preferences-routes'
 
-/** A repository kept in memory, normalizing as the real one does. */
-function memoryPreferences(): PreferencesRepository {
-  let saved: string | null = null
-  return {
-    getCorrectionInstructions: () => saved,
-    setCorrectionInstructions: (value) => (saved = value?.trim() || null)
-  }
+/** The real repository on a database that lives only for the test. */
+function memoryPreferences() {
+  return new SqlitePreferencesRepository(openDatabase(':memory:'))
 }
 
 /** A PUT with a raw body. */
@@ -43,6 +40,15 @@ describe('preferencesRoutes', () => {
     expect(await (await routes.request('/')).json()).toMatchObject({
       correctionInstructions: 'Sin adverbios en -mente.'
     })
+  })
+
+  it('clears the instructions with null', async () => {
+    const routes = preferencesRoutes(memoryPreferences())
+    await routes.request('/', put(JSON.stringify({ correctionInstructions: 'Algo.' })))
+
+    const cleared = await routes.request('/', put(JSON.stringify({ correctionInstructions: null })))
+
+    expect(await cleared.json()).toMatchObject({ correctionInstructions: null })
   })
 
   it('rejects a body that is not JSON', async () => {

@@ -4,7 +4,7 @@ import { bearerAuth } from 'hono/bearer-auth'
 import { cors } from 'hono/cors'
 import { ipRestriction } from 'hono/ip-restriction'
 import { secureHeaders } from 'hono/secure-headers'
-import type { PreferencesRepository } from '../../ports/preferences-repository'
+import type { SqlitePreferencesRepository } from '../sqlite/preferences-repository'
 import type { WorkflowEngine } from '../../ports/workflow-engine'
 import { hostAllowlist } from './host-allowlist'
 import { preferencesRoutes } from './preferences-routes'
@@ -22,7 +22,7 @@ export interface HttpAppOptions {
   engine: WorkflowEngine
   /** Ids of the workflows it runs, as the add-in names them. */
   workflows: string[]
-  preferences: PreferencesRepository
+  preferences: SqlitePreferencesRepository
 }
 
 /** Loopback peers, including the IPv4-mapped form Node reports on dual-stack sockets. */

@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { openDatabase } from '../sqlite/database'
+import { SqlitePreferencesRepository } from '../sqlite/preferences-repository'
 import { createHttpApp } from './app'
 
 /** Token the app under test expects. */
@@ -12,7 +14,7 @@ const app = createHttpApp({
   serverVersion: '0.0.1',
   engine: { start: async () => 'run', get: async () => undefined, cancel: async () => {} },
   workflows: ['stylistic-workflow'],
-  preferences: { getCorrectionInstructions: () => null, setCorrectionInstructions: () => null }
+  preferences: new SqlitePreferencesRepository(openDatabase(':memory:'))
 })
 
 /** Simulates the TCP peer @hono/node-server exposes to getConnInfo. */

@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import type { PreferencesRepository } from '../../ports/preferences-repository'
+import type { SqlitePreferencesRepository } from '../sqlite/preferences-repository'
 import { CORRECTION_INSTRUCTIONS_MAX_LENGTH } from '../../profile/preferences'
 
 /** The request stylistics-backend accepted: the instructions, or null to clear them. */
@@ -12,7 +12,7 @@ const updateRequestSchema = z
  * `GET`/`PUT /user/preferences` with stylistics-backend's contract, which the add-in's settings
  * view already calls. There is no user: the hub belongs to one Windows user.
  */
-export function preferencesRoutes(preferences: PreferencesRepository): Hono {
+export function preferencesRoutes(preferences: SqlitePreferencesRepository): Hono {
   const routes = new Hono()
   /** The response both methods share. */
   const answer = (correctionInstructions: string | null) => ({

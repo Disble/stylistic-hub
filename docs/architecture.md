@@ -17,7 +17,6 @@ Add a port only when a swap is plausible or tests need it. Do not wrap everythin
 | `LlmPort` (`structuredCall`) | Pi | Tests without network; isolates the forced-tool output |
 | `WorkflowEngine` | OpenWorkflow | Plan B is real |
 | `DocumentRepository` | `node:sqlite` | Workflow steps are tested without a database file |
-| `PreferencesRepository` | `node:sqlite` | Same reason; the routes are tested without a database file |
 | `PiProvider` (`src/main/pi-provider.ts`) | Pi `ModelRuntime` + `SettingsManager` | Pi breaks its API between releases; the IPC layer and the Provider screen only see this interface |
 
 Hono (HTTP) and Electron are the outer driving side and get no port: they are entry points, not something we expect to replace.
