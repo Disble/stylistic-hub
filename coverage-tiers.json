@@ -23,6 +23,16 @@
           "reason": "Per-document style profile read and written by both workflows"
         },
         {
+          "path": "src/backend/correction/",
+          "tier": "core",
+          "reason": "The stylistic workflow: prompts, schemas and normalization the corrections exist for"
+        },
+        {
+          "path": "src/backend/feedback/",
+          "tier": "core",
+          "reason": "The feedback workflow that turns the author's comments into profile changes"
+        },
+        {
           "path": "src/backend/ports/",
           "tier": "infrastructure",
           "reason": "Interface declarations only"

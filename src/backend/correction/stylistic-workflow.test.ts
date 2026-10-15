@@ -40,7 +40,10 @@ const correction = {
 }
 
 /** Runs the workflow with an inline step runner that records the step names. */
-function setup({ instructions }: { instructions?: string } = {}) {
+function setup({
+  instructions,
+  profile = INITIAL_STYLE_PROFILE
+}: { instructions?: string; profile?: string } = {}) {
   const steps: string[] = []
   const step: Step = async (name, run) => {
     steps.push(name)
@@ -65,7 +68,7 @@ function setup({ instructions }: { instructions?: string } = {}) {
         title: input.title ?? null,
         genre: input.genre ?? 'general',
         processingConfig: {},
-        profileMarkdown: INITIAL_STYLE_PROFILE
+        profileMarkdown: profile
       }
     },
     updateStyleProfile: (key: string, markdown: string) => void profiles.set(key, markdown)
@@ -130,6 +133,7 @@ describe('stylisticWorkflow', () => {
     await run({ text: 'Ayer fuistes al mercado.', documentUuid })
 
     expect(calls).toHaveLength(3)
+    expect(calls[0]).toMatchObject({ system: STYLISTIC_AGENT_INSTRUCTIONS, temperature: 0 })
     expect(calls[0]?.prompt).toContain('Prefiero comillas angulares.')
     expect(calls[1]?.prompt).toContain('<correcion-previa>')
   })
@@ -152,5 +156,63 @@ describe('stylisticWorkflow', () => {
     await expect(run({ text: 'Texto.', documentUuid: 'not-a-uuid' })).rejects.toThrow(/documentUuid/)
     await expect(run({ text: 'Texto.', documentUuid, title: '  ' })).rejects.toThrow(/title/)
     expect(steps).toEqual([])
+  })
+
+  it('frames literary fiction as editorial work', async () => {
+    const { run, calls } = setup()
+
+    await run({ text: 'Lo mató al alba.', documentUuid, genero: 'narrativa-literaria' })
+
+    expect(calls[0]?.prompt).toContain('<marco-editorial>')
+  })
+
+  it.each([
+    [548, 'ZONA VERDE', 549],
+    [549, 'ZONA AMARILLA', 550],
+    [799, 'ZONA AMARILLA', 800],
+    [800, 'ZONA ROJA', 801]
+  ])('counts %i pattern words plus the heading into the %s', async (words, zone, total) => {
+    const patterns = Array.from({ length: words }, () => 'palabra').join(' ')
+    const profile = `# Perfil
+
+## PATRONES VIVOS
+
+### Estilo
+${patterns}
+
+## CRITERIOS
+fuera de la sección`
+    const { run, calls } = setup({ profile })
+
+    await run({ text: 'Texto.', documentUuid })
+
+    // "Estilo" is a word of the section too.
+    expect(calls[1]?.prompt).toContain(`PATRONES VIVOS: ${total} palabras`)
+    expect(calls[1]?.prompt).toContain(`ESTADO: ${zone}`)
+  })
+
+  it('counts no living patterns in a profile without that section', async () => {
+    const { run, calls } = setup({ profile: '# Perfil\n\nSolo notas.' })
+
+    await run({ text: 'Texto.', documentUuid })
+
+    expect(calls[1]?.prompt).toContain('PATRONES VIVOS: 0 palabras')
+    expect(calls[1]?.prompt).toContain('ESTADO: ZONA VERDE')
+  })
+
+  it('counts living patterns that close the profile', async () => {
+    const { run, calls } = setup({ profile: '# Perfil\n\n## PATRONES VIVOS\nuna dos tres' })
+
+    await run({ text: 'Texto.', documentUuid })
+
+    expect(calls[1]?.prompt).toContain('PATRONES VIVOS: 3 palabras')
+  })
+
+  it('tells the model there is no profile when the document has an empty one', async () => {
+    const { run, calls } = setup({ profile: '' })
+
+    await run({ text: 'Texto.', documentUuid })
+
+    expect(calls[0]?.prompt).toContain('No hay perfil previo disponible para este autor.')
   })
 })

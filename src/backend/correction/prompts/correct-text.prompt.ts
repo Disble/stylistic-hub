@@ -2,10 +2,9 @@
 /**
  * Builds the author-aware correction prompt used by the stylistic step.
  */
-import type { StylisticWorkflowInput } from '../schemas'
+import type { StylisticWorkflowInput, StylisticWorkflowOutput } from '../schemas'
 import { SUGGESTION_TYPES_SECTION } from './prompt-sections'
 import { buildAuthorProfileSection, buildPromptIntroduction } from './stylistic-correction-prompt'
-import type { StylisticWorkflowOutput } from '../schemas'
 
 /** The preference pass's findings, offered to the integrated correction as input. */
 function buildPreviousCorrectionSection(previousCorrection?: StylisticWorkflowOutput | null) {
