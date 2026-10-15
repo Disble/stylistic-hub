@@ -30,8 +30,10 @@ Hono (HTTP) and Electron are the outer driving side and get no port: they are en
 
 ## Folder layout
 
+The domain-import rules are enforced by ESLint (`no-restricted-imports` in `eslint.config.js`).
+
 ```
-backend/src/
+src/backend/
   correction/   # stylistic-workflow: prompts, schema, suggestion rules
   feedback/     # feedback-workflow
   profile/      # per-document style profile

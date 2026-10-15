@@ -1,0 +1,42 @@
+# Development
+
+## Requirements
+
+- Windows 10/11 x64
+- [Bun](https://bun.com) 1.4+ (package manager and script runner)
+- Node 24.15+ only for tooling that shells out to `node`; the app runs on Electron's bundled Node
+
+The Electron binary downloads on first run (`bunx electron --version`).
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `bun install` | Install dependencies and the git hooks (lefthook) |
+| `bun run dev` | Run the hub with hot reload |
+| `bun run build` | Build main, preload and renderer into `out/` |
+| `bun run start` | Run the built app |
+| `bun run check` | Format check, lint, typecheck and tests — run before every push |
+| `bun run test` | Unit tests (vitest) |
+| `bun run dist` | Build the unsigned per-user NSIS installer into `release/` |
+
+## Git hooks
+
+- `pre-commit`: Prettier check, ESLint and typecheck on staged files.
+- `commit-msg`: Conventional Commits (`feat:`, `fix:`, `docs:`…).
+- `pre-push`: the test suite.
+
+## Layout
+
+```
+src/
+  main/       # Electron main process: window, tray, supervisor (desktop shell)
+  preload/    # contextBridge API exposed to the renderer as window.hub
+  renderer/   # React + Fluent UI v9 screens (Home, Word, Server, Provider)
+  backend/    # local server in a utilityProcess; hexagonal, see architecture.md
+  shared/     # types shared across processes
+```
+
+## Pinned toolchain
+
+electron-vite 5 requires Vite ≤ 7, and typescript-eslint requires TypeScript < 6.1. Versions are pinned exactly in `package.json`; upgrade them together and run `bun run check`.

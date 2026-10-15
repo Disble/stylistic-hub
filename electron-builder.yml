@@ -1,0 +1,17 @@
+appId: com.disble.stylistic-hub
+productName: Stylistic Hub
+directories:
+  output: release
+files:
+  - out/**
+  - resources/**
+  - package.json
+win:
+  target:
+    - target: nsis
+      arch: x64
+  icon: resources/icon.png
+nsis:
+  oneClick: true
+  perMachine: false
+  artifactName: StylisticHub-Setup-${version}.${ext}

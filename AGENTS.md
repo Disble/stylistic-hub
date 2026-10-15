@@ -24,6 +24,10 @@ We only build something ourselves when no maintained tool already solves it.
 
 Hexagonal (ports and adapters) with a feature-first layout. Read [`docs/architecture.md`](docs/architecture.md) before adding modules, ports or adapters.
 
+## Development
+
+Bun, electron-vite 5, TypeScript, vitest. Commands, hooks and layout: [`docs/development.md`](docs/development.md). Run `bun run check` before pushing.
+
 ## Research artifacts
 
 - `research_notes/` and `reports/` hold research for this project. Never rewrite an earlier report; create a new one.
