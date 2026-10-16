@@ -22,7 +22,13 @@ param(
   [int]$TriggerAttempts = 3,
   # After a session fails a round, how long before the loader tries it again: a backend that was down, or a Word
   # that was busy, should not make the loader hammer Word with trigger documents.
-  [int]$RetryAfterMinutes = 5
+  [int]$RetryAfterMinutes = 5,
+  # How long to keep looking for the add-in's own UI in the user's window after a trigger before calling it failed.
+  [int]$PresenceTimeoutSeconds = 20,
+  # The names the add-in puts in the window, read from the manifest next to the document when this is empty.
+  [string[]]$AddinNames,
+  # The hub's port, to tell whether Word asked for the add-in's page at all.
+  [int]$HubPort = 3000
 )
 $ErrorActionPreference = 'Stop'
 $installed = @{}
@@ -38,6 +44,44 @@ $paneCondition = New-Object System.Windows.Automation.AndCondition(
   (New-Object System.Windows.Automation.PropertyCondition($ui::NameProperty, $PaneTitle)),
   (New-Object System.Windows.Automation.PropertyCondition($ui::ClassNameProperty, 'MsoWorkPane')))
 $closeCondition = New-Object System.Windows.Automation.PropertyCondition($ui::NameProperty, 'Close pane')
+
+# What the add-in looks like in a window: the label of its ribbon group and of its button, which its manifest declares.
+# Reading them from the manifest next to the document keeps this script from carrying a copy of that text.
+function Get-AddinNames([string]$ManifestPath, [string]$DisplayName) {
+  $names = @($DisplayName)
+  if ($ManifestPath -and (Test-Path -LiteralPath $ManifestPath)) {
+    $manifest = Get-Content -Raw -LiteralPath $ManifestPath
+    foreach ($pattern in '<DisplayName DefaultValue="([^"]+)"', '<bt:String id="CommandsGroup.Label" DefaultValue="([^"]+)"', '<bt:String id="TaskpaneButton.Label" DefaultValue="([^"]+)"') {
+      $value = [regex]::Match($manifest, $pattern).Groups[1].Value
+      if ($value) { $names += $value }
+    }
+  }
+  @($names | Where-Object { $_ } | Select-Object -Unique)
+}
+
+# Whether the add-in is loaded in this Word session, judged by what the user can see: its own UI in one of the
+# windows of that Word. A MsoWorkPane is not that UI: Word creates one from the trigger document's own
+# webextensions part, named after the add-in, even when the add-in never starts, so a window that only has the pane
+# host is not loaded.
+function Test-AddinPresent([int]$WordId) {
+  foreach ($window in (Get-WordWindow $WordId)) {
+    foreach ($name in $AddinNames) {
+      $found = $window.FindAll($scope::Descendants, (New-Object System.Windows.Automation.PropertyCondition($ui::NameProperty, $name)))
+      foreach ($element in $found) {
+        if ($element.Current.ClassName -ne 'MsoWorkPane') { return $true }
+      }
+    }
+  }
+  $false
+}
+
+# Whether a Word add-in runtime asked the hub for a page during this attempt: Word starts the add-in's WebView2 for a
+# document that refers to it, and nothing else on the machine does it under that browser's name.
+function Test-PageFetched {
+  $fetched = @(Get-NetTCPConnection -RemotePort $HubPort -State Established -ErrorAction SilentlyContinue |
+    Where-Object { (Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).ProcessName -like 'msedgewebview2*' })
+  $fetched.Count -gt 0
+}
 
 # The add-in's task panes inside the given windows. The pane is what loads the add-in; Word also restores the pane
 # of a previous session, empty, into the user's document, so a pane that exists before the trigger is closed.
@@ -101,56 +145,7 @@ public static class WordWindow {
 function Get-WordWindow([int]$WordId) {
   @($ui::RootElement.FindAll($scope::Children, (New-Object System.Windows.Automation.PropertyCondition($ui::ProcessIdProperty, $WordId))))
 }
-
-# Keeps the trigger's window off screen through stylistic-hook.dll (native/word-hook), loaded into Word by thread
-# hooks only while the trigger runs; without the DLL Word shows that window for about a second.
-$hookDll = Join-Path $PSScriptRoot 'stylistic-hook.dll'
-if (Test-Path $hookDll) {
-  Add-Type -TypeDefinition @'
-using System;
-using System.Collections.Generic;
-using System.Runtime.InteropServices;
-using System.Threading;
-
-public static class StylisticHook {
-  [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern IntPtr LoadLibrary(string path);
-  [DllImport("kernel32.dll", CharSet = CharSet.Ansi)] static extern IntPtr GetProcAddress(IntPtr module, string name);
-  [DllImport("user32.dll", SetLastError = true)] static extern IntPtr SetWindowsHookEx(int id, IntPtr proc, IntPtr module, uint thread);
-  [DllImport("user32.dll")] static extern bool UnhookWindowsHookEx(IntPtr hook);
-  // The DLL acts only while these events exist and are set, so it stops if this script dies mid-trigger. Call is set
-  // only around the call that makes Word create the trigger's document window: the one moment nobody can tell a
-  // window Word creates for the trigger from a window the user opens.
-  static readonly EventWaitHandle Trigger = new EventWaitHandle(false, EventResetMode.ManualReset, "Local\\StylisticHubTrigger");
-  static readonly EventWaitHandle Call = new EventWaitHandle(false, EventResetMode.ManualReset, "Local\\StylisticHubTriggerCall");
-
-  public static void BeginCall() { Call.Set(); }
-  public static void EndCall() { Call.Reset(); }
-
-  // One WH_CBT hook per thread of Word: Word shows a document's window from a thread of its own.
-  public static List<IntPtr> Arm(string dll, int wordPid) {
-    IntPtr module = LoadLibrary(dll);
-    if (module == IntPtr.Zero) throw new InvalidOperationException("LoadLibrary failed: " + Marshal.GetLastWin32Error());
-    IntPtr proc = GetProcAddress(module, "StylisticCbtProc");
-    if (proc == IntPtr.Zero) throw new InvalidOperationException("StylisticCbtProc is not exported");
-    var hooks = new List<IntPtr>();
-    foreach (System.Diagnostics.ProcessThread thread in System.Diagnostics.Process.GetProcessById(wordPid).Threads) {
-      IntPtr hook = SetWindowsHookEx(5, proc, module, (uint)thread.Id);
-      if (hook != IntPtr.Zero) hooks.Add(hook);
-    }
-    if (hooks.Count == 0) throw new InvalidOperationException("no Word thread accepted the hook");
-    Trigger.Set();
-    return hooks;
-  }
-
-  public static void Disarm(List<IntPtr> hooks) {
-    Trigger.Reset();
-    foreach (IntPtr hook in hooks) UnhookWindowsHookEx(hook);
-  }
-}
-'@
-} else {
-  $hookDll = $null
-}
+if (-not $AddinNames) { $AddinNames = Get-AddinNames (Join-Path (Split-Path -Parent $Document) 'manifest.xml') $PaneTitle }
 
 function Write-Log([string]$Message) {
   $line = '{0:yyyy-MM-dd HH:mm:ss} {1}' -f (Get-Date), $Message
@@ -169,6 +164,7 @@ if ($LogFile) {
   try { New-Item -ItemType Directory -Force -Path (Split-Path -Parent $LogFile) | Out-Null; Set-Content -Path $LogFile -Value $null } catch { }
 }
 Write-Log "watching Word for the hub (process $ParentPid)"
+Write-Log "the add-in's UI is looked for as: $($AddinNames -join ', ')"
 
 while ($true) {
   Start-Sleep -Seconds $PollSeconds
@@ -200,24 +196,20 @@ while ($true) {
         # The add-in is not loaded in this session yet, so the user cannot have opened its pane: a pane here is one
         # Word restored from an earlier session, and it stays empty.
         $stale = Close-Pane (Get-WordWindow $word.Id)
+        if (Test-AddinPresent $word.Id) {
+          $installed[$word.Id] = $true
+          Write-Log "Stylistic is already in a window of Word $($word.Id); no trigger needed"
+          continue
+        }
         $pane = 0
+        $loaded = $false
         $attempt = 0
         while ($attempt -lt $TriggerAttempts) {
           $attempt++
-          $hooks = $null
-          if ($hookDll) {
-            try { $hooks = [StylisticHook]::Arm($hookDll, $word.Id) }
-            catch { Write-Log "cannot keep the trigger off screen, Word will show it: $($_.Exception.Message)"; $hookDll = $null }
-          }
           try {
             # Documents.Add(Template, NewTemplate, DocumentType, Visible). Opening the file instead would take the
             # place of an untouched blank document the user just started.
-            if ($hooks) { [StylisticHook]::BeginCall() }
-            try {
-              $trigger = $app.Documents.Add($Document, $false, 0, $true)
-            } finally {
-              if ($hooks) { [StylisticHook]::EndCall() }
-            }
+            $trigger = $app.Documents.Add($Document, $false, 0, $true)
             $triggerWindow = $ui::FromHandle([IntPtr][int]$trigger.ActiveWindow.Hwnd)
             $deadline = (Get-Date).AddSeconds($LoadTimeoutSeconds)
             $pane = 0
@@ -244,7 +236,6 @@ while ($true) {
             }
             if ($left.Count) { Write-Log "could not close the trigger $triggerName" }
           } finally {
-            if ($hooks) { [StylisticHook]::Disarm($hooks) }
             if ($trigger) {
               # Whatever went wrong, the trigger must not outlive the attempt: with the hook off, a document Word
               # still has open keeps a window the user would see.
@@ -253,13 +244,29 @@ while ($true) {
             }
             $trigger = $null
           }
-          if ($pane) { break }
-          Write-Log "attempt $attempt of ${TriggerAttempts}: Word $($word.Id) did not show the add-in's task pane in ${LoadTimeoutSeconds}s"
+          # The pane only says Word created a host for it. What the user gets is the add-in's own UI in a window of
+          # this Word, so that is what is waited for and what decides the verdict.
+          $deadline = (Get-Date).AddSeconds($PresenceTimeoutSeconds)
+          $loaded = Test-AddinPresent $word.Id
+          while (-not $loaded -and (Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 500
+            $loaded = Test-AddinPresent $word.Id
+          }
+          if ($loaded) { break }
+          $fetched = Test-PageFetched
+          $why = if ($pane) {
+            "the trigger's task pane opened, but the add-in's UI is not in the window"
+          } elseif ($fetched) {
+            "Word asked the hub for the add-in's page, but the add-in's UI is not in the window"
+          } else {
+            "Word started nothing: no task pane and no request for the add-in's page"
+          }
+          Write-Log "attempt $attempt of ${TriggerAttempts}: $why (Word $($word.Id))"
         }
-        if (-not $pane) {
+        if (-not $loaded) {
           $failedRounds[$word.Id] = [int]$failedRounds[$word.Id] + 1
           $nextRound[$word.Id] = (Get-Date).AddMinutes($RetryAfterMinutes)
-          Write-Log "Word $($word.Id) did not load Stylistic after $TriggerAttempts attempts; trying again in ${RetryAfterMinutes} minutes"
+          Write-Log "Stylistic is not loaded in Word $($word.Id) after $TriggerAttempts attempts; trying again in ${RetryAfterMinutes} minutes"
           continue
         }
         try { $view.Activate() } catch { }
