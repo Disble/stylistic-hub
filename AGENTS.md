@@ -28,6 +28,10 @@ Hexagonal (ports and adapters) with a feature-first layout. Read [`docs/architec
 
 Bun, electron-vite 5, TypeScript, vitest. Commands, hooks and layout: [`docs/development.md`](docs/development.md). Run `bun run check` before pushing.
 
+## Skills
+
+- `release` (`.agents/skills/release/SKILL.md`): releasing the server or the hub, test releases and the installer.
+
 ## Research artifacts
 
 - `research_notes/` and `reports/` hold research for this project. Never rewrite an earlier report; create a new one.
