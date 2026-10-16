@@ -27,6 +27,7 @@ $ErrorActionPreference = 'Stop'
 $installed = @{}
 $noted = @{}
 $nextRound = @{}
+$failedRounds = @{}
 
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
 $ui = [System.Windows.Automation.AutomationElement]
@@ -115,8 +116,14 @@ public static class StylisticHook {
   [DllImport("kernel32.dll", CharSet = CharSet.Ansi)] static extern IntPtr GetProcAddress(IntPtr module, string name);
   [DllImport("user32.dll", SetLastError = true)] static extern IntPtr SetWindowsHookEx(int id, IntPtr proc, IntPtr module, uint thread);
   [DllImport("user32.dll")] static extern bool UnhookWindowsHookEx(IntPtr hook);
-  // The DLL acts only while this event exists and is set, so it stops if this script dies mid-trigger.
+  // The DLL acts only while these events exist and are set, so it stops if this script dies mid-trigger. Call is set
+  // only around the call that makes Word create the trigger's document window: the one moment nobody can tell a
+  // window Word creates for the trigger from a window the user opens.
   static readonly EventWaitHandle Trigger = new EventWaitHandle(false, EventResetMode.ManualReset, "Local\\StylisticHubTrigger");
+  static readonly EventWaitHandle Call = new EventWaitHandle(false, EventResetMode.ManualReset, "Local\\StylisticHubTriggerCall");
+
+  public static void BeginCall() { Call.Set(); }
+  public static void EndCall() { Call.Reset(); }
 
   // One WH_CBT hook per thread of Word: Word shows a document's window from a thread of its own.
   public static List<IntPtr> Arm(string dll, int wordPid) {
@@ -204,7 +211,12 @@ while ($true) {
           try {
             # Documents.Add(Template, NewTemplate, DocumentType, Visible). Opening the file instead would take the
             # place of an untouched blank document the user just started.
-            $trigger = $app.Documents.Add($Document, $false, 0, $true)
+            if ($hooks) { [StylisticHook]::BeginCall() }
+            try {
+              $trigger = $app.Documents.Add($Document, $false, 0, $true)
+            } finally {
+              if ($hooks) { [StylisticHook]::EndCall() }
+            }
             $triggerWindow = $ui::FromHandle([IntPtr][int]$trigger.ActiveWindow.Hwnd)
             $deadline = (Get-Date).AddSeconds($LoadTimeoutSeconds)
             $pane = 0
@@ -232,13 +244,19 @@ while ($true) {
             if ($left.Count) { Write-Log "could not close the trigger $triggerName" }
           } finally {
             if ($hooks) { [StylisticHook]::Disarm($hooks) }
-            if ($trigger) { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($trigger) }
+            if ($trigger) {
+              # Whatever went wrong, the trigger must not outlive the attempt: with the hook off, a document Word
+              # still has open keeps a window the user would see.
+              try { $trigger.Close(0) } catch { }
+              [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($trigger)
+            }
             $trigger = $null
           }
           if ($pane) { break }
           Write-Log "attempt $attempt of ${TriggerAttempts}: Word $($word.Id) did not show the add-in's task pane in ${LoadTimeoutSeconds}s"
         }
         if (-not $pane) {
+          $failedRounds[$word.Id] = [int]$failedRounds[$word.Id] + 1
           $nextRound[$word.Id] = (Get-Date).AddMinutes($RetryAfterMinutes)
           Write-Log "Word $($word.Id) did not load Stylistic after $TriggerAttempts attempts; trying again in ${RetryAfterMinutes} minutes"
           continue
@@ -249,7 +267,11 @@ while ($true) {
         $installed[$word.Id] = $true
         Write-Log "loaded Stylistic in Word $($word.Id) (attempt $attempt, $($app.Documents.Count) document(s) open, $stale restored pane(s) closed)"
       } catch {
-        Write-Once "$($word.Id):error" "cannot load Stylistic in Word $($word.Id) yet: $($_.Exception.Message)"
+        # A Word that is busy or starting rejects calls; that deserves another try on the next poll. One that keeps
+        # rejecting them does not, and must not make every poll create another document.
+        $failedRounds[$word.Id] = [int]$failedRounds[$word.Id] + 1
+        Write-Log "cannot load Stylistic in Word $($word.Id) yet (round $($failedRounds[$word.Id])): $($_.Exception.Message)"
+        if ($failedRounds[$word.Id] -ge 3) { $nextRound[$word.Id] = (Get-Date).AddMinutes($RetryAfterMinutes) }
       } finally {
         foreach ($com in $view, $app) {
           if ($com) { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($com) }

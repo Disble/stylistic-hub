@@ -10,10 +10,13 @@
 #include <tlhelp32.h>
 
 #define MAX_FRAMES 16
-#define MAX_THREADS 64
+#define MAX_THREADS 256
 #define MAX_PROTECTED 16
 #define OFF_SCREEN (-32000)
 #define TRIGGER_EVENT L"Local\\StylisticHubTrigger"
+// Set only while the loader is inside the call that makes Word create the trigger's document window: it bounds the
+// one moment where a frame Word creates cannot be told apart from a window the user opens during the trigger.
+#define TRIGGER_CALL_EVENT L"Local\\StylisticHubTriggerCall"
 // A load raises hundreds of CBT events from several threads; the frames Word reuses and the threads it may create a
 // window on are looked for at most this often.
 #define SWEEP_INTERVAL_MS 50
@@ -56,20 +59,29 @@ typedef struct {
 static Frame frames[MAX_FRAMES];
 // The frames the user could see when the hook was armed: their windows, never touched.
 static HWND protected_frames[MAX_PROTECTED];
-static DWORD hooked[MAX_THREADS];
+typedef struct {
+  DWORD thread;
+  HHOOK hook;
+} HookedThread;
+
+static HookedThread hooked[MAX_THREADS];
 static CRITICAL_SECTION lock;
 static volatile LONG last_sweep;
 static volatile LONG last_threads;
 static volatile LONG armed;
 static HINSTANCE self;
 
-// True only while the hub holds its event and has set it; opened each time so a hub that died stops it.
-static BOOL trigger_active(void) {
-  HANDLE event = OpenEventW(SYNCHRONIZE, FALSE, TRIGGER_EVENT);
+// True only while name exists and is set; opened each time so a loader that died stops it.
+static BOOL event_active(LPCWSTR name) {
+  HANDLE event = OpenEventW(SYNCHRONIZE, FALSE, name);
   if (!event) return FALSE;
   BOOL active = WaitForSingleObject(event, 0) == WAIT_OBJECT_0;
   CloseHandle(event);
   return active;
+}
+
+static BOOL trigger_active(void) {
+  return event_active(TRIGGER_EVENT);
 }
 
 // Callers hold the lock.
@@ -117,14 +129,6 @@ static BOOL adopt(HWND hwnd, LONG_PTR exstyle) {
   frame->exstyle = exstyle;
   frame->original = (WNDPROC)SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)keep_off_screen);
   return TRUE;
-}
-
-// Moves a frame the user could otherwise see out of sight right away, for the case where Word showed it before the
-// hook could adopt it. The caller holds the lock.
-static void pull_off_screen(HWND hwnd) {
-  SetWindowPos(hwnd, NULL, OFF_SCREEN, OFF_SCREEN, 0, 0,
-               SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
-  trace("pulled off screen %p", hwnd);
 }
 
 // Remembers the frames the user can see, so they are never mistaken for one of Word's.
@@ -181,17 +185,16 @@ static LRESULT CALLBACK keep_off_screen(HWND hwnd, UINT msg, WPARAM wparam, LPAR
   return CallWindowProcW(original, hwnd, msg, wparam, lparam);
 }
 
-// A frame Word keeps ready or is about to show, still hidden; the one the user sees is visible and is never
-// touched. require_empty protects a window of the user that Word hides and shows again around the trigger. The
-// caller holds the lock.
+// A frame is adopted when it is hidden (the one Word keeps ready) or about to be placed (HCBT_MOVESIZE, which Word
+// sends before the position change the window procedure below neutralizes). A frame the user can see is never
+// adopted, and neither is one that is already showing a document: those are the user's windows, and the trigger's
+// window is empty when it appears. The caller holds the lock.
 static void adopt_frame(HWND hwnd) {
   if (!is_frame(hwnd) || is_protected(hwnd) || shows_document(hwnd)) return;
   LONG_PTR exstyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
   if (!adopt(hwnd, exstyle)) return;
   SetWindowLongPtrW(hwnd, GWL_EXSTYLE, (exstyle | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW);
   trace("adopted frame %p", hwnd);
-  // Word may have shown it before the hook could adopt it.
-  if (IsWindowVisible(hwnd)) pull_off_screen(hwnd);
 }
 
 static BOOL CALLBACK look_for_frames(HWND hwnd, LPARAM unused) {
@@ -220,12 +223,14 @@ static void hook_threads(void) {
       if (thread.dwSize < FIELD_OFFSET(THREADENTRY32, th32OwnerProcessID) + sizeof(DWORD)) continue;
       if (thread.th32OwnerProcessID != self_pid) continue;
       BOOL known = FALSE;
-      for (int i = 0; i < MAX_THREADS && !known; i++) known = hooked[i] == thread.th32ThreadID;
+      for (int i = 0; i < MAX_THREADS && !known; i++) known = hooked[i].thread == thread.th32ThreadID;
       if (known) continue;
       for (int i = 0; i < MAX_THREADS; i++) {
-        if (hooked[i]) continue;
-        if (SetWindowsHookExW(WH_CBT, (HOOKPROC)StylisticCbtProc, self, thread.th32ThreadID)) {
-          hooked[i] = thread.th32ThreadID;
+        if (hooked[i].thread) continue;
+        HHOOK hook = SetWindowsHookExW(WH_CBT, (HOOKPROC)StylisticCbtProc, self, thread.th32ThreadID);
+        if (hook) {
+          hooked[i].thread = thread.th32ThreadID;
+          hooked[i].hook = hook;
           trace("hooked thread %lu", thread.th32ThreadID);
         }
         break;
@@ -233,6 +238,18 @@ static void hook_threads(void) {
     } while (Thread32Next(snapshot, &thread));
   }
   CloseHandle(snapshot);
+}
+
+// The loader unhooks the threads it hooked itself; the ones this DLL hooked while the trigger ran are released
+// here, so no hook of ours outlives the trigger it was installed for. The caller holds the lock.
+static void unhook_threads(void) {
+  for (int i = 0; i < MAX_THREADS; i++) {
+    if (!hooked[i].hook) continue;
+    trace("unhooked thread %lu", hooked[i].thread);
+    UnhookWindowsHookEx(hooked[i].hook);
+    hooked[i].thread = 0;
+    hooked[i].hook = NULL;
+  }
 }
 
 __declspec(dllexport) LRESULT CALLBACK StylisticCbtProc(int code, WPARAM wparam, LPARAM lparam) {
@@ -258,17 +275,21 @@ __declspec(dllexport) LRESULT CALLBACK StylisticCbtProc(int code, WPARAM wparam,
         LeaveCriticalSection(&lock);
       }
       HWND hwnd = (HWND)wparam;
-      if (code == HCBT_CREATEWND) {
+      if (code == HCBT_CREATEWND && event_active(TRIGGER_CALL_EVENT)) {
+        // Word creates the window it shows for the trigger inside the loader's Documents.Add, and that window is
+        // empty until its document loads; fixing its CREATESTRUCT is what keeps its first placement off screen.
         CREATESTRUCTW *create = ((CBT_CREATEWNDW *)lparam)->lpcs;
         if (create && is_frame(hwnd)) {
           EnterCriticalSection(&lock);
-          LONG_PTR exstyle = create->dwExStyle;
-          if (adopt(hwnd, exstyle)) {
-            create->x = OFF_SCREEN;
-            create->y = OFF_SCREEN;
-            create->dwExStyle = (create->dwExStyle | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW;
-            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, (exstyle | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW);
-            trace("adopted new frame %p", hwnd);
+          if (!is_protected(hwnd)) {
+            LONG_PTR exstyle = create->dwExStyle;
+            if (adopt(hwnd, exstyle)) {
+              create->x = OFF_SCREEN;
+              create->y = OFF_SCREEN;
+              create->dwExStyle = (create->dwExStyle | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW;
+              SetWindowLongPtrW(hwnd, GWL_EXSTYLE, (exstyle | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW);
+              trace("adopted created frame %p", hwnd);
+            }
           }
           LeaveCriticalSection(&lock);
         }
@@ -301,6 +322,7 @@ __declspec(dllexport) LRESULT CALLBACK StylisticCbtProc(int code, WPARAM wparam,
       if (InterlockedExchange(&armed, 0)) {
         EnterCriticalSection(&lock);
         for (int i = 0; i < MAX_PROTECTED; i++) protected_frames[i] = NULL;
+        unhook_threads();
         LeaveCriticalSection(&lock);
       }
     }
