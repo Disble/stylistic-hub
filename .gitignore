@@ -34,3 +34,6 @@ Thumbs.db
 
 # Local agent state (skill registry)
 .atl/
+
+# Word loader probe output
+scripts/word-probe/out/
