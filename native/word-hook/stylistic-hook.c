@@ -1,13 +1,51 @@
-// Loaded into Word by WH_CBT thread hooks only while the hub shows Word its trigger document. Word does not
-// create a window for a new document: it shows a hidden frame it keeps ready. While the hub's named event exists
-// and is set, this subclasses Word's hidden frames so that the one Word shows for the trigger stays off screen,
-// is never maximized and has no taskbar button. Once the event is gone or reset, every subclassed frame is
-// restored on its next message, so the user's own documents are never affected.
+// Loaded into Word by WH_CBT thread hooks only while the hub shows Word its trigger document. Word either shows a
+// frame it keeps ready and hidden, or creates one for the document it is about to show; from outside its process
+// neither can be kept out of sight (screen measured: 33-77 % of the pixels change). While the hub's named event
+// exists and is set, this subclasses Word's hidden frames, every frame Word creates meanwhile (correcting the
+// CREATESTRUCT before that window exists) and every frame Word shows for the first time, so the window Word shows
+// for the trigger stays off screen, is never maximized or activated and has no taskbar button. A frame the user can
+// see is never touched. Once the event is gone or reset, every subclassed frame is restored on its next message, so
+// the user's own documents are never affected (docs/architecture.md).
 #include <windows.h>
+#include <tlhelp32.h>
 
 #define MAX_FRAMES 16
+#define MAX_THREADS 64
+#define MAX_PROTECTED 16
 #define OFF_SCREEN (-32000)
 #define TRIGGER_EVENT L"Local\\StylisticHubTrigger"
+// A load raises hundreds of CBT events from several threads; the frames Word reuses and the threads it may create a
+// window on are looked for at most this often.
+#define SWEEP_INTERVAL_MS 50
+#define THREAD_INTERVAL_MS 5
+
+#ifdef STYLISTIC_HOOK_TRACE
+#include <stdarg.h>
+static DWORD started;
+// Diagnostic build only (bun scripts/build-word-hook.ts --trace): appends to %TEMP%\stylistic-hook.log.
+static void trace(const char *fmt, ...) {
+  char line[256], path[MAX_PATH];
+  va_list args;
+  va_start(args, fmt);
+  int n = wvsprintfA(line, fmt, args);
+  va_end(args);
+  if (!GetEnvironmentVariableA("TEMP", path, MAX_PATH)) return;
+  lstrcatA(path, "\\stylistic-hook.log");
+  HANDLE file = CreateFileA(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS, 0, NULL);
+  if (file == INVALID_HANDLE_VALUE) return;
+  char stamp[32];
+  int s = wsprintfA(stamp, "[%lu] ", GetTickCount() - started);
+  DWORD written;
+  WriteFile(file, stamp, s, &written, NULL);
+  WriteFile(file, line, n, &written, NULL);
+  WriteFile(file, "\r\n", 2, &written, NULL);
+  CloseHandle(file);
+}
+#else
+#define trace(...) ((void)0)
+#endif
+
+__declspec(dllexport) LRESULT CALLBACK StylisticCbtProc(int code, WPARAM wparam, LPARAM lparam);
 
 typedef struct {
   HWND hwnd;
@@ -16,7 +54,14 @@ typedef struct {
 } Frame;
 
 static Frame frames[MAX_FRAMES];
-static volatile LONG scanned;
+// The frames the user could see when the hook was armed: their windows, never touched.
+static HWND protected_frames[MAX_PROTECTED];
+static DWORD hooked[MAX_THREADS];
+static CRITICAL_SECTION lock;
+static volatile LONG last_sweep;
+static volatile LONG last_threads;
+static volatile LONG armed;
+static HINSTANCE self;
 
 // True only while the hub holds its event and has set it; opened each time so a hub that died stops it.
 static BOOL trigger_active(void) {
@@ -27,78 +72,255 @@ static BOOL trigger_active(void) {
   return active;
 }
 
+// Callers hold the lock.
 static Frame *find(HWND hwnd) {
   for (int i = 0; i < MAX_FRAMES; i++)
     if (frames[i].hwnd == hwnd) return &frames[i];
   return NULL;
 }
 
+static BOOL has_class(HWND hwnd, LPCWSTR wanted) {
+  WCHAR cls[16];
+  return GetClassNameW(hwnd, cls, 16) && lstrcmpW(cls, wanted) == 0;
+}
+
+static BOOL is_frame(HWND hwnd) {
+  return has_class(hwnd, L"OpusApp");
+}
+
+// A frame that is already showing a document (_WwG) is the user's own window and is left alone; the frames Word
+// shows for the trigger are empty when they appear. The caller holds the lock.
+static BOOL CALLBACK find_document(HWND hwnd, LPARAM found) {
+  if (has_class(hwnd, L"_WwG")) {
+    *(BOOL *)found = TRUE;
+    return FALSE;
+  }
+  return TRUE;
+}
+
+static BOOL shows_document(HWND frame) {
+  BOOL found = FALSE;
+  EnumChildWindows(frame, find_document, (LPARAM)&found);
+  return found;
+}
+
 static LRESULT CALLBACK keep_off_screen(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
+
+// Subclasses a frame and remembers the extended style to give back; false when every slot is taken or the window is
+// already adopted. The caller holds the lock.
+static BOOL adopt(HWND hwnd, LONG_PTR exstyle) {
+  Frame *frame = find(hwnd);
+  if (frame) return TRUE;
+  frame = find(NULL);
+  if (!frame) return FALSE;
+  frame->hwnd = hwnd;
+  frame->exstyle = exstyle;
+  frame->original = (WNDPROC)SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)keep_off_screen);
+  return TRUE;
+}
+
+// Moves a frame the user could otherwise see out of sight right away, for the case where Word showed it before the
+// hook could adopt it. The caller holds the lock.
+static void pull_off_screen(HWND hwnd) {
+  SetWindowPos(hwnd, NULL, OFF_SCREEN, OFF_SCREEN, 0, 0,
+               SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+  trace("pulled off screen %p", hwnd);
+}
+
+// Remembers the frames the user can see, so they are never mistaken for one of Word's.
+static BOOL CALLBACK protect_visible(HWND hwnd, LPARAM unused) {
+  (void)unused;
+  DWORD pid;
+  GetWindowThreadProcessId(hwnd, &pid);
+  if (pid != GetCurrentProcessId() || !IsWindowVisible(hwnd) || !is_frame(hwnd)) return TRUE;
+  for (int i = 0; i < MAX_PROTECTED; i++) {
+    if (protected_frames[i] == hwnd) return TRUE;
+    if (!protected_frames[i]) {
+      protected_frames[i] = hwnd;
+      trace("protecting %p, Word's own window", hwnd);
+      return TRUE;
+    }
+  }
+  return TRUE;
+}
+
+// The caller holds the lock.
+static BOOL is_protected(HWND hwnd) {
+  for (int i = 0; i < MAX_PROTECTED; i++)
+    if (protected_frames[i] == hwnd) return TRUE;
+  return FALSE;
+}
 
 static void restore(Frame *frame) {
   if ((WNDPROC)GetWindowLongPtrW(frame->hwnd, GWLP_WNDPROC) == keep_off_screen)
     SetWindowLongPtrW(frame->hwnd, GWLP_WNDPROC, (LONG_PTR)frame->original);
   SetWindowLongPtrW(frame->hwnd, GWL_EXSTYLE, frame->exstyle);
+  trace("restored %p", frame->hwnd);
   frame->hwnd = NULL;
 }
 
 static LRESULT CALLBACK keep_off_screen(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
+  WNDPROC original = NULL;
+  BOOL ours = FALSE;
+  EnterCriticalSection(&lock);
   Frame *frame = find(hwnd);
-  if (!frame) return DefWindowProcW(hwnd, msg, wparam, lparam);
-  WNDPROC original = frame->original;
-  if (msg == WM_NCDESTROY || !trigger_active()) {
-    restore(frame);
-  } else if (msg == WM_WINDOWPOSCHANGING) {
+  if (frame) {
+    ours = TRUE;
+    original = frame->original;
+    if (msg == WM_NCDESTROY || !trigger_active()) restore(frame);
+  }
+  LeaveCriticalSection(&lock);
+  if (!ours) return DefWindowProcW(hwnd, msg, wparam, lparam);
+  if (msg == WM_WINDOWPOSCHANGING) {
     WINDOWPOS *pos = (WINDOWPOS *)lparam;
     pos->x = OFF_SCREEN;
     pos->y = OFF_SCREEN;
     pos->flags &= ~SWP_NOMOVE;
+    if (pos->flags & SWP_SHOWWINDOW) trace("shown off screen %p", hwnd);
   }
   return CallWindowProcW(original, hwnd, msg, wparam, lparam);
 }
 
-static BOOL CALLBACK adopt_hidden_frame(HWND hwnd, LPARAM unused) {
+// A frame Word keeps ready or is about to show, still hidden; the one the user sees is visible and is never
+// touched. require_empty protects a window of the user that Word hides and shows again around the trigger. The
+// caller holds the lock.
+static void adopt_frame(HWND hwnd) {
+  if (!is_frame(hwnd) || is_protected(hwnd) || shows_document(hwnd)) return;
+  LONG_PTR exstyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+  if (!adopt(hwnd, exstyle)) return;
+  SetWindowLongPtrW(hwnd, GWL_EXSTYLE, (exstyle | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW);
+  trace("adopted frame %p", hwnd);
+  // Word may have shown it before the hook could adopt it.
+  if (IsWindowVisible(hwnd)) pull_off_screen(hwnd);
+}
+
+static BOOL CALLBACK look_for_frames(HWND hwnd, LPARAM unused) {
   (void)unused;
   DWORD pid;
-  WCHAR cls[16];
   GetWindowThreadProcessId(hwnd, &pid);
-  if (pid != GetCurrentProcessId() || IsWindowVisible(hwnd) || find(hwnd)) return TRUE;
-  if (!GetClassNameW(hwnd, cls, 16) || lstrcmpW(cls, L"OpusApp") != 0) return TRUE;
-  Frame *frame = find(NULL);
-  if (!frame) return FALSE;
-  frame->hwnd = hwnd;
-  frame->exstyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-  SetWindowLongPtrW(hwnd, GWL_EXSTYLE, (frame->exstyle | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW);
-  frame->original = (WNDPROC)SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)keep_off_screen);
+  if (pid == GetCurrentProcessId()) {
+    EnterCriticalSection(&lock);
+    adopt_frame(hwnd);
+    LeaveCriticalSection(&lock);
+  }
   return TRUE;
+}
+
+// Word shows a document's window from a thread of its own, and it may create that thread after the hooks were set:
+// every thread of this process gets the hook, so no window of it can be created or shown unwatched. The caller
+// holds the lock.
+static void hook_threads(void) {
+  HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+  if (snapshot == INVALID_HANDLE_VALUE) return;
+  DWORD self_pid = GetCurrentProcessId();
+  THREADENTRY32 thread = {0};
+  thread.dwSize = sizeof(thread);
+  if (Thread32First(snapshot, &thread)) {
+    do {
+      if (thread.dwSize < FIELD_OFFSET(THREADENTRY32, th32OwnerProcessID) + sizeof(DWORD)) continue;
+      if (thread.th32OwnerProcessID != self_pid) continue;
+      BOOL known = FALSE;
+      for (int i = 0; i < MAX_THREADS && !known; i++) known = hooked[i] == thread.th32ThreadID;
+      if (known) continue;
+      for (int i = 0; i < MAX_THREADS; i++) {
+        if (hooked[i]) continue;
+        if (SetWindowsHookExW(WH_CBT, (HOOKPROC)StylisticCbtProc, self, thread.th32ThreadID)) {
+          hooked[i] = thread.th32ThreadID;
+          trace("hooked thread %lu", thread.th32ThreadID);
+        }
+        break;
+      }
+    } while (Thread32Next(snapshot, &thread));
+  }
+  CloseHandle(snapshot);
 }
 
 __declspec(dllexport) LRESULT CALLBACK StylisticCbtProc(int code, WPARAM wparam, LPARAM lparam) {
   if (code >= 0) {
     if (trigger_active()) {
-      if (InterlockedCompareExchange(&scanned, 1, 0) == 0) EnumWindows(adopt_hidden_frame, 0);
+      DWORD now = GetTickCount();
+      // Word creates the thread that shows the trigger's window while the trigger runs, so new threads are taken
+      // much sooner than the frames Word keeps ready.
+      if (now - (DWORD)InterlockedCompareExchange(&last_threads, (LONG)now, (LONG)last_threads) >= THREAD_INTERVAL_MS) {
+        EnterCriticalSection(&lock);
+        hook_threads();
+        LeaveCriticalSection(&lock);
+      }
+      if (!InterlockedCompareExchange(&armed, 1, 0)) {
+        // The windows the user can see right now are theirs; the ones Word shows from here on are not.
+        EnterCriticalSection(&lock);
+        EnumWindows(protect_visible, 0);
+        LeaveCriticalSection(&lock);
+      }
+      if (now - (DWORD)InterlockedCompareExchange(&last_sweep, (LONG)now, (LONG)last_sweep) >= SWEEP_INTERVAL_MS) {
+        EnterCriticalSection(&lock);
+        EnumWindows(look_for_frames, 0);
+        LeaveCriticalSection(&lock);
+      }
+      HWND hwnd = (HWND)wparam;
+      if (code == HCBT_CREATEWND) {
+        CREATESTRUCTW *create = ((CBT_CREATEWNDW *)lparam)->lpcs;
+        if (create && is_frame(hwnd)) {
+          EnterCriticalSection(&lock);
+          LONG_PTR exstyle = create->dwExStyle;
+          if (adopt(hwnd, exstyle)) {
+            create->x = OFF_SCREEN;
+            create->y = OFF_SCREEN;
+            create->dwExStyle = (create->dwExStyle | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW;
+            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, (exstyle | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW);
+            trace("adopted new frame %p", hwnd);
+          }
+          LeaveCriticalSection(&lock);
+        }
+      } else if (code == HCBT_MOVESIZE) {
+        // A window about to be moved or sized, which is how Word places the frame it shows for the trigger: adopt
+        // it here so the position change that follows goes through keep_off_screen.
+        EnterCriticalSection(&lock);
+        adopt_frame(hwnd);
+        LeaveCriticalSection(&lock);
+      }
       // Keep the user's window active while Word loads the trigger.
-      if (code == HCBT_ACTIVATE && find((HWND)wparam)) return 1;
-      if (code == HCBT_MINMAX && find((HWND)wparam)) {
-        int show = LOWORD(lparam);
-        if (show == SW_MAXIMIZE || show == SW_SHOWMAXIMIZED) return 1;
+      if (code == HCBT_ACTIVATE) {
+        EnterCriticalSection(&lock);
+        BOOL ours = find(hwnd) != NULL;
+        LeaveCriticalSection(&lock);
+        if (ours) return 1;
+      }
+      if (code == HCBT_MINMAX) {
+        EnterCriticalSection(&lock);
+        BOOL ours = find(hwnd) != NULL;
+        LeaveCriticalSection(&lock);
+        if (ours) {
+          int show = LOWORD(lparam);
+          if (show == SW_MAXIMIZE || show == SW_SHOWMAXIMIZED) return 1;
+        }
       }
     } else {
-      InterlockedExchange(&scanned, 0);
+      InterlockedExchange(&last_sweep, 0);
+      InterlockedExchange(&last_threads, 0);
+      if (InterlockedExchange(&armed, 0)) {
+        EnterCriticalSection(&lock);
+        for (int i = 0; i < MAX_PROTECTED; i++) protected_frames[i] = NULL;
+        LeaveCriticalSection(&lock);
+      }
     }
   }
   return CallNextHookEx(NULL, code, wparam, lparam);
 }
 
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved) {
-  (void)instance;
   (void)reserved;
   if (reason == DLL_PROCESS_ATTACH) {
+    self = instance;
+    InitializeCriticalSection(&lock);
+#ifdef STYLISTIC_HOOK_TRACE
+    started = GetTickCount();
+#endif
     // Stay loaded: Windows may unload a hook DLL once the hook is removed, and a frame still subclassed to it
     // would then call into freed memory.
-    HMODULE self;
+    HMODULE module;
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
-                       (LPCWSTR)(void *)&DllMain, &self);
+                       (LPCWSTR)(void *)&DllMain, &module);
   }
   return TRUE;
 }
