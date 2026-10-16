@@ -25,7 +25,9 @@
 #ifdef STYLISTIC_HOOK_TRACE
 #include <stdarg.h>
 static DWORD started;
-// Diagnostic build only (bun scripts/build-word-hook.ts --trace): appends to %TEMP%\stylistic-hook.log.
+// Diagnostic build only (bun scripts/build-word-hook.ts --trace): appends to %TEMP%\stylistic-hook.log. It writes
+// that file synchronously from a few paths that hold the hook's lock, so a trace build can be delayed by file I/O
+// (never a message send, and never a shipped build: `bun run dist` compiles this file without the define).
 static void trace(const char *fmt, ...) {
   char line[256], path[MAX_PATH];
   va_list args;
