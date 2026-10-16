@@ -221,17 +221,28 @@ static void hide_from_taskbar(HWND hwnd, LONG_PTR exstyle) {
   SetWindowLongPtrW(hwnd, GWL_EXSTYLE, (exstyle | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW);
 }
 
-static BOOL CALLBACK look_for_frames(HWND hwnd, LPARAM unused) {
-  (void)unused;
+// The frames the sweep adopted, collected on the sweep's own stack so their style can be applied once the lock is
+// free: the style write sends WM_STYLECHANGING, and doing it under the lock could deadlock against the window
+// procedure of a frame owned by another Word thread.
+typedef struct {
+  HWND hwnd[MAX_FRAMES];
+  LONG_PTR exstyle[MAX_FRAMES];
+  int count;
+} Sweep;
+
+static BOOL CALLBACK look_for_frames(HWND hwnd, LPARAM param) {
+  Sweep *sweep = (Sweep *)param;
   DWORD pid;
   GetWindowThreadProcessId(hwnd, &pid);
   if (pid == GetCurrentProcessId()) {
-    LONG_PTR exstyle = 0;
-    BOOL adopted = FALSE;
     EnterCriticalSection(&lock);
-    adopted = adopt_frame(hwnd, &exstyle);
+    LONG_PTR exstyle = 0;
+    if (adopt_frame(hwnd, &exstyle) && sweep->count < MAX_FRAMES) {
+      sweep->hwnd[sweep->count] = hwnd;
+      sweep->exstyle[sweep->count] = exstyle;
+      sweep->count++;
+    }
     LeaveCriticalSection(&lock);
-    if (adopted) hide_from_taskbar(hwnd, exstyle);
   }
   return TRUE;
 }
@@ -297,9 +308,11 @@ __declspec(dllexport) LRESULT CALLBACK StylisticCbtProc(int code, WPARAM wparam,
         LeaveCriticalSection(&lock);
       }
       if (now - (DWORD)InterlockedCompareExchange(&last_sweep, (LONG)now, (LONG)last_sweep) >= SWEEP_INTERVAL_MS) {
+        Sweep sweep = {0};
         EnterCriticalSection(&lock);
-        EnumWindows(look_for_frames, 0);
+        EnumWindows(look_for_frames, (LPARAM)&sweep);
         LeaveCriticalSection(&lock);
+        for (int i = 0; i < sweep.count; i++) hide_from_taskbar(sweep.hwnd[i], sweep.exstyle[i]);
       }
       HWND hwnd = (HWND)wparam;
       if (code == HCBT_CREATEWND && event_active(TRIGGER_CALL_EVENT)) {
