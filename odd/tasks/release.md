@@ -17,7 +17,7 @@ Branch: `feat/release` (from `feat/mvp` at `a8eaa45`) · Delivery: `ask-on-risk`
 |---|---|---|---|---|---|
 | R1 | R-S2, R-S4 | Dev dependencies; hub config at the root, server config + manifest in `src/backend/`; `SERVER_VERSION` from the server manifest; scripts | inline | done (42353ba, 3824862) | L5, L6 |
 | R2 | R-S2, R-S3, R-S5 | Probe in a scratch clone with a bare `origin`: hub and server releases from `main`, a `beta` prerelease, baseline tags, changelogs | inline | done (3824862) | L6 |
-| R3 | R-S1 | `.claude/skills/release/SKILL.md` (registered in `AGENTS.md`) + docs | inline | done (cfb3561 + fix commit) | L7, L8 |
+| R3 | R-S1 | `.claude/skills/release/SKILL.md` (registered in `AGENTS.md`) + docs | inline | done (cfb3561, b9cae3f) | L7, L8 |
 
 ## Log
 
