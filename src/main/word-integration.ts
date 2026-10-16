@@ -70,6 +70,13 @@ export function createWordIntegration({ run = execute, caFile, manifestFile }: W
       ) {
         throw new Error('Windows did not trust the hub certificate, so Word cannot open Stylistic')
       }
+      // An earlier hub may have listed this manifest under another add-in id (development's); Word would then
+      // see one manifest twice.
+      const { stdout: listed } = await run('reg', ['query', DEVELOPER_KEY])
+      for (const [, name, path] of listed.matchAll(/^\s+(\S+)\s+REG_SZ\s+(.+?)\s*$/gm)) {
+        if (path === manifestFile && name !== addinId())
+          await run('reg', ['delete', DEVELOPER_KEY, '/v', name ?? '', '/f'])
+      }
       const added = await run('reg', [
         'add',
         DEVELOPER_KEY,

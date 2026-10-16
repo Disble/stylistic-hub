@@ -143,7 +143,7 @@ describe('ProviderScreen', () => {
     const key = await screen.findByLabelText('Groq API key')
     expect(key.getAttribute('type')).toBe('password')
     fireEvent.change(key, { target: { value: 'gsk-1' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue' }))
     await waitFor(() => expect(api.answerPrompt).toHaveBeenCalledWith('l1', 'p1', 'gsk-1'))
 
     emit({ loginId: 'l1', providerId: 'groq', type: 'login-prompt-closed', promptId: 'p1' })
@@ -162,7 +162,7 @@ describe('ProviderScreen', () => {
       }
     })
     fireEvent.click(await screen.findByLabelText('United States'))
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue' }))
 
     await waitFor(() => expect(api.answerPrompt).toHaveBeenCalledWith('l1', 'p2', 'us'))
   })

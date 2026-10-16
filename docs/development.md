@@ -23,7 +23,7 @@ The Electron binary downloads on first run (`bunx electron --version`).
 | `bun run test:coverage` | Tests with the coverage tiers enforced (CORE 100%, IMPORTANT 80%) |
 | `bun run release:server [--no-ci] [--dry-run]` | semantic-release for the Local server: version from the commits under `src/backend/`, `src/backend/CHANGELOG.md`, tag `server-vX.Y.Z`. Releases only from semantic-release's default branches: `main`/`master`, `next`, `next-major`, `N.x`, and `beta`/`alpha` for test releases (`X.Y.Z-beta.N`). Steps: the `release` skill |
 | `bun run release:hub [--no-ci] [--dry-run]` | semantic-release for the hub: version from all commits, `CHANGELOG.md`, builds the installer, tag `hub-vX.Y.Z`; run it after `release:server` |
-| `bun run dist` | Build the unsigned per-user NSIS installer into `release/`; needs `bun run addin:bundle` first and stops if `resources/addin` is missing |
+| `bun run dist` | Build the unsigned per-user NSIS installer into `release/` (production): it packs a copy of `resources/addin` staged in `out/addin` under the production add-in id, so the installed hub never shares Word's sideload entry, or the debugger flags `npm start` sets on it, with development; needs `bun run addin:bundle` first and stops if `resources/addin` is missing |
 
 ## Git hooks and the dharness gate
 

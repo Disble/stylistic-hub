@@ -131,6 +131,27 @@ describe('createWordIntegration', () => {
     expect(run).not.toHaveBeenCalled()
   })
 
+  it('drops older registrations of this manifest under another add-in id and leaves the rest alone', async () => {
+    const run = commands({
+      'reg query': {
+        code: 0,
+        stdout: [
+          developerKey.replace('HKCU', 'HKEY_CURRENT_USER'),
+          `    old-dev-id    REG_SZ    ${manifestFile}`,
+          `    ${addinId}    REG_SZ    ${manifestFile}`,
+          '    someone-else    REG_SZ    D:\\other\\manifest.xml',
+          ''
+        ].join('\r\n')
+      }
+    })
+
+    await createWordIntegration({ run, caFile, manifestFile }).connect()
+
+    expect(run).toHaveBeenCalledWith('reg', ['delete', developerKey, '/v', 'old-dev-id', '/f'])
+    expect(run).not.toHaveBeenCalledWith('reg', ['delete', developerKey, '/v', addinId, '/f'])
+    expect(run).not.toHaveBeenCalledWith('reg', ['delete', developerKey, '/v', 'someone-else', '/f'])
+  })
+
   it('does not ask Windows to trust a CA it already trusts', async () => {
     const run = commands({ 'certutil -user': { code: 0 } })
 

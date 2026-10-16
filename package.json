@@ -25,7 +25,7 @@
     "release:hub": "semantic-release",
     "test:coverage": "vitest run --coverage --config .dharness/vitest.coverage.mjs",
     "check": "bun run format:check && bun run lint && bun run typecheck && bun run test:coverage",
-    "dist": "bun scripts/require-addin.ts && bun run build && electron-builder --win nsis --x64",
+    "dist": "bun scripts/require-addin.ts && bun run build && bun scripts/stage-prod-addin.ts && electron-builder --win nsis --x64",
     "prepare": "lefthook install"
   },
   "dependencies": {

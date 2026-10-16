@@ -1,5 +1,5 @@
 # Keeps Stylistic in every Word session. Word reads a sideloaded add-in only when it shows a document that
-# refers to it, so for each new Word session this opens that document read-only and minimized, then closes it.
+# refers to it, so for each new Word session this creates a document from it, minimized, then closes it unsaved.
 # Afterwards every document in the session shows the add-in's ribbon button (docs/architecture.md).
 param(
   [Parameter(Mandatory)][string]$Document,
@@ -8,7 +8,6 @@ param(
   [int]$ReportAfter = 15
 )
 $ErrorActionPreference = 'Stop'
-$missing = [System.Reflection.Missing]::Value
 $done = 0
 $attempts = 0
 
@@ -22,8 +21,9 @@ while ($true) {
     $app = [System.Runtime.InteropServices.Marshal]::GetActiveObject('Word.Application')
     # A hidden Word belongs to another program automating it; leave it alone.
     if (-not $app.Visible) { continue }
-    # Documents.Open(FileName, ConfirmConversions, ReadOnly, AddToRecentFiles, ..., Visible)
-    $trigger = $app.Documents.Open($Document, $false, $true, $false, $missing, $missing, $missing, $missing, $missing, $missing, $missing, $true)
+    # Documents.Add(Template, NewTemplate, DocumentType, Visible). Opening the file instead would take the place
+    # of an untouched blank document the user just started, and closing it would leave Word's window empty.
+    $trigger = $app.Documents.Add($Document, $false, 0, $true)
     try { $trigger.ActiveWindow.WindowState = 2 } catch { }
     $trigger.Close(0)
     $done = $word.Id

@@ -4,13 +4,15 @@ directories:
   output: release
 files:
   - out/**
+  - '!out/addin/**'
   - resources/**
   # Word reads the add-in manifest from a real path, so the add-in stays outside the asar archive.
   - '!resources/addin/**'
   - '!resources/word/**'
   - package.json
 extraResources:
-  - from: resources/addin
+  # The production copy from scripts/stage-prod-addin.ts, under its own add-in id.
+  - from: out/addin
     to: addin
   - from: resources/word
     to: word
