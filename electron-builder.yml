@@ -7,10 +7,13 @@ files:
   - resources/**
   # Word reads the add-in manifest from a real path, so the add-in stays outside the asar archive.
   - '!resources/addin/**'
+  - '!resources/word/**'
   - package.json
 extraResources:
   - from: resources/addin
     to: addin
+  - from: resources/word
+    to: word
 win:
   target:
     - target: nsis

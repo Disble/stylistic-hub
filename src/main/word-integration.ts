@@ -1,8 +1,6 @@
 import { execFile } from 'node:child_process'
 import { X509Certificate } from 'node:crypto'
-import { copyFile } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
 import type { WordStatus } from '../shared/bridge'
 
 /** Runs a Windows command and reports its exit code and output; it never throws on failure. */
@@ -92,29 +90,4 @@ export function createWordIntegration({ run = execute, caFile, manifestFile }: W
       if (await addinRegistered()) throw new Error('Could not remove Stylistic from Word')
     }
   }
-}
-
-/** What opening Word works on. */
-export interface OpenWordOptions {
-  /** The bundled document whose web extension part points at the sideloaded add-in. */
-  documentFile: string
-  /** Where the copy goes, so the user never edits the installed file. */
-  workDir: string
-  /** Opens a file with its default app and returns an error message, or '' on success (Electron's `shell.openPath`). */
-  openFile: (path: string) => Promise<string>
-}
-
-/**
- * Opens Word on a document that loads Stylistic. Registering the manifest only makes Word able to find the
- * add-in; Office's own dev tools (office-addin-dev-settings `sideloadAddIn`) also open such a document,
- * and that is what makes Word load it.
- */
-export async function openWordDocument({ documentFile, workDir, openFile }: OpenWordOptions): Promise<void> {
-  if (!existsSync(documentFile))
-    throw new Error('The Word document for Stylistic is not bundled with this hub')
-  const copy = join(workDir, basename(documentFile))
-  // Word locks a document it has open; then the copy from last time opens again.
-  await copyFile(documentFile, copy).catch(() => undefined)
-  const failure = await openFile(copy)
-  if (failure) throw new Error(`Could not open Word: ${failure}`)
 }

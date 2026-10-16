@@ -49,10 +49,10 @@ export function WordScreen() {
                 detail: 'Lists the add-in in Word for your Windows user. No admin rights needed.'
               },
               {
-                label: 'Open Word',
+                label: 'Use Stylistic in Word',
                 done: false,
                 detail:
-                  'Opens a document with the Stylistic pane. Later, Home tab → Show Task Pane. No sign-in needed.'
+                  'Open any document: Home tab → Show Task Pane. The hub starts with Windows and stays in the tray to keep Stylistic in Word.'
               }
             ]}
           />
@@ -60,11 +60,6 @@ export function WordScreen() {
             {!wordReady(status) && (
               <Button appearance="primary" disabled={busy} onClick={() => run(window.hub.word.connect)}>
                 Add to Word
-              </Button>
-            )}
-            {wordReady(status) && (
-              <Button appearance="primary" disabled={busy} onClick={() => run(window.hub.word.open)}>
-                Open Word
               </Button>
             )}
             {status.addinRegistered && (

@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, Menu, nativeImage, shell, Tray } from 'electron'
 import { safeExternalUrl } from '../shared/login/external-link'
 import { HUB_PORT, SERVER_VERSION } from '../shared/versions'
 import { startBackend } from './backend-host'
@@ -10,7 +10,8 @@ import { registerProviderIpc } from './ipc-provider'
 import { registerScreenIpc } from './ipc-screens'
 import { createPiProvider } from './pi-provider'
 import { createServerStatus } from './server-status'
-import { createWordIntegration, openWordDocument } from './word-integration'
+import { createWordIntegration } from './word-integration'
+import { createWordSession } from './word-session'
 
 /**
  * stylistic-addon's build. It ships outside the asar archive because Word reads the manifest from a
@@ -19,6 +20,14 @@ import { createWordIntegration, openWordDocument } from './word-integration'
 const ADDIN_DIR = app.isPackaged
   ? join(process.resourcesPath, 'addin')
   : join(app.getAppPath(), 'resources', 'addin')
+
+/** `word-session.ps1`, also outside the asar archive because PowerShell runs it from a real path. */
+const WORD_DIR = app.isPackaged
+  ? join(process.resourcesPath, 'word')
+  : join(app.getAppPath(), 'resources', 'word')
+
+/** Windows starts the hub with this flag at sign-in; it then runs in the tray without opening a window. */
+const BACKGROUND_FLAG = '--background'
 
 /** False when another hub is already running for this Windows user; this one then quits. */
 const isSingleInstance = app.requestSingleInstanceLock()
@@ -66,12 +75,19 @@ if (!isSingleInstance) {
   app.quit()
 } else {
   let mainWindow: BrowserWindow | undefined
+  /** Kept referenced so the tray icon is not garbage-collected. */
+  let tray: Tray | undefined
 
-  app.on('second-instance', () => {
-    if (!mainWindow) return
+  const showWindow = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      mainWindow = createWindow()
+      return
+    }
     if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.focus()
-  })
+  }
+
+  app.on('second-instance', showWindow)
 
   void app.whenReady().then(async () => {
     const paths = hubPaths(app.getPath('userData'))
@@ -91,23 +107,51 @@ if (!isSingleInstance) {
     })
     app.on('will-quit', () => backend.stop())
     registerProviderIpc(await createPiProvider(paths.piDir), () => mainWindow?.webContents)
-    registerScreenIpc(
-      status,
-      createWordIntegration({ caFile: paths.caCert, manifestFile: join(ADDIN_DIR, 'manifest.xml') }),
-      () =>
-        openWordDocument({
-          documentFile: join(ADDIN_DIR, 'Stylistic.docx'),
-          workDir: app.getPath('temp'),
-          openFile: (path) => shell.openPath(path)
-        })
-    )
-    mainWindow = createWindow()
-    app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow()
+    const word = createWordIntegration({
+      caFile: paths.caCert,
+      manifestFile: join(ADDIN_DIR, 'manifest.xml')
     })
+    const wordSession = createWordSession({
+      script: join(WORD_DIR, 'word-session.ps1'),
+      document: join(ADDIN_DIR, 'Stylistic.docx'),
+      parentPid: process.pid
+    })
+    app.on('will-quit', () => wordSession.stop())
+    // While Stylistic is in Word, the hub starts with Windows and keeps loading it into every Word session.
+    const keepInWord = (enabled: boolean) => {
+      if (enabled) wordSession.start()
+      else wordSession.stop()
+      if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: enabled, args: [BACKGROUND_FLAG] })
+    }
+    if ((await word.status()).addinRegistered) keepInWord(true)
+    registerScreenIpc(status, {
+      ...word,
+      connect: async () => {
+        await word.connect()
+        keepInWord(true)
+      },
+      disconnect: async () => {
+        await word.disconnect()
+        keepInWord(false)
+      }
+    })
+
+    const icon = nativeImage.createFromPath(join(app.getAppPath(), 'resources', 'icon.png'))
+    tray = new Tray(icon.resize({ width: 16, height: 16 }))
+    tray.setToolTip('Stylistic Hub')
+    tray.setContextMenu(
+      Menu.buildFromTemplate([
+        { label: 'Open Stylistic Hub', click: showWindow },
+        { type: 'separator' },
+        { label: 'Quit Stylistic Hub', click: () => app.quit() }
+      ])
+    )
+    tray.on('click', showWindow)
+
+    if (!process.argv.includes(BACKGROUND_FLAG)) showWindow()
+    app.on('activate', showWindow)
   })
 
-  app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') app.quit()
-  })
+  // Closing the window leaves the hub in the tray: Word needs its server and its session loader.
+  app.on('window-all-closed', () => undefined)
 }

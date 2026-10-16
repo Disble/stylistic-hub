@@ -1,11 +1,11 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import 'reflect-metadata'
 import { webcrypto, X509Certificate } from 'node:crypto'
 import * as x509 from '@peculiar/x509'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createWordIntegration, execute, openWordDocument, type RunCommand } from './word-integration'
+import { createWordIntegration, execute, type RunCommand } from './word-integration'
 
 /** The add-in's manifest id. */
 const addinId = 'b821964a-4f1e-4939-83c8-0ddba48f3dff'
@@ -170,40 +170,6 @@ describe('createWordIntegration', () => {
 
     await expect(createWordIntegration({ run, caFile, manifestFile }).connect()).rejects.toThrow(/no <Id>/)
     expect(run).not.toHaveBeenCalledWith('reg', expect.arrayContaining(['add']))
-  })
-
-  it('opens Word on a copy of the bundled document that loads the add-in', async () => {
-    const documentFile = join(dir, 'Stylistic.docx')
-    writeFileSync(documentFile, 'docx bytes')
-    const workDir = join(dir, 'work')
-    mkdirSync(workDir)
-    const openFile = vi.fn(async () => '')
-
-    await openWordDocument({ documentFile, workDir, openFile })
-
-    const opened = join(workDir, 'Stylistic.docx')
-    expect(openFile).toHaveBeenCalledWith(opened)
-    expect(readFileSync(opened, 'utf8')).toBe('docx bytes')
-    expect(readFileSync(documentFile, 'utf8')).toBe('docx bytes')
-  })
-
-  it('reports when Windows cannot open the document', async () => {
-    const documentFile = join(dir, 'Stylistic.docx')
-    writeFileSync(documentFile, 'docx bytes')
-    const openFile = vi.fn(async () => 'No application is associated with the file')
-
-    await expect(openWordDocument({ documentFile, workDir: dir, openFile })).rejects.toThrow(
-      /Could not open Word: No application is associated with the file/
-    )
-  })
-
-  it('does not open Word when the document is not bundled', async () => {
-    const openFile = vi.fn(async () => '')
-
-    await expect(
-      openWordDocument({ documentFile: join(dir, 'missing.docx'), workDir: dir, openFile })
-    ).rejects.toThrow(/not bundled/)
-    expect(openFile).not.toHaveBeenCalled()
   })
 })
 

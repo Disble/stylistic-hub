@@ -56,33 +56,6 @@ describe('WordScreen', () => {
     expect(disconnect).toHaveBeenCalledOnce()
   })
 
-  it('opens Word with Stylistic once the add-in is added', async () => {
-    const open = vi.fn(async () => undefined)
-    renderWith({ available: true, caTrusted: true, addinRegistered: true }, { open })
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Open Word' }))
-
-    await waitFor(() => expect(open).toHaveBeenCalledOnce())
-  })
-
-  it('offers Open Word only after the add-in is added', async () => {
-    renderWith({ available: true, caTrusted: true, addinRegistered: false })
-
-    await screen.findByRole('button', { name: 'Add to Word' })
-    expect(screen.queryByRole('button', { name: 'Open Word' })).toBeNull()
-  })
-
-  it('shows why Word did not open', async () => {
-    renderWith(
-      { available: true, caTrusted: true, addinRegistered: true },
-      { open: async () => Promise.reject(new Error('Could not open Word: No application is associated')) }
-    )
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Open Word' }))
-
-    expect(await screen.findByText('Could not open Word: No application is associated')).toBeTruthy()
-  })
-
   it('explains that the add-in is not bundled and offers nothing to click', async () => {
     renderWith({ available: false, caTrusted: false, addinRegistered: false })
 
