@@ -7,6 +7,8 @@ dist/
 # stylistic-addon's build, copied by `bun run addin:bundle`
 resources/addin/
 /release/
+# Compiled by `bun run word:hook` from native/word-hook
+resources/word/stylistic-hook.dll
 
 # Test and coverage
 coverage/

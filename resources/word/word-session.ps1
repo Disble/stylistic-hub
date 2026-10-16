@@ -1,5 +1,5 @@
 # Keeps Stylistic in every Word session. Word reads a sideloaded add-in only when it shows a document that
-# refers to it, so for each new Word session this creates a document from it, then closes it unsaved.
+# refers to it, so for each new Word session this creates a document from it, off screen, then closes it unsaved.
 # Afterwards every document in the session shows the add-in's ribbon button (docs/architecture.md).
 param(
   [Parameter(Mandatory)][string]$Document,
@@ -44,6 +44,50 @@ function Get-WordWindow([int]$Id) {
   @($ui::RootElement.FindAll($scope::Children, (New-Object System.Windows.Automation.PropertyCondition($ui::ProcessIdProperty, $Id))))
 }
 
+# Keeps the trigger's window off screen through stylistic-hook.dll (native/word-hook), loaded into Word by thread
+# hooks only while the trigger runs; without the DLL Word shows that window for about a second.
+$hookDll = Join-Path $PSScriptRoot 'stylistic-hook.dll'
+if (Test-Path $hookDll) {
+  Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Threading;
+
+public static class StylisticHook {
+  [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern IntPtr LoadLibrary(string path);
+  [DllImport("kernel32.dll", CharSet = CharSet.Ansi)] static extern IntPtr GetProcAddress(IntPtr module, string name);
+  [DllImport("user32.dll", SetLastError = true)] static extern IntPtr SetWindowsHookEx(int id, IntPtr proc, IntPtr module, uint thread);
+  [DllImport("user32.dll")] static extern bool UnhookWindowsHookEx(IntPtr hook);
+  // The DLL acts only while this event exists and is set, so it stops if this script dies mid-trigger.
+  static readonly EventWaitHandle Trigger = new EventWaitHandle(false, EventResetMode.ManualReset, "Local\\StylisticHubTrigger");
+
+  // One WH_CBT hook per thread of Word: Word shows a document's window from a thread of its own.
+  public static List<IntPtr> Arm(string dll, int wordPid) {
+    IntPtr module = LoadLibrary(dll);
+    if (module == IntPtr.Zero) throw new InvalidOperationException("LoadLibrary failed: " + Marshal.GetLastWin32Error());
+    IntPtr proc = GetProcAddress(module, "StylisticCbtProc");
+    if (proc == IntPtr.Zero) throw new InvalidOperationException("StylisticCbtProc is not exported");
+    var hooks = new List<IntPtr>();
+    foreach (System.Diagnostics.ProcessThread thread in System.Diagnostics.Process.GetProcessById(wordPid).Threads) {
+      IntPtr hook = SetWindowsHookEx(5, proc, module, (uint)thread.Id);
+      if (hook != IntPtr.Zero) hooks.Add(hook);
+    }
+    if (hooks.Count == 0) throw new InvalidOperationException("no Word thread accepted the hook");
+    Trigger.Set();
+    return hooks;
+  }
+
+  public static void Disarm(List<IntPtr> hooks) {
+    Trigger.Reset();
+    foreach (IntPtr hook in hooks) UnhookWindowsHookEx(hook);
+  }
+}
+'@
+} else {
+  $hookDll = $null
+}
+
 function Write-Log([string]$Message) {
   $line = '{0:yyyy-MM-dd HH:mm:ss} {1}' -f (Get-Date), $Message
   Write-Output $line
@@ -77,18 +121,42 @@ while ($true) {
     $stale = Close-Pane (Get-WordWindow $word.Id)
     # Documents.Add(Template, NewTemplate, DocumentType, Visible). Opening the file instead would take the place
     # of an untouched blank document the user just started. Word shows the new window for about a second.
-    $trigger = $app.Documents.Add($Document, $false, 0, $true)
-    # The document opens the add-in's task pane, which is what loads the add-in. Closing that pane before the
-    # document keeps Word from restoring it in the user's documents next session.
-    $triggerWindow = $ui::FromHandle([IntPtr][int]$trigger.ActiveWindow.Hwnd)
-    for ($i = 0; $i -lt 30 -and (Close-Pane @($triggerWindow)) -eq 0; $i++) { Start-Sleep -Milliseconds 100 }
-    $trigger.Close(0)
+    $hooks = $null
+    if ($hookDll) {
+      try { $hooks = [StylisticHook]::Arm($hookDll, $word.Id) }
+      catch { Write-Log "cannot keep the trigger off screen, Word will show it: $($_.Exception.Message)"; $hookDll = $null }
+    }
+    try {
+      $trigger = $app.Documents.Add($Document, $false, 0, $true)
+      # The document opens the add-in's task pane, which is what loads the add-in. Closing that pane before the
+      # document keeps Word from restoring it in the user's documents next session.
+      $triggerWindow = $ui::FromHandle([IntPtr][int]$trigger.ActiveWindow.Hwnd)
+      $triggerPane = 0
+      for ($i = 0; $i -lt 30 -and $triggerPane -eq 0; $i++) {
+        $triggerPane = Close-Pane @($triggerWindow)
+        if ($triggerPane -eq 0) { Start-Sleep -Milliseconds 100 }
+      }
+      # Close does not always take the first time: a trigger left open would keep Word running, off screen, after
+      # the user closes their documents. Check by name and try again.
+      $triggerName = $trigger.Name
+      $trigger.Close(0)
+      for ($i = 0; $i -lt 20; $i++) {
+        $left = @($app.Documents | Where-Object { $_.Name -eq $triggerName })
+        if ($left.Count -eq 0) { break }
+        if ($i -eq 0) { Write-Log "the trigger $triggerName is still open; closing it again" }
+        Start-Sleep -Milliseconds 250
+        foreach ($doc in $left) { try { $doc.Close(0) } catch { } }
+      }
+      if ($left.Count) { Write-Log "could not close the trigger $triggerName" }
+    } finally {
+      if ($hooks) { [StylisticHook]::Disarm($hooks) }
+    }
     try { $active.Activate() } catch { }
     Start-Sleep -Milliseconds 1500
     $stale += Close-Pane (Get-WordWindow $word.Id)
     $done = $word.Id
     $attempts = 0
-    Write-Log "loaded Stylistic in Word $($word.Id) ($($app.Documents.Count) document(s) open, $stale restored pane(s) closed)"
+    Write-Log "loaded Stylistic in Word $($word.Id) ($($app.Documents.Count) document(s) open, $stale restored pane(s) closed, trigger pane $(if ($triggerPane) { 'closed' } else { 'not found' }), $(if ($hooks) { 'off screen' } else { 'on screen' }))"
   } catch {
     # Word rejects calls while it starts or shows a dialog, and joins COM only once it is ready; keep trying on
     # every poll and report once when it takes long.

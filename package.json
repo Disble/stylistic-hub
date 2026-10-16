@@ -25,9 +25,10 @@
     "release:hub": "semantic-release",
     "test:coverage": "vitest run --coverage --config .dharness/vitest.coverage.mjs",
     "check": "bun run format:check && bun run lint && bun run typecheck && bun run test:coverage",
-    "dist": "bun scripts/require-addin.ts && bun run build && bun scripts/stage-prod-addin.ts && electron-builder --win nsis --x64",
-    "dist:dir": "bun scripts/require-addin.ts && bun run build && bun scripts/stage-prod-addin.ts && electron-builder --win dir --x64",
-    "prepare": "lefthook install"
+    "dist": "bun scripts/require-addin.ts && bun run build && bun scripts/stage-prod-addin.ts && bun scripts/build-word-hook.ts && electron-builder --win nsis --x64",
+    "dist:dir": "bun scripts/require-addin.ts && bun run build && bun scripts/stage-prod-addin.ts && bun scripts/build-word-hook.ts && electron-builder --win dir --x64",
+    "prepare": "lefthook install",
+    "word:hook": "bun scripts/build-word-hook.ts"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "1.2.0",
