@@ -110,6 +110,27 @@ function New-Scratch([string]$Path) {
   }
 }
 
+# Ends the Word this run started, and only that one. The probe used to stop every Word with a window, which kills
+# the user's own Word if they open one while the probe runs and leaves Word offering to recover the probe document
+# at the next start. It closes the scratch document through Word first, so Word has nothing to recover, and falls
+# back to the one process that owns the frame the probe was measuring.
+function Close-ProbeWord([int]$WordId, [string]$Name) {
+  try {
+    $app = [System.Runtime.InteropServices.Marshal]::GetActiveObject('Word.Application')
+    if (@($app.Documents | Where-Object { $_.Name -eq $Name }).Count) {
+      foreach ($doc in @($app.Documents | Where-Object { $_.Name -eq $Name })) { try { $doc.Close(0) } catch { } }
+      $app.Quit(0)
+      [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($app)
+      Start-Sleep -Seconds 2
+    }
+  } catch { }
+  $left = Get-Process -Id $WordId -ErrorAction SilentlyContinue
+  if ($left) {
+    # It ignored the quit: stop this process only, never every Word on the machine.
+    Stop-Process -Id $WordId -Force -ErrorAction SilentlyContinue
+  }
+}
+
 $scratch = Join-Path $OutDir 'scratch.docx'
 New-Scratch $scratch
 $name = Split-Path -Leaf $scratch
@@ -221,11 +242,13 @@ for ($runIndex = 1; $runIndex -le $Runs; $runIndex++) {
   $report += '  on screen: ' + ($spans -join ' | ')
   $report += '  frames: ' + (($frames.Keys | ForEach-Object { "$_ `"$($frames[$_].title)`" visible=$($frames[$_].visible) onScreen=$($frames[$_].onScreen)" }) -join ' | ')
   $report += '  samples: ' + ($samples -join ' | ')
-  if (-not $KeepWord) {
-    Get-Process WINWORD -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Stop-Process -Force -ErrorAction SilentlyContinue
-  }
+  if (-not $KeepWord) { Close-ProbeWord $target.Pid $name }
   Start-Sleep -Seconds 3
 }
+
+# The probe document is not left behind: a document the user never asked for must not be sitting in the repo, and
+# Word reopens whatever it was showing when it died.
+if (-not $KeepWord) { Remove-Item -Force -ErrorAction SilentlyContinue $scratch, (Join-Path $OutDir ('~$' + $name.Substring(1))) }
 
 Set-Content -Path (Join-Path $OutDir 'journey.txt') -Value $report
 Write-Output '--- journey.txt written ---'
