@@ -52,6 +52,19 @@ describe('createWordSession', () => {
     ])
   })
 
+  it('tells the loader where to keep its log when the hub names one', () => {
+    const { spawn } = loaders()
+
+    createWordSession({ ...files, spawn, parentPid: 4242, logFile: 'C:\\logs\\word-session.log' }).start()
+
+    expect(spawn.mock.calls[0]?.[1].slice(-4)).toEqual([
+      '-ParentPid',
+      '4242',
+      '-LogFile',
+      'C:\\logs\\word-session.log'
+    ])
+  })
+
   it('starts one loader however often it is asked to', () => {
     const { spawn } = loaders()
     const session = createWordSession({ ...files, spawn, parentPid: 1 })

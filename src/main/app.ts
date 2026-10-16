@@ -119,7 +119,8 @@ if (!isSingleInstance) {
     const wordSession = createWordSession({
       script: join(WORD_DIR, 'word-session.ps1'),
       document: join(ADDIN_DIR, 'Stylistic.docx'),
-      parentPid: process.pid
+      parentPid: process.pid,
+      logFile: join(app.getPath('logs'), 'word-session.log')
     })
     app.on('will-quit', () => wordSession.stop())
     // While Stylistic is in Word, the hub starts with Windows and keeps loading it into every Word session.

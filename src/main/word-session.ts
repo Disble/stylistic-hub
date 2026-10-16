@@ -12,6 +12,8 @@ export interface WordSessionOptions {
   document: string
   /** The hub's process id; the script exits when the hub is gone. */
   parentPid: number
+  /** Where the script keeps a log of what it did; the packaged hub has no console to read. */
+  logFile?: string
   spawn?: SpawnLoader
 }
 
@@ -32,7 +34,13 @@ export const spawnHidden: SpawnLoader = (command, args) => {
  * per Word session through Word's COM automation. Custom code: no tool loads a sideloaded add-in into a running
  * Word (docs/architecture.md).
  */
-export function createWordSession({ script, document, parentPid, spawn = spawnHidden }: WordSessionOptions) {
+export function createWordSession({
+  script,
+  document,
+  parentPid,
+  logFile,
+  spawn = spawnHidden
+}: WordSessionOptions) {
   const args = [
     '-NoProfile',
     '-NonInteractive',
@@ -45,7 +53,8 @@ export function createWordSession({ script, document, parentPid, spawn = spawnHi
     '-Document',
     document,
     '-ParentPid',
-    String(parentPid)
+    String(parentPid),
+    ...(logFile ? ['-LogFile', logFile] : [])
   ]
   let supervisor: Supervisor | undefined
 
