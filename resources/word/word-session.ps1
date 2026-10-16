@@ -3,15 +3,16 @@
 # Afterwards every document in the session shows the add-in's ribbon button (docs/architecture.md).
 #
 # One Word session is one WINWORD process. A Word without a window belongs to another program automating it, or is
-# stuck closing, and is left alone (odd/tasks/mvp.md L43). Every session is loaded once and the load is verified:
-# the add-in's task pane opening inside the trigger document is what proves the add-in started, so a trigger whose
-# pane never appears is undone and retried.
+# stuck closing, and is left alone (odd/tasks/mvp.md L43). Every session is loaded once, and the loader watches for
+# the add-in's task pane opening inside the trigger document: that is its signal that Word started the add-in, not a
+# guarantee, because Word also restores that pane into new documents once its own cache is warm (L47). A trigger
+# whose pane never appears is undone and retried.
 param(
   [Parameter(Mandatory)][string]$Document,
   [Parameter(Mandatory)][int]$ParentPid,
   [int]$PollSeconds = 2,
   [int]$ReportAfter = 15,
-  # The add-in's DisplayName, which titles its task pane; the pane opening is the proof the add-in loaded.
+  # The add-in's DisplayName, which titles its task pane; the pane opening is the loader's signal that Word loaded it.
   [string]$PaneTitle = 'Stylistic',
   # The packaged hub has no console, so the script also keeps what it reports in this file.
   [string]$LogFile,

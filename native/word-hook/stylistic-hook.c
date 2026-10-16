@@ -155,25 +155,43 @@ static BOOL is_protected(HWND hwnd) {
   return FALSE;
 }
 
-static void restore(Frame *frame) {
-  if ((WNDPROC)GetWindowLongPtrW(frame->hwnd, GWLP_WNDPROC) == keep_off_screen)
-    SetWindowLongPtrW(frame->hwnd, GWLP_WNDPROC, (LONG_PTR)frame->original);
-  SetWindowLongPtrW(frame->hwnd, GWL_EXSTYLE, frame->exstyle);
-  trace("restored %p", frame->hwnd);
-  frame->hwnd = NULL;
-}
-
-static LRESULT CALLBACK keep_off_screen(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
+// Gives a frame back to Word. The procedure swap does not send a message, but the extended-style write does
+// (WM_STYLECHANGING), and by then the window procedure is Word's own again, so that write happens outside the lock.
+// The caller does not hold the lock.
+static void restore(HWND hwnd) {
   WNDPROC original = NULL;
+  LONG_PTR exstyle = 0;
   BOOL ours = FALSE;
   EnterCriticalSection(&lock);
   Frame *frame = find(hwnd);
   if (frame) {
     ours = TRUE;
     original = frame->original;
-    if (msg == WM_NCDESTROY || !trigger_active()) restore(frame);
+    exstyle = frame->exstyle;
+    if ((WNDPROC)GetWindowLongPtrW(hwnd, GWLP_WNDPROC) == keep_off_screen)
+      SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)original);
+    frame->hwnd = NULL;
+    frame->original = NULL;
   }
   LeaveCriticalSection(&lock);
+  if (!ours) return;
+  SetWindowLongPtrW(hwnd, GWL_EXSTYLE, exstyle);
+  trace("restored %p", hwnd);
+}
+
+static LRESULT CALLBACK keep_off_screen(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
+  WNDPROC original = NULL;
+  BOOL ours = FALSE;
+  BOOL release = FALSE;
+  EnterCriticalSection(&lock);
+  Frame *frame = find(hwnd);
+  if (frame) {
+    ours = TRUE;
+    original = frame->original;
+    release = msg == WM_NCDESTROY || !trigger_active();
+  }
+  LeaveCriticalSection(&lock);
+  if (release) restore(hwnd);
   if (!ours) return DefWindowProcW(hwnd, msg, wparam, lparam);
   if (msg == WM_WINDOWPOSCHANGING) {
     WINDOWPOS *pos = (WINDOWPOS *)lparam;
@@ -189,12 +207,18 @@ static LRESULT CALLBACK keep_off_screen(HWND hwnd, UINT msg, WPARAM wparam, LPAR
 // sends before the position change the window procedure below neutralizes). A frame the user can see is never
 // adopted, and neither is one that is already showing a document: those are the user's windows, and the trigger's
 // window is empty when it appears. The caller holds the lock.
-static void adopt_frame(HWND hwnd) {
-  if (!is_frame(hwnd) || is_protected(hwnd) || shows_document(hwnd)) return;
-  LONG_PTR exstyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-  if (!adopt(hwnd, exstyle)) return;
-  SetWindowLongPtrW(hwnd, GWL_EXSTYLE, (exstyle | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW);
+static BOOL adopt_frame(HWND hwnd, LONG_PTR *exstyle) {
+  if (!is_frame(hwnd) || is_protected(hwnd) || shows_document(hwnd)) return FALSE;
+  *exstyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+  if (!adopt(hwnd, *exstyle)) return FALSE;
   trace("adopted frame %p", hwnd);
+  return TRUE;
+}
+
+// A frame Word shows for the trigger is not a taskbar window; this write sends WM_STYLECHANGING, so the caller does
+// it outside the lock.
+static void hide_from_taskbar(HWND hwnd, LONG_PTR exstyle) {
+  SetWindowLongPtrW(hwnd, GWL_EXSTYLE, (exstyle | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW);
 }
 
 static BOOL CALLBACK look_for_frames(HWND hwnd, LPARAM unused) {
@@ -202,9 +226,12 @@ static BOOL CALLBACK look_for_frames(HWND hwnd, LPARAM unused) {
   DWORD pid;
   GetWindowThreadProcessId(hwnd, &pid);
   if (pid == GetCurrentProcessId()) {
+    LONG_PTR exstyle = 0;
+    BOOL adopted = FALSE;
     EnterCriticalSection(&lock);
-    adopt_frame(hwnd);
+    adopted = adopt_frame(hwnd, &exstyle);
     LeaveCriticalSection(&lock);
+    if (adopted) hide_from_taskbar(hwnd, exstyle);
   }
   return TRUE;
 }
@@ -284,10 +311,11 @@ __declspec(dllexport) LRESULT CALLBACK StylisticCbtProc(int code, WPARAM wparam,
           if (!is_protected(hwnd)) {
             LONG_PTR exstyle = create->dwExStyle;
             if (adopt(hwnd, exstyle)) {
+              // The window does not exist yet: correcting its CREATESTRUCT places it off screen and creates it
+              // without a taskbar entry, so no style change (and no message) is needed afterwards.
               create->x = OFF_SCREEN;
               create->y = OFF_SCREEN;
               create->dwExStyle = (create->dwExStyle | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW;
-              SetWindowLongPtrW(hwnd, GWL_EXSTYLE, (exstyle | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW);
               trace("adopted created frame %p", hwnd);
             }
           }
@@ -296,9 +324,12 @@ __declspec(dllexport) LRESULT CALLBACK StylisticCbtProc(int code, WPARAM wparam,
       } else if (code == HCBT_MOVESIZE) {
         // A window about to be moved or sized, which is how Word places the frame it shows for the trigger: adopt
         // it here so the position change that follows goes through keep_off_screen.
+        LONG_PTR moved = 0;
+        BOOL adopted = FALSE;
         EnterCriticalSection(&lock);
-        adopt_frame(hwnd);
+        adopted = adopt_frame(hwnd, &moved);
         LeaveCriticalSection(&lock);
+        if (adopted) hide_from_taskbar(hwnd, moved);
       }
       // Keep the user's window active while Word loads the trigger.
       if (code == HCBT_ACTIVATE) {
