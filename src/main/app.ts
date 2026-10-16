@@ -79,8 +79,13 @@ if (!isSingleInstance) {
   let tray: Tray | undefined
 
   const showWindow = () => {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      mainWindow = createWindow()
+    if (!mainWindow) {
+      const window = createWindow()
+      // The hub outlives its window, so nothing may send to a closed one.
+      window.on('closed', () => {
+        if (mainWindow === window) mainWindow = undefined
+      })
+      mainWindow = window
       return
     }
     if (mainWindow.isMinimized()) mainWindow.restore()
@@ -123,7 +128,6 @@ if (!isSingleInstance) {
       else wordSession.stop()
       if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: enabled, args: [BACKGROUND_FLAG] })
     }
-    if ((await word.status()).addinRegistered) keepInWord(true)
     registerScreenIpc(status, {
       ...word,
       connect: async () => {
@@ -150,6 +154,13 @@ if (!isSingleInstance) {
 
     if (!process.argv.includes(BACKGROUND_FLAG)) showWindow()
     app.on('activate', showWindow)
+
+    // Follows Word's actual state, also when Stylistic was removed outside the hub. A failure here must not
+    // leave the hub without its window and tray, which already exist.
+    word.status().then(
+      (current) => keepInWord(current.addinRegistered),
+      (error: unknown) => console.error('Could not read Word status:', error)
+    )
   })
 
   // Closing the window leaves the hub in the tray: Word needs its server and its session loader.

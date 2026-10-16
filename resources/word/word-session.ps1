@@ -5,7 +5,7 @@ param(
   [Parameter(Mandatory)][string]$Document,
   [Parameter(Mandatory)][int]$ParentPid,
   [int]$PollSeconds = 2,
-  [int]$MaxAttempts = 15
+  [int]$ReportAfter = 15
 )
 $ErrorActionPreference = 'Stop'
 $missing = [System.Reflection.Missing]::Value
@@ -30,12 +30,15 @@ while ($true) {
     $attempts = 0
     Write-Output "loaded Stylistic in Word $($word.Id)"
   } catch {
-    # Word rejects calls while it starts or shows a dialog; try again on the next poll, then give up for this session.
+    # Word rejects calls while it starts or shows a dialog, and joins COM only once it is ready; keep trying on
+    # every poll and report once when it takes long.
     $attempts++
-    if ($attempts -ge $MaxAttempts) {
-      $done = $word.Id
-      $attempts = 0
-      Write-Output "gave up on Word $($word.Id): $($_.Exception.Message)"
+    if ($attempts -eq $ReportAfter) { Write-Output "still waiting for Word $($word.Id): $($_.Exception.Message)" }
+  } finally {
+    foreach ($com in $trigger, $app) {
+      if ($com) { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($com) }
     }
+    $trigger = $null
+    $app = $null
   }
 }
