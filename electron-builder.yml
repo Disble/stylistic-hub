@@ -1,5 +1,7 @@
 appId: com.disble.stylistic-hub
 productName: Stylistic Hub
+# The only native module (pi-tui) ships prebuilt N-API binaries; rebuilding for Electron left them byte-identical.
+npmRebuild: false
 directories:
   output: release
 files:

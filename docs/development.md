@@ -24,6 +24,7 @@ The Electron binary downloads on first run (`bunx electron --version`).
 | `bun run release:server [--no-ci] [--dry-run]` | semantic-release for the Local server: version from the commits under `src/backend/`, `src/backend/CHANGELOG.md`, tag `server-vX.Y.Z`. Releases only from semantic-release's default branches: `main`/`master`, `next`, `next-major`, `N.x`, and `beta`/`alpha` for test releases (`X.Y.Z-beta.N`). Steps: the `release` skill |
 | `bun run release:hub [--no-ci] [--dry-run]` | semantic-release for the hub: version from all commits, `CHANGELOG.md`, builds the installer, tag `hub-vX.Y.Z`; run it after `release:server` |
 | `bun run dist` | Build the unsigned per-user NSIS installer into `release/` (production): it packs a copy of `resources/addin` staged in `out/addin` under the production add-in id, so the installed hub never shares Word's sideload entry, or the debugger flags `npm start` sets on it, with development; needs `bun run addin:bundle` first and stops if `resources/addin` is missing |
+| `bun run dist:dir` | Same packaged hub as `dist` in `release/win-unpacked/`, without the NSIS installer (~35 s instead of ~55 s); use it to try the packaged hub during development. |
 
 ## Git hooks and the dharness gate
 
@@ -49,3 +50,5 @@ src/
 ## Pinned toolchain
 
 electron-vite 5 requires Vite ≤ 7, and typescript-eslint requires TypeScript < 6.1. Versions are pinned exactly in `package.json`; upgrade them together and run `bun run check`.
+
+Build size: the renderer libraries (Fluent UI, React) are `devDependencies` because Vite bundles them into `out/renderer`; anything in `dependencies` is copied into the installer's `app.asar` as raw `node_modules` (Fluent's icon package alone is ~47,000 files). Only modules the main process or backend load at runtime belong in `dependencies`.
