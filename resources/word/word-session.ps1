@@ -6,6 +6,8 @@ param(
   [Parameter(Mandatory)][int]$ParentPid,
   [int]$PollSeconds = 2,
   [int]$ReportAfter = 15,
+  # The add-in's DisplayName, which titles its task pane.
+  [string]$PaneTitle = 'Stylistic',
   # The packaged hub has no console, so the script also keeps what it reports in this file.
   [string]$LogFile
 )
@@ -13,6 +15,34 @@ $ErrorActionPreference = 'Stop'
 $done = 0
 $waiting = 0
 $attempts = 0
+
+Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+$ui = [System.Windows.Automation.AutomationElement]
+$scope = [System.Windows.Automation.TreeScope]
+$walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+$paneCondition = New-Object System.Windows.Automation.AndCondition(
+  (New-Object System.Windows.Automation.PropertyCondition($ui::NameProperty, $PaneTitle)),
+  (New-Object System.Windows.Automation.PropertyCondition($ui::ClassNameProperty, 'MsoWorkPane')))
+$closeCondition = New-Object System.Windows.Automation.PropertyCondition($ui::NameProperty, 'Close pane')
+
+# Closes the add-in's task panes inside the given windows, through Word's own "Close pane" button, which belongs
+# to the dock bar holding the pane. Returns how many it closed.
+function Close-Pane([System.Windows.Automation.AutomationElement[]]$Windows) {
+  $closed = 0
+  foreach ($window in $Windows) {
+    foreach ($pane in $window.FindAll($scope::Descendants, $paneCondition)) {
+      $bar = $pane
+      while ($bar -and $bar.Current.ClassName -ne 'MsoCommandBar') { $bar = $walker.GetParent($bar) }
+      $button = if ($bar) { $bar.FindFirst($scope::Descendants, $closeCondition) }
+      if ($button) { $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke(); $closed++ }
+    }
+  }
+  $closed
+}
+
+function Get-WordWindow([int]$Id) {
+  @($ui::RootElement.FindAll($scope::Children, (New-Object System.Windows.Automation.PropertyCondition($ui::ProcessIdProperty, $Id))))
+}
 
 function Write-Log([string]$Message) {
   $line = '{0:yyyy-MM-dd HH:mm:ss} {1}' -f (Get-Date), $Message
@@ -42,14 +72,23 @@ while ($true) {
       continue
     }
     $active = $app.ActiveWindow
+    # Stylistic is not loaded in this session yet, so the user cannot have opened its pane: a pane here is one Word
+    # restored from an earlier session, and it stays empty.
+    $stale = Close-Pane (Get-WordWindow $word.Id)
     # Documents.Add(Template, NewTemplate, DocumentType, Visible). Opening the file instead would take the place
     # of an untouched blank document the user just started. Word shows the new window for about a second.
     $trigger = $app.Documents.Add($Document, $false, 0, $true)
+    # The document opens the add-in's task pane, which is what loads the add-in. Closing that pane before the
+    # document keeps Word from restoring it in the user's documents next session.
+    $triggerWindow = $ui::FromHandle([IntPtr][int]$trigger.ActiveWindow.Hwnd)
+    for ($i = 0; $i -lt 30 -and (Close-Pane @($triggerWindow)) -eq 0; $i++) { Start-Sleep -Milliseconds 100 }
     $trigger.Close(0)
     try { $active.Activate() } catch { }
+    Start-Sleep -Milliseconds 1500
+    $stale += Close-Pane (Get-WordWindow $word.Id)
     $done = $word.Id
     $attempts = 0
-    Write-Log "loaded Stylistic in Word $($word.Id) ($($app.Documents.Count) document(s) open)"
+    Write-Log "loaded Stylistic in Word $($word.Id) ($($app.Documents.Count) document(s) open, $stale restored pane(s) closed)"
   } catch {
     # Word rejects calls while it starts or shows a dialog, and joins COM only once it is ready; keep trying on
     # every poll and report once when it takes long.
