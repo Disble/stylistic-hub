@@ -29,6 +29,7 @@ export function fakeHub(overrides: { [K in keyof HubBridge]?: Partial<HubBridge[
       status: async () => ({ available: true, caTrusted: false, addinRegistered: false, version: '1.0.0.0' }),
       connect: async () => undefined,
       disconnect: async () => undefined,
+      open: async () => undefined,
       ...overrides.word
     }
   }

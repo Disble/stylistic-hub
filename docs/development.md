@@ -18,7 +18,7 @@ The Electron binary downloads on first run (`bunx electron --version`).
 | `bun run start` | Run the built app |
 | `bun run check` | Format check, lint, typecheck and tests — run before every push |
 | `bun run test` | Unit tests (vitest) |
-| `bun run addin:bundle [path]` | Builds stylistic-addon with `build:hub` (default `../stylistic-addon`) and copies its `dist/` into `resources/addin`, which the hub serves at `https://localhost:3000` and registers with Word |
+| `bun run addin:bundle [path]` | Builds stylistic-addon with `build:hub` (default `../stylistic-addon`) and copies its `dist/` into `resources/addin`, plus `Stylistic.docx`, the document "Open Word" opens so Word loads the add-in, which the hub serves at `https://localhost:3000` and registers with Word |
 | `bun run check:providers [piDir]` | Sends one small structured call to every provider signed in on this hub (default `%APPDATA%/stylistic-hub/pi`); spends a few tokens per provider |
 | `bun run test:coverage` | Tests with the coverage tiers enforced (CORE 100%, IMPORTANT 80%) |
 | `bun run release:server [--no-ci] [--dry-run]` | semantic-release for the Local server: version from the commits under `src/backend/`, `src/backend/CHANGELOG.md`, tag `server-vX.Y.Z`. Releases only from semantic-release's default branches: `main`/`master`, `next`, `next-major`, `N.x`, and `beta`/`alpha` for test releases (`X.Y.Z-beta.N`). Steps: the `release` skill |

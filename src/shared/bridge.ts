@@ -69,6 +69,8 @@ export interface HubBridge {
     /** Trusts the hub certificate (Windows asks the user) and adds Stylistic to Word. */
     connect(): Promise<void>
     disconnect(): Promise<void>
+    /** Opens Word on a document that loads the Stylistic pane. */
+    open(): Promise<void>
   }
 }
 

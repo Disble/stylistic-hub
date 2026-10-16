@@ -51,7 +51,8 @@ export function WordScreen() {
               {
                 label: 'Open Word',
                 done: false,
-                detail: 'Restart Word, then Home tab → Stylistic. No sign-in needed.'
+                detail:
+                  'Opens a document with the Stylistic pane. Later, Home tab → Show Task Pane. No sign-in needed.'
               }
             ]}
           />
@@ -59,6 +60,11 @@ export function WordScreen() {
             {!wordReady(status) && (
               <Button appearance="primary" disabled={busy} onClick={() => run(window.hub.word.connect)}>
                 Add to Word
+              </Button>
+            )}
+            {wordReady(status) && (
+              <Button appearance="primary" disabled={busy} onClick={() => run(window.hub.word.open)}>
+                Open Word
               </Button>
             )}
             {status.addinRegistered && (

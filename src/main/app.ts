@@ -10,7 +10,7 @@ import { registerProviderIpc } from './ipc-provider'
 import { registerScreenIpc } from './ipc-screens'
 import { createPiProvider } from './pi-provider'
 import { createServerStatus } from './server-status'
-import { createWordIntegration } from './word-integration'
+import { createWordIntegration, openWordDocument } from './word-integration'
 
 /**
  * stylistic-addon's build. It ships outside the asar archive because Word reads the manifest from a
@@ -93,7 +93,13 @@ if (!isSingleInstance) {
     registerProviderIpc(await createPiProvider(paths.piDir), () => mainWindow?.webContents)
     registerScreenIpc(
       status,
-      createWordIntegration({ caFile: paths.caCert, manifestFile: join(ADDIN_DIR, 'manifest.xml') })
+      createWordIntegration({ caFile: paths.caCert, manifestFile: join(ADDIN_DIR, 'manifest.xml') }),
+      () =>
+        openWordDocument({
+          documentFile: join(ADDIN_DIR, 'Stylistic.docx'),
+          workDir: app.getPath('temp'),
+          openFile: (path) => shell.openPath(path)
+        })
     )
     mainWindow = createWindow()
     app.on('activate', () => {
