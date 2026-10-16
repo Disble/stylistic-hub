@@ -71,6 +71,7 @@
     "prettier": "3.9.10",
     "semantic-release": "25.0.9",
     "semantic-release-monorepo": "8.0.2",
+    "supports-color": "7.2.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.71.2",
     "vite": "7.3.7",

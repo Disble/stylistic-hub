@@ -6,7 +6,7 @@ out/
 dist/
 # stylistic-addon's build, copied by `bun run addin:bundle`
 resources/addin/
-release/
+/release/
 
 # Test and coverage
 coverage/
