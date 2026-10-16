@@ -33,7 +33,7 @@ Branch: `feat/mvp` · Delivery: `ask-on-risk` · Test runner: vitest (`bun run t
 | T9 | S2, S6 | Renderer screens Home, Word, Server per canvas, with per-component versions | inline | done | d3670b4, 34dac71; L28, L29 |
 | T10 | S2 | Unsigned per-user NSIS installer | inline | done | 09658c9; L31, L32 |
 | T11 | S10 | Word session loader (watch Word, open the trigger document minimized and close it), hub at sign-in and in the tray, Word screen without “Open Word” | inline | done (commit below); install on the user machine pending | L34-L36 |
-| T12 | S10, S11, S12 | Stabilize the Word session loader: the C hook adopts the frames Word creates, the loader verifies each load and retries it, and a probe measures load and window visibility per scenario | inline | in progress | L44- |
+| T12 | S10, S11, S12 | Stabilize the Word session loader: the C hook adopts the frames Word creates, the loader verifies each load and retries it, and a probe measures load and window visibility per scenario | inline | done | `ba4f8a8` (probe), `6385591` (loader syntax check), `2a6fa89` (hook), `d17e5fd` (loader); L44-L47 |
 
 ## Log
 
