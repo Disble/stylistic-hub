@@ -149,10 +149,12 @@ $report = @()
 for ($runIndex = 1; $runIndex -le $Runs; $runIndex++) {
   # Word's start screen has no document; the loader has to wait for the user's document, then load.
   if ($StartScreen) {
-    Start-Process winword.exe | Out-Null
+    Start-Process winword.exe -ArgumentList '/n' | Out-Null
     Start-Sleep -Seconds 4
   } else {
-    Start-Process winword.exe -ArgumentList "`"$scratch`"" | Out-Null
+    # /n asks for a new instance: Word hands a plain launch to a Word that is already running, including a windowless
+    # one left behind by a session the user closed, and then nothing appears to measure.
+    Start-Process winword.exe -ArgumentList @('/n', "`"$scratch`"") | Out-Null
   }
 
   $target = $null
@@ -190,7 +192,7 @@ for ($runIndex = 1; $runIndex -le $Runs; $runIndex++) {
     # On the start screen the user opens their document while the loader watches.
     if ($StartScreen -and -not $opened -and $watch.Elapsed.TotalSeconds -gt 4) {
       $opened = $true
-      Start-Process winword.exe -ArgumentList "`"$scratch`"" | Out-Null
+      Start-Process winword.exe -ArgumentList @('/n', "`"$scratch`"") | Out-Null
     }
     Start-Sleep -Milliseconds 40
   }
