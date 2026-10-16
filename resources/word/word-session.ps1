@@ -1,20 +1,32 @@
 # Keeps Stylistic in every Word session. Word reads a sideloaded add-in only when it shows a document that
 # refers to it, so for each new Word session this creates a document from it, off screen, then closes it unsaved.
 # Afterwards every document in the session shows the add-in's ribbon button (docs/architecture.md).
+#
+# One Word session is one WINWORD process. A Word without a window belongs to another program automating it, or is
+# stuck closing, and is left alone (odd/tasks/mvp.md L43). Every session is loaded once and the load is verified:
+# the add-in's task pane opening inside the trigger document is what proves the add-in started, so a trigger whose
+# pane never appears is undone and retried.
 param(
   [Parameter(Mandatory)][string]$Document,
   [Parameter(Mandatory)][int]$ParentPid,
   [int]$PollSeconds = 2,
   [int]$ReportAfter = 15,
-  # The add-in's DisplayName, which titles its task pane.
+  # The add-in's DisplayName, which titles its task pane; the pane opening is the proof the add-in loaded.
   [string]$PaneTitle = 'Stylistic',
   # The packaged hub has no console, so the script also keeps what it reports in this file.
-  [string]$LogFile
+  [string]$LogFile,
+  # How long one trigger waits for the add-in's task pane before it is undone and tried again.
+  [int]$LoadTimeoutSeconds = 20,
+  # Trigger attempts per Word session before the loader reports a failure and starts a fresh round.
+  [int]$TriggerAttempts = 3,
+  # After a session fails a round, how long before the loader tries it again: a backend that was down, or a Word
+  # that was busy, should not make the loader hammer Word with trigger documents.
+  [int]$RetryAfterMinutes = 5
 )
 $ErrorActionPreference = 'Stop'
-$done = 0
-$waiting = 0
-$attempts = 0
+$installed = @{}
+$noted = @{}
+$nextRound = @{}
 
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
 $ui = [System.Windows.Automation.AutomationElement]
@@ -25,23 +37,67 @@ $paneCondition = New-Object System.Windows.Automation.AndCondition(
   (New-Object System.Windows.Automation.PropertyCondition($ui::ClassNameProperty, 'MsoWorkPane')))
 $closeCondition = New-Object System.Windows.Automation.PropertyCondition($ui::NameProperty, 'Close pane')
 
-# Closes the add-in's task panes inside the given windows, through Word's own "Close pane" button, which belongs
-# to the dock bar holding the pane. Returns how many it closed.
+# The add-in's task panes inside the given windows. The pane is what loads the add-in; Word also restores the pane
+# of a previous session, empty, into the user's document, so a pane that exists before the trigger is closed.
+function Get-Pane([System.Windows.Automation.AutomationElement[]]$Windows) {
+  $panes = @()
+  foreach ($window in $Windows) {
+    foreach ($pane in $window.FindAll($scope::Descendants, $paneCondition)) { $panes += $pane }
+  }
+  ,$panes
+}
+
+# Closes one pane through Word's own "Close pane" button, which belongs to the dock bar holding it.
+function Close-PaneElement([System.Windows.Automation.AutomationElement]$Pane) {
+  $bar = $Pane
+  while ($bar -and $bar.Current.ClassName -ne 'MsoCommandBar') { $bar = $walker.GetParent($bar) }
+  $button = if ($bar) { $bar.FindFirst($scope::Descendants, $closeCondition) }
+  if (-not $button) { return $false }
+  $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+  return $true
+}
+
+# Closes the add-in's panes inside the given windows; returns how many it closed.
 function Close-Pane([System.Windows.Automation.AutomationElement[]]$Windows) {
   $closed = 0
-  foreach ($window in $Windows) {
-    foreach ($pane in $window.FindAll($scope::Descendants, $paneCondition)) {
-      $bar = $pane
-      while ($bar -and $bar.Current.ClassName -ne 'MsoCommandBar') { $bar = $walker.GetParent($bar) }
-      $button = if ($bar) { $bar.FindFirst($scope::Descendants, $closeCondition) }
-      if ($button) { $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke(); $closed++ }
-    }
-  }
+  foreach ($pane in (Get-Pane $Windows)) { if (Close-PaneElement $pane) { $closed++ } }
   $closed
 }
 
-function Get-WordWindow([int]$Id) {
-  @($ui::RootElement.FindAll($scope::Children, (New-Object System.Windows.Automation.PropertyCondition($ui::ProcessIdProperty, $Id))))
+# Word's Application behind one of its windows. GetActiveObject would return whichever Word registered first, which
+# may be a hidden one another program automates, or one stuck closing; Word's document window (class _WwG) hands
+# out its Window object through the standard accessibility API instead. $null while Word shows no document.
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+
+public static class WordWindow {
+  delegate bool EnumProc(IntPtr hwnd, IntPtr unused);
+  [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumProc proc, IntPtr unused);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hwnd, StringBuilder name, int size);
+  [DllImport("oleacc.dll")] static extern int AccessibleObjectFromWindow(IntPtr hwnd, uint id, ref Guid iid, [MarshalAs(UnmanagedType.IDispatch)] out object window);
+  const uint OBJID_NATIVEOM = 0xFFFFFFF0;
+  static Guid IID_IDispatch = new Guid("00020400-0000-0000-C000-000000000046");
+
+  public static object Of(IntPtr frame) {
+    IntPtr document = IntPtr.Zero;
+    EnumChildWindows(frame, (hwnd, unused) => {
+      var name = new StringBuilder(16);
+      GetClassName(hwnd, name, name.Capacity);
+      if (name.ToString() != "_WwG") return true;
+      document = hwnd;
+      return false;
+    }, IntPtr.Zero);
+    if (document == IntPtr.Zero) return null;
+    object window;
+    return AccessibleObjectFromWindow(document, OBJID_NATIVEOM, ref IID_IDispatch, out window) == 0 ? window : null;
+  }
+}
+'@
+
+function Get-WordWindow([int]$WordId) {
+  @($ui::RootElement.FindAll($scope::Children, (New-Object System.Windows.Automation.PropertyCondition($ui::ProcessIdProperty, $WordId))))
 }
 
 # Keeps the trigger's window off screen through stylistic-hook.dll (native/word-hook), loaded into Word by thread
@@ -94,6 +150,13 @@ function Write-Log([string]$Message) {
   if ($LogFile) { try { Add-Content -Path $LogFile -Value $line } catch { } }
 }
 
+# Reports the reason once per Word session, so a session that is simply waiting does not fill the log.
+function Write-Once([string]$Key, [string]$Message) {
+  if ($noted.ContainsKey($Key)) { return }
+  $noted[$Key] = $true
+  Write-Log $Message
+}
+
 if ($LogFile) {
   try { New-Item -ItemType Directory -Force -Path (Split-Path -Parent $LogFile) | Out-Null; Set-Content -Path $LogFile -Value $null } catch { }
 }
@@ -103,71 +166,97 @@ while ($true) {
   Start-Sleep -Seconds $PollSeconds
   # The hub supervises this script; when the hub is gone there is nobody to serve the add-in.
   if (-not (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue)) { exit 0 }
-  $word = Get-Process WINWORD -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
-  if (-not $word -or $word.Id -eq $done) { continue }
   try {
-    $app = [System.Runtime.InteropServices.Marshal]::GetActiveObject('Word.Application')
-    # A hidden Word belongs to another program automating it; leave it alone.
-    if (-not $app.Visible) { continue }
-    # Wait for one of the user's documents. On Word's start screen a new document would replace the start screen
-    # and leave an empty window once closed.
-    if ($app.Documents.Count -lt 1) {
-      if ($waiting -ne $word.Id) { $waiting = $word.Id; Write-Log "Word $($word.Id) has no document open yet; waiting" }
-      continue
-    }
-    $active = $app.ActiveWindow
-    # Stylistic is not loaded in this session yet, so the user cannot have opened its pane: a pane here is one Word
-    # restored from an earlier session, and it stays empty.
-    $stale = Close-Pane (Get-WordWindow $word.Id)
-    # Documents.Add(Template, NewTemplate, DocumentType, Visible). Opening the file instead would take the place
-    # of an untouched blank document the user just started. Word shows the new window for about a second.
-    $hooks = $null
-    if ($hookDll) {
-      try { $hooks = [StylisticHook]::Arm($hookDll, $word.Id) }
-      catch { Write-Log "cannot keep the trigger off screen, Word will show it: $($_.Exception.Message)"; $hookDll = $null }
-    }
-    try {
-      $trigger = $app.Documents.Add($Document, $false, 0, $true)
-      # The document opens the add-in's task pane, which is what loads the add-in. Closing that pane before the
-      # document keeps Word from restoring it in the user's documents next session.
-      $triggerWindow = $ui::FromHandle([IntPtr][int]$trigger.ActiveWindow.Hwnd)
-      $triggerPane = 0
-      for ($i = 0; $i -lt 30 -and $triggerPane -eq 0; $i++) {
-        $triggerPane = Close-Pane @($triggerWindow)
-        if ($triggerPane -eq 0) { Start-Sleep -Milliseconds 100 }
+    $running = @(Get-Process WINWORD -ErrorAction SilentlyContinue)
+    foreach ($word in $running) {
+      if ($word.MainWindowHandle -eq 0) {
+        Write-Once "$($word.Id):hidden" "ignoring Word $($word.Id): it has no window"
+        continue
       }
-      # Close does not always take the first time: a trigger left open would keep Word running, off screen, after
-      # the user closes their documents. Check by name and try again.
-      $triggerName = $trigger.Name
-      $trigger.Close(0)
-      for ($i = 0; $i -lt 20; $i++) {
-        $left = @($app.Documents | Where-Object { $_.Name -eq $triggerName })
-        if ($left.Count -eq 0) { break }
-        if ($i -eq 0) { Write-Log "the trigger $triggerName is still open; closing it again" }
-        Start-Sleep -Milliseconds 250
-        foreach ($doc in $left) { try { $doc.Close(0) } catch { } }
+      if ($installed.ContainsKey($word.Id)) { continue }
+      if ($nextRound.ContainsKey($word.Id) -and $nextRound[$word.Id] -gt (Get-Date)) { continue }
+      $view = $null
+      $app = $null
+      $trigger = $null
+      try {
+        $view = [WordWindow]::Of([IntPtr]$word.MainWindowHandle)
+        if (-not $view) {
+          Write-Once "$($word.Id):unreachable" "Word $($word.Id) shows no document window yet; waiting"
+          continue
+        }
+        $app = $view.Application
+        if ($app.Documents.Count -lt 1) {
+          Write-Once "$($word.Id):nodocument" "Word $($word.Id) has no document open yet; waiting"
+          continue
+        }
+        # The add-in is not loaded in this session yet, so the user cannot have opened its pane: a pane here is one
+        # Word restored from an earlier session, and it stays empty.
+        $stale = Close-Pane (Get-WordWindow $word.Id)
+        $pane = 0
+        $attempt = 0
+        while ($attempt -lt $TriggerAttempts) {
+          $attempt++
+          $hooks = $null
+          if ($hookDll) {
+            try { $hooks = [StylisticHook]::Arm($hookDll, $word.Id) }
+            catch { Write-Log "cannot keep the trigger off screen, Word will show it: $($_.Exception.Message)"; $hookDll = $null }
+          }
+          try {
+            # Documents.Add(Template, NewTemplate, DocumentType, Visible). Opening the file instead would take the
+            # place of an untouched blank document the user just started.
+            $trigger = $app.Documents.Add($Document, $false, 0, $true)
+            $triggerWindow = $ui::FromHandle([IntPtr][int]$trigger.ActiveWindow.Hwnd)
+            $deadline = (Get-Date).AddSeconds($LoadTimeoutSeconds)
+            $pane = 0
+            while ((Get-Date) -lt $deadline -and $pane -eq 0) {
+              $pane = @(Get-Pane @($triggerWindow)).Count
+              if ($pane -eq 0) { Start-Sleep -Milliseconds 200 }
+            }
+            # The pane is the add-in's own UI: give it a moment to finish starting before taking it away, then close
+            # it inside the trigger, because otherwise Word restores it, empty, in the user's documents next session.
+            if ($pane) {
+              Start-Sleep -Milliseconds 700
+              [void](Close-Pane @($triggerWindow))
+            }
+            # Close does not always take the first time: a trigger left open would keep Word running, off screen,
+            # after the user closes their documents. Check by name and try again.
+            $triggerName = $trigger.Name
+            $trigger.Close(0)
+            for ($i = 0; $i -lt 20; $i++) {
+              $left = @($app.Documents | Where-Object { $_.Name -eq $triggerName })
+              if ($left.Count -eq 0) { break }
+              if ($i -eq 0) { Write-Log "the trigger $triggerName is still open; closing it again" }
+              Start-Sleep -Milliseconds 250
+              foreach ($doc in $left) { try { $doc.Close(0) } catch { } }
+            }
+            if ($left.Count) { Write-Log "could not close the trigger $triggerName" }
+          } finally {
+            if ($hooks) { [StylisticHook]::Disarm($hooks) }
+            if ($trigger) { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($trigger) }
+            $trigger = $null
+          }
+          if ($pane) { break }
+          Write-Log "attempt $attempt of ${TriggerAttempts}: Word $($word.Id) did not show the add-in's task pane in ${LoadTimeoutSeconds}s"
+        }
+        if (-not $pane) {
+          $nextRound[$word.Id] = (Get-Date).AddMinutes($RetryAfterMinutes)
+          Write-Log "Word $($word.Id) did not load Stylistic after $TriggerAttempts attempts; trying again in ${RetryAfterMinutes} minutes"
+          continue
+        }
+        try { $view.Activate() } catch { }
+        Start-Sleep -Milliseconds 1200
+        $stale += Close-Pane (Get-WordWindow $word.Id)
+        $installed[$word.Id] = $true
+        Write-Log "loaded Stylistic in Word $($word.Id) (attempt $attempt, $($app.Documents.Count) document(s) open, $stale restored pane(s) closed)"
+      } catch {
+        Write-Once "$($word.Id):error" "cannot load Stylistic in Word $($word.Id) yet: $($_.Exception.Message)"
+      } finally {
+        foreach ($com in $view, $app) {
+          if ($com) { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($com) }
+        }
       }
-      if ($left.Count) { Write-Log "could not close the trigger $triggerName" }
-    } finally {
-      if ($hooks) { [StylisticHook]::Disarm($hooks) }
     }
-    try { $active.Activate() } catch { }
-    Start-Sleep -Milliseconds 1500
-    $stale += Close-Pane (Get-WordWindow $word.Id)
-    $done = $word.Id
-    $attempts = 0
-    Write-Log "loaded Stylistic in Word $($word.Id) ($($app.Documents.Count) document(s) open, $stale restored pane(s) closed, trigger pane $(if ($triggerPane) { 'closed' } else { 'not found' }), $(if ($hooks) { 'off screen' } else { 'on screen' }))"
   } catch {
-    # Word rejects calls while it starts or shows a dialog, and joins COM only once it is ready; keep trying on
-    # every poll and report once when it takes long.
-    $attempts++
-    if ($attempts -eq $ReportAfter) { Write-Log "still waiting for Word $($word.Id): $($_.Exception.Message)" }
-  } finally {
-    foreach ($com in $trigger, $active, $app) {
-      if ($com) { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($com) }
-    }
-    $trigger = $null
-    $active = $null
-    $app = $null
+    Write-Log "loader error: $($_.Exception.Message)"
   }
 }
