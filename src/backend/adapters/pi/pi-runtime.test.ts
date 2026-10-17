@@ -55,4 +55,24 @@ describe('createChosenModel', () => {
 
     expect(await getModel()).toBeUndefined()
   })
+
+  it('finds a local model the hub added to models.json after the backend started', async () => {
+    const { getModel } = await createChosenModel(agentDir)
+    writeFileSync(
+      join(agentDir, 'models.json'),
+      JSON.stringify({
+        providers: {
+          local: {
+            baseUrl: 'http://localhost:11434/v1',
+            api: 'openai-completions',
+            apiKey: 'local',
+            models: [{ id: 'qwen3:8b' }]
+          }
+        }
+      })
+    )
+    choose('local', 'qwen3:8b', false)
+
+    expect(await getModel()).toMatchObject({ provider: 'local', id: 'qwen3:8b' })
+  })
 })

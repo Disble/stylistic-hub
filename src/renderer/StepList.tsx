@@ -1,36 +1,42 @@
-import { Text, tokens } from '@fluentui/react-components'
-import type { ReactNode } from 'react'
+import { makeStyles, tokens } from '@fluentui/react-components'
+import { CheckmarkCircle20Filled, Circle20Regular } from '@fluentui/react-icons'
 
 /** One step of a setup checklist. */
 export interface Step {
   label: string
   done: boolean
-  detail?: ReactNode
 }
 
-/** A checklist whose items say, also to screen readers, whether each step is done. */
+/** Griffel classes from the Stylistic theme tokens. */
+const useStyles = makeStyles({
+  list: {
+    margin: 0,
+    padding: 0,
+    listStyle: 'none',
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '6px 20px',
+    color: tokens.colorNeutralForeground2,
+    fontSize: tokens.fontSizeBase200
+  },
+  item: { display: 'flex', gap: '6px', alignItems: 'center' },
+  done: { color: tokens.colorPaletteGreenForeground1 },
+  todo: { color: tokens.colorPaletteDarkOrangeForeground1 }
+})
+
+/** A one-line checklist whose items say, also to screen readers, whether each step is done. */
 export function StepList({ steps }: { steps: Step[] }) {
+  const styles = useStyles()
   return (
-    <ol style={{ margin: 0, padding: 0, listStyle: 'none', display: 'grid', gap: 8 }}>
-      {steps.map(({ label, done, detail }) => (
-        <li
-          key={label}
-          aria-label={`${label} · ${done ? 'done' : 'to do'}`}
-          style={{ display: 'flex', gap: 12, alignItems: 'baseline' }}
-        >
-          <span
-            aria-hidden="true"
-            style={{
-              color: done ? tokens.colorPaletteGreenForeground1 : tokens.colorNeutralForeground3,
-              fontWeight: 700
-            }}
-          >
-            {done ? '✓' : '○'}
-          </span>
-          <span style={{ display: 'grid', gap: 2 }}>
-            <Text weight="semibold">{label}</Text>
-            {detail && <Text size={200}>{detail}</Text>}
-          </span>
+    <ol className={styles.list}>
+      {steps.map(({ label, done }) => (
+        <li key={label} aria-label={`${label} · ${done ? 'done' : 'to do'}`} className={styles.item}>
+          {done ? (
+            <CheckmarkCircle20Filled aria-hidden className={styles.done} />
+          ) : (
+            <Circle20Regular aria-hidden className={styles.todo} />
+          )}
+          {label}
         </li>
       ))}
     </ol>

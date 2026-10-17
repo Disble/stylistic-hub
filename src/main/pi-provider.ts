@@ -14,6 +14,8 @@ export interface PiProvider {
   /** Runs one of Pi's own login flows; Pi stores the credential. */
   login(providerId: string, type: LoginAuthType, interaction: LoginInteraction): Promise<void>
   logout(providerId: string): Promise<void>
+  /** Reads `models.json` again, after the hub changed the local model. */
+  reload(): Promise<void>
 }
 
 /**
@@ -74,6 +76,10 @@ export async function createPiProvider(agentDir: string): Promise<PiProvider> {
       })
     },
 
-    logout: (providerId) => runtime.logout(providerId)
+    logout: (providerId) => runtime.logout(providerId),
+
+    async reload() {
+      await runtime.refresh({ allowNetwork: false })
+    }
   }
 }

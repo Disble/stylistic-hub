@@ -47,4 +47,15 @@ describe('createServerStatus', () => {
     expect(status.get()).toMatchObject({ state: 'running', crashes: 2, lastExitCode: 7 })
     expect(status.get().restartInMs).toBeUndefined()
   })
+
+  it('shows a requested restart as starting, without counting it as a crash', () => {
+    const listener = vi.fn()
+    const status = createServerStatus({ version: '0.0.1', address: 'a', onChange: listener })
+    status.started()
+
+    status.restartRequested()
+
+    expect(status.get()).toEqual({ state: 'starting', version: '0.0.1', address: 'a', crashes: 0 })
+    expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({ state: 'starting' }))
+  })
 })

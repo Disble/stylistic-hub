@@ -18,6 +18,8 @@ export interface SupervisorOptions {
 /** Controls one supervised child process. */
 export interface Supervisor {
   start(): void
+  /** Replaces the child on request: the new one starts once the old one has exited, from the first delay. */
+  restart(): void
   /** Stops for good: cancels a pending restart and kills the running child. */
   stop(): void
 }
@@ -57,6 +59,23 @@ export function createSupervisor({
     start() {
       if (stopped || child || restartTimer) return
       launch()
+    },
+    restart() {
+      if (stopped) return
+      if (restartTimer) clearTimeout(restartTimer)
+      restartTimer = undefined
+      attempt = 0
+      const previous = child
+      if (!previous) {
+        launch()
+        return
+      }
+      // Detached first, so its exit is not a crash; the new child must not race it for the port.
+      child = undefined
+      previous.on('exit', () => {
+        if (!stopped && !child && !restartTimer) launch()
+      })
+      previous.kill()
     },
     stop() {
       stopped = true

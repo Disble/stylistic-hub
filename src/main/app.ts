@@ -5,6 +5,7 @@ import { safeExternalUrl } from '../shared/login/external-link'
 import { HUB_PORT, SERVER_VERSION } from '../shared/versions'
 import { startBackend } from './backend-host'
 import { hubPaths } from './hub-paths'
+import { createLocalModel } from './local-model'
 import { loadOrCreateHubToken } from './hub-token'
 import { registerProviderIpc } from './ipc-provider'
 import { registerScreenIpc } from './ipc-screens'
@@ -108,10 +109,15 @@ if (!isSingleInstance) {
       piDir: paths.piDir,
       port: HUB_PORT,
       addinDir: existsSync(ADDIN_DIR) ? ADDIN_DIR : undefined,
-      token: loadOrCreateHubToken(paths.token)
+      token: loadOrCreateHubToken(paths.token),
+      logFile: join(app.getPath('logs'), 'server.log')
     })
     app.on('will-quit', () => backend.stop())
-    registerProviderIpc(await createPiProvider(paths.piDir), () => mainWindow?.webContents)
+    registerProviderIpc(
+      await createPiProvider(paths.piDir),
+      createLocalModel({ modelsFile: join(paths.piDir, 'models.json'), fetch }),
+      () => mainWindow?.webContents
+    )
     const word = createWordIntegration({
       caFile: paths.caCert,
       manifestFile: join(ADDIN_DIR, 'manifest.xml')
@@ -129,7 +135,7 @@ if (!isSingleInstance) {
       else wordSession.stop()
       if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: enabled, args: [BACKGROUND_FLAG] })
     }
-    registerScreenIpc(status, {
+    registerScreenIpc(status, backend, app.getPath('logs'), {
       ...word,
       connect: async () => {
         await word.connect()

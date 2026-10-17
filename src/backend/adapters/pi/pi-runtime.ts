@@ -21,7 +21,9 @@ export async function createChosenModel(agentDir: string) {
     const provider = settings.getDefaultProvider()
     const id = settings.getDefaultModel()
     if (!provider || !id) return undefined
-    return (await runtime.getAvailable(provider)).find((m) => m.id === id)
+    const find = async () => (await runtime.getAvailable(provider)).find((m) => m.id === id)
+    // The hub may have added it to models.json (a local model) after this runtime read the file.
+    return (await find()) ?? (await runtime.refresh({ allowNetwork: false }), await find())
   }
 
   return { runtime, getModel }

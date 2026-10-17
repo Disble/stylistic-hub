@@ -14,6 +14,9 @@ const bridge: HubBridge = {
     getModel: () => ipcRenderer.invoke('hub:provider:get-model'),
     setModel: (provider, modelId) => ipcRenderer.invoke('hub:provider:set-model', provider, modelId),
     logout: (providerId) => ipcRenderer.invoke('hub:provider:logout', providerId),
+    getLocal: () => ipcRenderer.invoke('hub:provider:get-local'),
+    connectLocal: (baseUrl) => ipcRenderer.invoke('hub:provider:connect-local', baseUrl),
+    disconnectLocal: () => ipcRenderer.invoke('hub:provider:disconnect-local'),
     startLogin: (providerId, type) => ipcRenderer.invoke('hub:login:start', providerId, type),
     answerPrompt: (loginId, promptId, value) =>
       ipcRenderer.invoke('hub:login:answer', loginId, promptId, value),
@@ -26,6 +29,8 @@ const bridge: HubBridge = {
   },
   server: {
     status: () => ipcRenderer.invoke('hub:server:status'),
+    restart: () => ipcRenderer.invoke('hub:server:restart'),
+    openLogs: () => ipcRenderer.invoke('hub:server:open-logs'),
     onStatus: (listener) => {
       const handler = (_event: unknown, status: ServerStatus) => listener(status)
       ipcRenderer.on('hub:server-status', handler)

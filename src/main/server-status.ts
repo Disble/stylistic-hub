@@ -27,6 +27,12 @@ export function createServerStatus({
       delete next.restartInMs
       set(next)
     },
+    /** The user asked for a restart: the server is starting again, which is not a crash. */
+    restartRequested() {
+      const next: ServerStatus = { ...status, state: 'starting' }
+      delete next.restartInMs
+      set(next)
+    },
     exited({ code, restartInMs }: { code: number; restartInMs: number }) {
       set({ ...status, state: 'restarting', crashes: status.crashes + 1, lastExitCode: code, restartInMs })
     }

@@ -4,20 +4,26 @@ import { createSupervisor, type SupervisedChild } from './supervisor'
 /** A child process stand-in that exits when the test says so. */
 class FakeChild implements SupervisedChild {
   killed = false
-  private exitListener: ((code: number) => void) | undefined
+  /** When false, `kill` only asks the child to exit; the test calls `exit` later. */
+  exitsOnKill = true
+  private exitListeners: ((code: number) => void)[] = []
 
   on(_event: 'exit', listener: (code: number) => void): void {
-    this.exitListener = listener
+    this.exitListeners.push(listener)
   }
 
   kill(): boolean {
     this.killed = true
-    this.exitListener?.(0)
+    if (this.exitsOnKill) this.exit(0)
     return true
   }
 
   crash(code = 1): void {
-    this.exitListener?.(code)
+    this.exit(code)
+  }
+
+  exit(code: number): void {
+    for (const listener of this.exitListeners) listener(code)
   }
 }
 
@@ -113,5 +119,47 @@ describe('createSupervisor', () => {
     children[0]?.crash(3)
 
     expect(onExit).toHaveBeenCalledWith({ code: 3, restartInMs: 1000 })
+  })
+
+  it('restarts on request once the old child has exited, without reporting a crash', () => {
+    const onExit = vi.fn()
+    const supervisor = createSupervisor({ spawn, backoffMs: [1000], onExit })
+    supervisor.start()
+    const old = children[0]
+    if (old) old.exitsOnKill = false
+
+    supervisor.restart()
+    expect(old?.killed).toBe(true)
+    expect(children).toHaveLength(1)
+    old?.exit(0)
+
+    expect(children).toHaveLength(2)
+    expect(onExit).not.toHaveBeenCalled()
+  })
+
+  it('restarts at once and from the first delay when a crash restart is pending', () => {
+    const supervisor = createSupervisor({ spawn, backoffMs: [1000, 5000] })
+    supervisor.start()
+    children[0]?.crash()
+    vi.advanceTimersByTime(1000)
+    children[1]?.crash()
+
+    supervisor.restart()
+    expect(children).toHaveLength(3)
+    vi.advanceTimersByTime(5000)
+    expect(children).toHaveLength(3)
+    children[2]?.crash()
+    vi.advanceTimersByTime(1000)
+    expect(children).toHaveLength(4)
+  })
+
+  it('does not restart after stop', () => {
+    const supervisor = createSupervisor({ spawn, backoffMs: [1000] })
+    supervisor.start()
+    supervisor.stop()
+
+    supervisor.restart()
+
+    expect(children).toHaveLength(1)
   })
 })

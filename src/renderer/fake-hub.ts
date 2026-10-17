@@ -18,13 +18,22 @@ export function fakeHub(overrides: { [K in keyof HubBridge]?: Partial<HubBridge[
       getModel: async () => undefined,
       setModel: async () => ({ provider: '', id: '', name: '' }),
       logout: async () => undefined,
+      getLocal: async () => undefined,
+      connectLocal: async (baseUrl) => ({ baseUrl, models: [] }),
+      disconnectLocal: async () => undefined,
       startLogin: async () => '',
       answerPrompt: async () => undefined,
       cancelLogin: async () => undefined,
       onLoginEvent: () => () => undefined,
       ...overrides.provider
     },
-    server: { status: async () => RUNNING, onStatus: () => () => undefined, ...overrides.server },
+    server: {
+      status: async () => RUNNING,
+      restart: async () => undefined,
+      openLogs: async () => undefined,
+      onStatus: () => () => undefined,
+      ...overrides.server
+    },
     word: {
       status: async () => ({ available: true, caTrusted: false, addinRegistered: false, version: '1.0.0.0' }),
       connect: async () => undefined,

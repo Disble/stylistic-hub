@@ -48,6 +48,9 @@ beforeEach(() => {
     getModel: vi.fn(async () => models[0]),
     setModel: vi.fn(async (provider: string, id: string) => ({ provider, id, name: id })),
     logout: vi.fn(async () => undefined),
+    getLocal: vi.fn(async () => undefined),
+    connectLocal: vi.fn(async (baseUrl: string) => ({ baseUrl, models: ['qwen3:8b', 'llama3.3'] })),
+    disconnectLocal: vi.fn(async () => undefined),
     startLogin: vi.fn(async () => 'l1'),
     answerPrompt: vi.fn(async () => undefined),
     cancelLogin: vi.fn(async () => undefined),
@@ -122,9 +125,12 @@ describe('ProviderScreen', () => {
     emit({ loginId: 'l1', providerId: 'openai-codex', type: 'login-done' })
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    expect(
-      within(screen.getByRole('listitem', { name: 'ChatGPT Plus/Pro' })).getByText('Connected')
-    ).toBeTruthy()
+    // The list reloads after the dialog closes, and the page is hidden from assistive tech until it has.
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole('listitem', { name: 'ChatGPT Plus/Pro' })).getByText('Connected')
+      ).toBeTruthy()
+    )
   })
 
   it('answers a secret prompt and a choice prompt', async () => {
@@ -274,5 +280,43 @@ describe('ProviderScreen', () => {
     fireEvent.change(select, { target: { value: 'anthropic/claude-b' } })
 
     expect(await screen.findByText('Model anthropic/claude-b is not available')).toBeTruthy()
+  })
+
+  it('connects a local model server and lists its models', async () => {
+    await renderScreen()
+    const local = screen.getByRole('article', { name: 'Local model' })
+    const address = within(local).getByLabelText('Server address') as HTMLInputElement
+    expect(address.value).toBe('http://localhost:11434/v1')
+
+    fireEvent.change(address, { target: { value: 'http://localhost:1234/v1' } })
+    fireEvent.click(within(local).getByRole('button', { name: 'Connect' }))
+
+    await waitFor(() => expect(api.connectLocal).toHaveBeenCalledWith('http://localhost:1234/v1'))
+    expect(await within(local).findByText('http://localhost:1234/v1 · 2 models')).toBeTruthy()
+    await waitFor(() => expect(api.listModels).toHaveBeenCalledTimes(2))
+  })
+
+  it('shows why a local model server could not be connected', async () => {
+    api.connectLocal = vi.fn(async () => {
+      throw new Error('Could not reach http://localhost:11434/v1. Is the model server running?')
+    })
+    await renderScreen()
+    const local = screen.getByRole('article', { name: 'Local model' })
+
+    fireEvent.click(within(local).getByRole('button', { name: 'Connect' }))
+
+    expect(await within(local).findByText(/Is the model server running\?/)).toBeTruthy()
+  })
+
+  it('disconnects the local model server', async () => {
+    api.getLocal = vi.fn(async () => ({ baseUrl: 'http://localhost:11434/v1', models: ['qwen3:8b'] }))
+    await renderScreen()
+    const local = screen.getByRole('article', { name: 'Local model' })
+    expect(await within(local).findByText('http://localhost:11434/v1 · 1 model')).toBeTruthy()
+
+    fireEvent.click(within(local).getByRole('button', { name: 'Disconnect' }))
+
+    await waitFor(() => expect(api.disconnectLocal).toHaveBeenCalledOnce())
+    expect(await within(local).findByRole('button', { name: 'Connect' })).toBeTruthy()
   })
 })

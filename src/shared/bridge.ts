@@ -17,6 +17,12 @@ export interface ModelSummary {
   name: string
 }
 
+/** A local, OpenAI-compatible model server and the models it lists. */
+export interface LocalModel {
+  baseUrl: string
+  models: string[]
+}
+
 /** Where Word stands with this hub. */
 export interface WordStatus {
   /** The add-in is bundled with the hub and the backend has written its CA. */
@@ -52,6 +58,11 @@ export interface HubBridge {
     getModel(): Promise<ModelSummary | undefined>
     setModel(provider: string, modelId: string): Promise<ModelSummary>
     logout(providerId: string): Promise<void>
+    /** The local model server Pi uses, if one is connected. */
+    getLocal(): Promise<LocalModel | undefined>
+    /** Lists the server's models and adds them to Pi; rejects with the reason it cannot. */
+    connectLocal(baseUrl: string): Promise<LocalModel>
+    disconnectLocal(): Promise<void>
     /** Starts a sign-in; its progress arrives through `onLoginEvent`. */
     startLogin(providerId: string, type: LoginAuthType): Promise<string>
     answerPrompt(loginId: string, promptId: string, value: string): Promise<void>
@@ -61,6 +72,10 @@ export interface HubBridge {
   }
   server: {
     status(): Promise<ServerStatus>
+    /** Stops the server and starts it again; not counted as a crash. */
+    restart(): Promise<void>
+    /** Opens the hub's logs folder in Explorer. */
+    openLogs(): Promise<void>
     /** Subscribes to status changes; returns the unsubscribe function. */
     onStatus(listener: (status: ServerStatus) => void): () => void
   }

@@ -1,10 +1,22 @@
-import { MessageBar, MessageBarBody, Text, Title2 } from '@fluentui/react-components'
+import { makeStyles, MessageBar, MessageBarBody } from '@fluentui/react-components'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ModelSummary, ProviderSummary } from '../../shared/bridge'
+import type { LocalModel, ModelSummary, ProviderSummary } from '../../shared/bridge'
 import type { LoginAuthType } from '../../shared/login/login'
 import { LoginDialog } from './LoginDialog'
 import { loginStarted, reduceLogin, type LoginState } from './login-state'
-import { ApiKeyCard, ModelCard, SubscriptionCard } from './ProviderCards'
+import { Page } from '../ui/layout'
+import { errorMessage } from '../hub-state'
+import { ApiKeyCard, LocalModelCard, ModelPicker, SubscriptionCard } from './ProviderCards'
+
+/** Griffel classes from the Stylistic theme tokens. */
+const useStyles = makeStyles({
+  options: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+    gap: '12px',
+    alignItems: 'stretch'
+  }
+})
 
 /** True when the provider offers this sign-in method. */
 function offers(provider: ProviderSummary, type: LoginAuthType): boolean {
@@ -13,12 +25,14 @@ function offers(provider: ProviderSummary, type: LoginAuthType): boolean {
 
 /** Sign in to the providers Pi offers and choose the model the corrections use. */
 export function ProviderScreen() {
+  const styles = useStyles()
   const api = window.hub.provider
   const [data, setData] = useState<{ providers: ProviderSummary[]; models: ModelSummary[] }>({
     providers: [],
     models: []
   })
   const [model, setModel] = useState<ModelSummary | undefined>()
+  const [local, setLocal] = useState<LocalModel | undefined>()
   const [reloads, setReloads] = useState(0)
   const [login, setLogin] = useState<LoginState | undefined>()
   const [error, setError] = useState<string | undefined>()
@@ -27,11 +41,14 @@ export function ProviderScreen() {
 
   useEffect(() => {
     let live = true
-    void Promise.all([api.list(), api.listModels(), api.getModel()]).then(([providers, models, chosen]) => {
-      if (!live) return
-      setData({ providers, models })
-      setModel(chosen)
-    })
+    void Promise.all([api.list(), api.listModels(), api.getModel(), api.getLocal()]).then(
+      ([providers, models, chosen, server]) => {
+        if (!live) return
+        setData({ providers, models })
+        setModel(chosen)
+        setLocal(server)
+      }
+    )
     return () => {
       live = false
     }
@@ -56,7 +73,7 @@ export function ProviderScreen() {
   /** Runs a user action, showing why it failed instead of losing the rejection. */
   const run = (action: () => Promise<void>) => {
     setError(undefined)
-    action().catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)))
+    action().catch((reason: unknown) => setError(errorMessage(reason)))
   }
 
   const startLogin = (provider: ProviderSummary, type: LoginAuthType) =>
@@ -78,35 +95,48 @@ export function ProviderScreen() {
   }
 
   return (
-    <section style={{ display: 'grid', gap: 16, maxWidth: 720 }}>
-      <header>
-        <Title2 as="h2">AI provider</Title2>
-        <Text as="p" block>
-          Stylistic uses your own AI account. Credentials stay on this computer.
-        </Text>
-      </header>
-
+    <Page
+      title="AI provider"
+      description="Stylistic uses your own AI account. Credentials stay on this computer, managed by Pi."
+      actions={
+        <ModelPicker
+          models={data.models}
+          model={model}
+          providers={data.providers}
+          onChoose={(provider, modelId) => run(async () => setModel(await api.setModel(provider, modelId)))}
+        />
+      }
+    >
       {error && (
         <MessageBar intent="error">
           <MessageBarBody>{error}</MessageBarBody>
         </MessageBar>
       )}
 
-      <ModelCard
-        models={data.models}
-        model={model}
-        onChoose={(provider, modelId) => run(async () => setModel(await api.setModel(provider, modelId)))}
-      />
-      <SubscriptionCard
-        providers={data.providers.filter((p) => offers(p, 'oauth'))}
-        onSignIn={(p) => startLogin(p, 'oauth')}
-        onSignOut={logout}
-      />
-      <ApiKeyCard
-        providers={data.providers.filter((p) => offers(p, 'api_key'))}
-        onSignIn={(p) => startLogin(p, 'api_key')}
-        onSignOut={logout}
-      />
+      <section aria-label="Connection options" className={styles.options}>
+        <SubscriptionCard
+          providers={data.providers.filter((p) => offers(p, 'oauth'))}
+          onSignIn={(p) => startLogin(p, 'oauth')}
+          onSignOut={logout}
+        />
+        <ApiKeyCard
+          providers={data.providers.filter((p) => offers(p, 'api_key'))}
+          onSignIn={(p) => startLogin(p, 'api_key')}
+          onSignOut={logout}
+        />
+        <LocalModelCard
+          local={local}
+          onConnect={async (baseUrl) => {
+            setLocal(await api.connectLocal(baseUrl))
+            refresh()
+          }}
+          onDisconnect={async () => {
+            await api.disconnectLocal()
+            setLocal(undefined)
+            refresh()
+          }}
+        />
+      </section>
 
       {login && (
         <LoginDialog
@@ -116,6 +146,6 @@ export function ProviderScreen() {
           onClose={closeLogin}
         />
       )}
-    </section>
+    </Page>
   )
 }

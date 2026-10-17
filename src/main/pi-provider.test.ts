@@ -91,4 +91,30 @@ describe('createPiProvider', () => {
     expect(await provider.getModel()).toBeUndefined()
     expect((await provider.listProviders()).find((p) => p.id === 'anthropic')?.configured).toBe(false)
   })
+
+  it('offers a local model written to models.json once it reloads', async () => {
+    const provider = await createPiProvider(agentDir)
+    writeFileSync(
+      join(agentDir, 'models.json'),
+      JSON.stringify({
+        providers: {
+          local: {
+            baseUrl: 'http://localhost:11434/v1',
+            api: 'openai-completions',
+            apiKey: 'local',
+            models: [{ id: 'qwen3:8b' }]
+          }
+        }
+      })
+    )
+
+    await provider.reload()
+
+    expect(await provider.listModels()).toContainEqual({
+      provider: 'local',
+      id: 'qwen3:8b',
+      name: 'qwen3:8b'
+    })
+    expect((await provider.listProviders()).find((p) => p.id === 'local')?.configured).toBe(true)
+  })
 })
