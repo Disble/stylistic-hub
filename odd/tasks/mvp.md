@@ -32,8 +32,8 @@ Branch: `feat/mvp` · Delivery: `ask-on-risk` · Test runner: vitest (`bun run t
 | T8 | S2, S7 | Word: serve add-in from hub, HKCU registration, `HubAdapter` in stylistic-addon; validate in WebView2 | inline + delegated (add-in writer: context backstop) | done; WebView2 validation pending the user | cb2ca4a, 8c424f2, 34dac71; addon 5cd3a98; L26-L30 |
 | T9 | S2, S6 | Renderer screens Home, Word, Server per canvas, with per-component versions | inline | done | d3670b4, 34dac71; L28, L29 |
 | T10 | S2 | Unsigned per-user NSIS installer | inline | done | 09658c9; L31, L32 |
-| T11 | S10 | Word session loader (watch Word, open the trigger document minimized and close it), hub at sign-in and in the tray, Word screen without “Open Word” | inline | done (commit below); install on the user machine pending | L34-L36 |
-| T12 | S10, S11, S12 | Stabilize the Word session loader: trigger once per Word session, decide the load by the add-in's own UI in the window the user has, retry honestly, and measure every load with a probe instead of with the loader's own log. | done |
+| T11 | S10 | Word session loader (watch Word, open the trigger document minimized and close it), hub at sign-in and in the tray, Word screen without “Open Word” | inline | done: installed on the user's machine and validated there with their own document, which shows the Stylistic group and its pane (L51) | L34-L36, L51 |
+| T12 | S10, S11, S12 | Stabilize the Word session loader: trigger once per Word session, decide the load by the add-in's own UI in the window the user has, retry honestly, and measure every load with a probe instead of with the loader's own log. | inline | done and pinned (tag `known-good/word-addin-loads`). The load half of S11 is met and verified in the user's own window; the no-window half was measured as unachievable through a trigger document, by suppressing the window from inside Word or from outside it, and would need a supported deployment whose cost is in L52. The phase is closed with `reports/Cargar Stylistic en Word (postmortem).md`. | L45-L52 |
 
 ## Log
 

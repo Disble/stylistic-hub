@@ -11,8 +11,8 @@ param(
   [Parameter(Mandatory)][string]$Document,
   [Parameter(Mandatory)][int]$ParentPid,
   [int]$PollSeconds = 2,
-  [int]$ReportAfter = 15,
-  # The add-in's DisplayName, which titles its task pane; the pane opening is the loader's signal that Word loaded it.
+  # The add-in's DisplayName. Word titles its task pane with it, which is only one of the names the add-in's UI is
+  # looked for by: the load is decided in the user's window, never by that pane (`odd/tasks/mvp.md` L49).
   [string]$PaneTitle = 'Stylistic',
   # The packaged hub has no console, so the script also keeps what it reports in this file.
   [string]$LogFile,
