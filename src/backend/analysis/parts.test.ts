@@ -61,4 +61,16 @@ describe('placeable', () => {
 
     expect(placeable([lost, ok, empty])).toEqual({ suggestions: [ok], dropped: 2 })
   })
+
+  it('drops and counts what the add-in rejects: a blank anchor, context or justification', () => {
+    const ok = suggestion('palabra  palabra', 'palabra')
+    const blankAnchor = suggestion('palabra  palabra', '  ', { type: 'track-change', suggestedText: ' ' })
+    const blankJustification = suggestion('fue atrapada', 'atrapada', { justification: ' ' })
+    const blankContext = suggestion(' ', ' ')
+
+    expect(placeable([blankAnchor, ok, blankJustification, blankContext])).toEqual({
+      suggestions: [ok],
+      dropped: 3
+    })
+  })
 })

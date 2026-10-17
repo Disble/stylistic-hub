@@ -45,10 +45,18 @@ export function createHttpApp({ token, port, addinDir, ...api }: HttpAppOptions)
       : c.text('Not found', 404)
   )
   app.onError((error, c) => {
-    if (error instanceof HTTPException && error.status === 401) {
+    // bearerAuth answers a malformed header (an empty token, another scheme) with 400 and a
+    // challenge; to the task pane that is a missing token, like its 401.
+    if (
+      error instanceof HTTPException &&
+      (error.status === 401 || error.res?.headers.has('WWW-Authenticate'))
+    ) {
       return problem(c, 401, 'unauthorized', 'Send the hub token as "Authorization: Bearer <token>".')
     }
-    if (error instanceof HTTPException) return error.getResponse()
+    // Hono's own refusals before validation: malformed JSON (400), a body that is not JSON (415).
+    if (error instanceof HTTPException && error.status < 500) {
+      return problem(c, error.status, 'validation_failed', error.message)
+    }
     console.error(error)
     return problem(c, 500, 'internal_error', error.message)
   })

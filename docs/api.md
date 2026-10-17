@@ -17,7 +17,7 @@ The HTTP contract the add-in's `HubAnalysisAdapter` is written against. The mach
    - `partial`: some chunks failed; each failed chunk says why in `error`, with the provider's own message; the others have their suggestions.
    - `failed`: no chunk succeeded.
    - `canceled`: `POST /analyses/{analysisId}/cancel` was called.
-4. Apply each chunk's `suggestions`. Each has an `id` of 16 hexadecimal characters that is unique for good; its `anchor` is always inside its `context`, and a `track-change` always has `suggestedText`. Suggestions that break either rule are dropped by the hub and counted in the chunk's `dropped`.
+4. Apply each chunk's `suggestions`. Each has an `id` of 16 hexadecimal characters that is unique for good; its `anchor`, `context` and `justification` are never blank, its `anchor` is always inside its `context`, and a `track-change` always has `suggestedText`. Suggestions that break these rules are dropped by the hub and counted in the chunk's `dropped`.
 
 `profile` on the analysis says what became of the document's style profile, which the hub updates once per analysis from every chunk: `pending`, `updated`, `unchanged` or `failed`. A failed profile update does not affect the suggestions. `GET /documents/{documentId}` returns the genre and the profile as Markdown.
 
@@ -35,8 +35,8 @@ Every error is `application/problem+json` (RFC 9457): `{ type, title, status, de
 
 | `code` | Status | When |
 |---|---|---|
-| `unauthorized` | 401 | The token is missing or wrong |
-| `validation_failed` | 400 | The body or a path parameter does not match the contract; `detail` names what is wrong |
+| `unauthorized` | 401 | The token is missing, empty or wrong, or the header is not `Bearer` |
+| `validation_failed` | 400, 415 | The body or a path parameter does not match the contract, or the body is malformed JSON (400) or not JSON (415); `detail` names what is wrong |
 | `not_found` | 404 | No such analysis, document, feedback or suggestion, or no such route |
 | `no_model` | 409 | An analysis was requested before a model was chosen in the hub |
 | `payload_too_large` | 413 | The body is over 10 MB |

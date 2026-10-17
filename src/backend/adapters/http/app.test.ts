@@ -175,6 +175,41 @@ describe('createHttpApp', () => {
     expect(response.headers.get('access-control-allow-origin')).toBe(`https://localhost:${port}`)
   })
 
+  it.each([
+    ['an empty bearer token', { authorization: 'Bearer ' }, 401, 'unauthorized'],
+    ['another authorization scheme', { authorization: 'Basic abc' }, 401, 'unauthorized']
+  ])('answers %s with a JSON problem', async (_case, headers, status, code) => {
+    const response = await health(headers)
+
+    expect(response.status).toBe(status)
+    expect(response.headers.get('content-type')).toBe('application/problem+json')
+    expect(await response.json()).toMatchObject({ status, code })
+  })
+
+  it.each([
+    ['malformed JSON', 'application/json', '{"genre":', 400, 'Malformed JSON in request body'],
+    ['a body that is not JSON', 'text/plain', 'hola', 415, 'Unsupported Media Type']
+  ])('answers %s with a validation_failed problem', async (_case, type, body, status, detail) => {
+    const response = await app.request(
+      '/api/v1/documents/3f1c2b8e-4d5a-4e6f-9a7b-1c2d3e4f5a6b/analyses',
+      {
+        method: 'POST',
+        headers: {
+          host: `localhost:${port}`,
+          origin: `https://localhost:${port}`,
+          authorization: `Bearer ${token}`,
+          'content-type': type
+        },
+        body
+      },
+      fromPeer('127.0.0.1')
+    )
+
+    expect(response.status).toBe(status)
+    expect(response.headers.get('content-type')).toBe('application/problem+json')
+    expect(await response.json()).toMatchObject({ status, code: 'validation_failed', detail })
+  })
+
   it('answers an API route that does not exist with a not_found problem', async () => {
     const response = await app.request(
       '/api/workflows/stylistic-workflow',

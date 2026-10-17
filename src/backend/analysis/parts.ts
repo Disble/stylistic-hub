@@ -29,12 +29,15 @@ export function splitIntoParts(text: string, max = MAX_PART_CHARS): string[] {
 
 /**
  * Keeps the suggestions the add-in can place: it finds a suggestion by its anchor inside its
- * context, so one whose anchor is not there would be lost in Word. The rest are counted.
+ * context, so one whose anchor is not there would be lost in Word, and like the add-in it rejects
+ * a blank anchor, context or justification. The rest are counted.
  */
 export function placeable(suggestions: WorkflowSuggestion[]): {
   suggestions: WorkflowSuggestion[]
   dropped: number
 } {
-  const kept = suggestions.filter((s) => s.anchor.length > 0 && s.context.includes(s.anchor))
+  const kept = suggestions.filter(
+    (s) => s.anchor.trim() && s.context.trim() && s.justification.trim() && s.context.includes(s.anchor)
+  )
   return { suggestions: kept, dropped: suggestions.length - kept.length }
 }
