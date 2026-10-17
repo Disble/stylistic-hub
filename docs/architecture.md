@@ -6,7 +6,7 @@ The Stylistic Hub backend uses **hexagonal architecture (ports and adapters)** w
 
 - The design principle "do not reinvent the wheel" leaves a small domain: prompts, the suggestion schema and its rules, and the style profile. Everything else is an adopted tool.
 - Each adopted tool must stay swappable, which is what an adapter behind a port gives us (OpenWorkflow → Mastra in-memory or `pi-durable`; Pi → another model runtime; `node:sqlite` → another store).
-- It matches the add-in (`MastraAdapter`, `FeedbackAdapter`, `BetterAuthAdapter`, and the planned `HubAdapter`) and dhub (`domain/` + `adapters/`), so the monorepo shares one mental model.
+- It matches the add-in (whose own `HubAnalysisAdapter` speaks [API v1](api.md)) and dhub (`domain/` + `adapters/`), so the monorepo shares one mental model.
 
 ## Ports: only where they pay off
 
@@ -15,8 +15,10 @@ Add a port only when a swap is plausible or tests need it. Do not wrap everythin
 | Port | Adapter today | Reason |
 |---|---|---|
 | `LlmPort` (`structuredCall`) | Pi | Tests without network; isolates the forced-tool output |
-| `WorkflowEngine` | OpenWorkflow | Plan B is real |
-| `DocumentRepository` | `node:sqlite` | Workflow steps are tested without a database file |
+| `WorkflowEngine` | OpenWorkflow | Plan B is real; the engine only executes, it holds no result the API reads |
+| `DocumentRepository` | `node:sqlite` | Documents and their style profiles |
+| `AnalysisRepository` | `node:sqlite` | The read model of analyses, chunks and suggestions the API serves, apart from the engine's own tables |
+| `FeedbackRepository` | `node:sqlite` | Feedback and what became of it |
 | `PiProvider` (`src/main/pi-provider.ts`) | Pi `ModelRuntime` + `SettingsManager` | Pi breaks its API between releases; the IPC layer and the Provider screen only see this interface |
 
 Hono (HTTP) and Electron are the outer driving side and get no port: they are entry points, not something we expect to replace.
@@ -27,6 +29,9 @@ Hono (HTTP) and Electron are the outer driving side and get no port: they are en
 - Adapters depend on ports, never the other way round.
 - One adapter per adopted tool; keep it thin (glue, not engines).
 - Any new port records its reason in the table above.
+- A workflow body never catches what a step throws: OpenWorkflow retries a failed step by replaying the run and pauses a run by throwing. Work whose final failure must be recorded (a part, the profile update, processing feedback) runs as a child workflow, whose failure is final and comes back as a `ChildResult`.
+- The profile is written once per analysis and once per feedback, through `profile-updater.ts`, which serializes writes per document so no update is lost.
+- Tests that run workflows and services over the real SQLite adapters are named `*.integration.test.ts` and live in their own fallow zone, which may import adapters; rules such as how an analysis settles live in the repository's SQL, and a fake would duplicate them.
 
 ## Custom code and why
 
@@ -37,7 +42,9 @@ Per the "do not reinvent the wheel" principle, every piece we wrote ourselves is
 | `src/backend/adapters/http/host-allowlist.ts` | Hono ships CORS, IP restriction and bearer auth (all used) but no Host-header guard, which DNS rebinding requires. |
 | `src/main/supervisor.ts` | No maintained package restarts Electron's `utilityProcess` with backoff; ~50 lines. |
 | `src/backend/adapters/sqlite/database.ts` | `node:sqlite` has no migration helper; a `user_version` loop over append-only SQL strings is ~20 lines. Knex/Drizzle/umzug would add a dependency for one table. |
-| `src/backend/adapters/http/workflow-routes.ts` | The add-in already speaks Mastra's workflow API through `@mastra/client-js`. Serving that slice (details, create-run, start, poll, cancel) keeps its `MastraAdapter` unchanged instead of writing a new client. Run ids live in memory: Mastra names a run before it starts, OpenWorkflow when it starts. |
+| `src/backend/adapters/http/api-v1.ts` + `problem.ts` | The routes, their validation and `GET /api/v1/openapi.json` come from `@hono/zod-openapi` over the domain's zod schemas; ours is only the route table and the RFC 9457 problem body (~10 lines), which Hono does not ship. |
+| `src/backend/profile/profile-updater.ts` | A promise queue per document (~25 lines) so concurrent analyses and feedback never overwrite each other's profile; a lock library would add a dependency for one in-process map. |
+| `src/backend/analysis/parts.ts` | Splits a chunk into parts at paragraph ends so a 100k-character chunk fits a model call, and drops suggestions whose anchor is not in their context (~40 lines); text splitters such as LangChain's cut paragraphs and bring a framework. |
 | `src/backend/adapters/pi/pi-llm.ts` | Pi has no structured-output call and its neutral `toolChoice` is only `auto`/`none`. The adapter turns the zod schema into a `submit` tool (`z.toJSONSchema`), forces it with each API's own `toolChoice` (10 APIs) and validates with zod. |
 | `src/shared/login/` | Not ours: copied from dhub (`src/main/domain/login.ts`, revision `bd94206`) with its tests. Pi exposes login as callbacks; this correlates them with UI prompts. Keep in sync with dhub. |
 | `src/backend/adapters/tls/certificates.ts` | Thin use of `@peculiar/x509` to issue a local CA and a localhost leaf; mkcert/devcert need an external binary or admin rights. The CA's name constraints (only `localhost`, `127.0.0.1`, `::1`) are built with `@peculiar/asn1-x509`, which `@peculiar/x509` has no class for. |
@@ -52,8 +59,8 @@ The boundaries are enforced by fallow from the zones in `.dharness/fallow.jsonc`
 
 ```
 src/backend/
-  correction/   # stylistic-workflow: prompts, schema, suggestion rules
-  feedback/     # feedback-workflow
+  analysis/     # analysis workflows and service: prompts, schemas, parts, suggestion rules
+  feedback/     # feedback workflows and service
   profile/      # per-document style profile
   ports/        # LlmPort, WorkflowEngine, repositories, ProviderAuth
   adapters/     # pi/, openworkflow/, sqlite/, http/ (Hono)

@@ -40,11 +40,11 @@ Analysis: `{ id, documentId, status: running | completed | partial | failed | ca
 
 No accounts: the task pane's hub token replaces better-auth sign-in, `/auth*` routes do not exist on the hub (one hub per Windows user).
 
-Errors (S5): RFC 9457 `application/problem+json`, `{ type, title, status, detail, code }`; codes such as `unauthorized`, `validation_failed`, `not_found`, `no_model`, `provider_error`.
+Errors (S5): RFC 9457 `application/problem+json`, `{ type, title, status, detail, code }`; codes `unauthorized`, `validation_failed`, `not_found`, `no_model`, `payload_too_large`, `internal_error`. A provider's failure is not an HTTP error: it lands in the failed chunk's `error` with the provider's own message (L5).
 
 ### Execution
 
-- One `analysis` parent workflow per request runs one `analyze-chunk` child workflow per chunk with `Promise.all` (OpenWorkflow child workflows, documented), so the worker pool bounds parallelism and the parent has one durable point after all chunks: the profile update. A failed chunk is caught by the parent and recorded; the others continue.
+- One `analysis` parent workflow per request runs one `analyze-part` child workflow per part with `Promise.all` (the hub splits a chunk into parts of at most 12,000 characters at paragraph ends), so the worker pool bounds parallelism and the parent has one durable point after all parts: the profile update, itself an `update-profile` child. A part that fails for good comes back to the parent as a failed result and is recorded on its chunk; the others continue. Feedback runs the same way: `feedback` runs a `process-feedback` child and records its final failure (L5).
 - The profile is updated once per analysis, from every chunk's suggestions, not once per chunk (S3).
 - Profile writes go through one per-document lock in the backend process, and each read-merge-write happens inside it, reading the profile current at that moment (S3). The hub runs one backend process, so an in-process lock is enough.
 - Canceling marks the analysis canceled and cancels the parent and each chunk run, since OpenWorkflow does not cancel children with their parent.
@@ -56,13 +56,19 @@ Errors (S5): RFC 9457 `application/problem+json`, `{ type, title, status, detail
 
 ### Layout
 
-Feature folders: `analysis/` (workflows, schemas, prompts moved from `correction/`), `feedback/`, `documents/` (profile, lock), `preferences/`; `ports/`; `adapters/http/` with one route module per feature. `workflow-routes.ts` and the Mastra status names go.
+Feature folders: `analysis/` (workflows, service, schemas, prompts moved from `correction/`), `feedback/` (workflows, service), `profile/` (document context, profile updater); `ports/`; `adapters/http/api-v1.ts` (one route table) and `problem.ts`. `workflow-routes.ts`, `preferences-routes.ts` and the Mastra status names are gone. Contract guide: `docs/api.md`.
 
 ## Tasks
 
 | ID | Specs | Route | Status | Commit |
 |---|---|---|---|---|
-| T1 | S1, S2 | inline | design sent to the user and the add-in team; waiting for their answers (L2) | — |
+| T1 | S1, S2 | inline | done: design reviewed with the add-in team (L2, L4) | 87f8702, e29509d |
+| T2 | S3, S4 | inline | done: migration 3, analysis and feedback repositories, `DocumentRepository.get` | 1cddf09 |
+| T3 | S3 | inline | done: per-document profile updater | b462a37 |
+| T4 | S4 | inline | done: engine port with settled child results; open runs resume after a restart | 3bc9089 |
+| T5 | S3, S8, S9 | inline | done: analysis and feedback workflows and services, parts, placeable suggestions | 6bb4603, 01c78ad |
+| T6 | S1, S5, S6, S7 | inline | done: API v1 on `@hono/zod-openapi`, problem+json, `/status`, `/openapi.json`; Mastra routes removed | e5abe04, 98d9b36 |
+| T7 | S2 | inline | done: `docs/architecture.md`, `docs/api.md` | this docs commit |
 
 ## Log
 
@@ -70,3 +76,5 @@ Feature folders: `analysis/` (workflows, schemas, prompts moved from `correction
 - **L2** (2026-10-17): asked the add-in session (`stylistic-addon-78`) for its chunking, polling, `IAnalysisPort`, document context, feedback timing and the features Mastra blocked. Its user decided the add-in drops Mastra and writes `HubAnalysisAdapter`; the add-in fixed the null-tag crash in its working tree (four tests, no live stack trace).
 - **L3** (2026-10-17): evidence for the design. OpenWorkflow 0.11 runs child workflows in parallel with `Promise.all`; a child's failure fails the parent step; a parent's timeout does not cancel the child. Current defects found: per-chunk profile read-at-start / write-at-end (lost updates), in-memory run map (404 after restart). To verify in T2 with a test before relying on it: that a parent waiting on `step.runWorkflow` parks and frees its worker slot (the worker runs 4 at a time, `engine.ts:32`); otherwise 4 concurrent analyses would block their own chunks.
 - **L4** (2026-10-17, add-in team, read from add-in main): chunks are packed paragraphs up to 100,000 characters (`chunker.ts:41-71`), so most documents are one chunk; one chunk at a time; poll every 1 s; suggestions applied only when every chunk is done; the payload actually sent is `{text, documentUuid, genero}` (title and processingConfig never sent); genre is a per-user setting defaulting to narrativa-literaria; feedback is fire-and-forget after each accept/reject; the add-in checks anchor-in-context and track-change `suggestedText`; suggestion ids are made on the client. It also calls better-auth (Google) and `/user/preferences`. Design changed: no SSE in v1, no document PUT (genre rides on the analysis), no `processingConfig`, hub-issued suggestion ids with feedback by id (S9), hub-side suggestion checks (S8).
+- **L5** (2026-10-17): implementation evidence. Route: inline throughout (no writer trigger: one coupled behavior, no parallel units). (1) OpenWorkflow pauses a parent by throwing `SleepSignalError` from `runWorkflow` and retries a failed `step.run` by replaying the whole run, so a body that catches step errors swallows both; the first end-to-end test failed with `SleepSignalError` as a chunk error. Fix: `Step.child` returns `ChildResult` (the adapter converts only the terminal `StepError` of a finished child, `engine.ts`), bodies never catch, and the profile update and feedback processing became child workflows. (2) `reconcile` failed an analysis that had no run id yet, which is the normal window between `create` and `setRunId`; a concurrent GET would have killed it. Fixed and tested. (3) `coverage-tiers.json` still named `src/backend/correction/` as core after the move, which left `analysis/` untiered; the path was corrected (a rename, not a reclassification) and the gaps it exposed were covered with behavior tests. (4) Domain tests that run over the real SQLite adapters are `*.integration.test.ts` in their own fallow zone (`.dharness/fallow.jsonc`), recorded in `docs/architecture.md`. Checks: `bun run check` exit 0 (159+ tests, coverage tiers met), `dharness check` exit 0 (audit, dupes 2.9 % under the 3 % ceiling).
+
