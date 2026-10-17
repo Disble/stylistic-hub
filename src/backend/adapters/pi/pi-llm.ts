@@ -6,6 +6,7 @@ import type {
   ProviderStreamOptions,
   Tool
 } from '@earendil-works/pi-ai'
+import { randomUUID } from 'node:crypto'
 import { z, type ZodType } from 'zod'
 import type { LlmPort } from '../../ports/llm'
 
@@ -98,6 +99,9 @@ export function createPiLlm({ complete, getModel, timeoutMs = 180_000 }: PiLlmDe
         {
           ...(temperature === undefined ? {} : { temperature }),
           signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+          // Each call is its own conversation. OpenCode refuses a request without one (Pi turns it
+          // into x-opencode-session); other providers use it only for cache affinity.
+          sessionId: randomUUID(),
           ...(toolChoice === undefined ? {} : { toolChoice })
         } as ProviderStreamOptions
       )

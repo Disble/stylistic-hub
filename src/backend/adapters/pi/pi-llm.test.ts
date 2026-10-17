@@ -81,6 +81,19 @@ describe('createPiLlm', () => {
     expect(fn.mock.calls[0]?.[2]).toMatchObject({ toolChoice })
   })
 
+  it('gives each call its own session, which OpenCode requires to route the request', async () => {
+    const fn = answering(fauxAssistantMessage(fauxToolCall('submit', { verdict: 'ok', notes: [] })))
+    const llm = createPiLlm({ complete: fn, getModel: async () => modelOf('openai-completions') })
+
+    await llm.structuredCall(request)
+    await llm.structuredCall(request)
+
+    const [first, second] = fn.mock.calls.map((call) => call[2]?.sessionId)
+    expect(first).toMatch(/^[0-9a-f-]{36}$/)
+    expect(second).toMatch(/^[0-9a-f-]{36}$/)
+    expect(first).not.toBe(second)
+  })
+
   it('leaves the tool choice to an unknown API and still requires the submit call', async () => {
     const fn = answering(fauxAssistantMessage(fauxToolCall('submit', { verdict: 'ok', notes: [] })))
     const llm = createPiLlm({ complete: fn, getModel: async () => modelOf('some-future-api') })
