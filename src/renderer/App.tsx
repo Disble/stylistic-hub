@@ -45,13 +45,15 @@ const useStyles = makeStyles({
     padding: '16px 0'
   },
   logo: { width: '32px', height: '32px', display: 'block' },
-  tab: {
-    width: '64px',
+  tab: { width: '64px', padding: '8px 0', justifyContent: 'center' },
+  // Inside the tab's content, as the canvas stacks the icon over the label; Fluent's own icon slot sits beside it.
+  tabContent: {
+    display: 'flex',
     flexDirection: 'column',
+    alignItems: 'center',
     gap: '2px',
-    padding: '8px 0',
     fontSize: tokens.fontSizeBase200,
-    justifyContent: 'center'
+    lineHeight: tokens.lineHeightBase200
   },
   surface: {
     flex: '1 1 auto',
@@ -83,8 +85,11 @@ export function App() {
           onTabSelect={(_event, data) => setScreen(data.value as Screen)}
         >
           {SCREENS.map(({ value, label, icon: Icon }) => (
-            <Tab key={value} value={value} icon={<Icon />} className={styles.tab}>
-              {label}
+            <Tab key={value} value={value} className={styles.tab}>
+              <span className={styles.tabContent}>
+                <Icon aria-hidden fontSize={24} />
+                {label}
+              </span>
             </Tab>
           ))}
         </TabList>

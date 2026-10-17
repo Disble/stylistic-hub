@@ -79,6 +79,15 @@ const DOT = {
   restarting: tokens.colorPaletteRedBackground3
 } as const satisfies Record<ServerStatus['state'], string>
 
+/** The server step's text while the server is not running yet. */
+const SERVER_STEP = {
+  starting: { title: 'The local server is starting', body: 'This takes a few seconds.' },
+  restarting: {
+    title: 'The local server stopped',
+    body: 'The hub is starting it again. If it keeps stopping, the Server screen says why.'
+  }
+} as const satisfies Record<Exclude<ServerStatus['state'], 'running'>, { title: string; body: string }>
+
 /** What to do next, for each setup step that is not done yet. */
 interface NextStep {
   title: string
@@ -92,8 +101,7 @@ interface NextStep {
 function nextStep(server: ServerStatus, provider: ProviderState, word: boolean): NextStep | undefined {
   if (server.state !== 'running')
     return {
-      title: 'Start the local server',
-      body: 'The hub runs the analysis engine on this computer. It is starting; if it keeps stopping, the Server screen says why.',
+      ...SERVER_STEP[server.state],
       action: 'Open Server',
       screen: 'server',
       icon: Server24Regular

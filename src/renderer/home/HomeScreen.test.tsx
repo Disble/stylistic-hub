@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ModelSummary, ProviderSummary } from '../../shared/bridge'
-import { fakeHub } from '../fake-hub'
+import { fakeHub, RUNNING } from '../fake-hub'
 import { HomeScreen } from './HomeScreen'
 
 afterEach(cleanup)
@@ -104,5 +104,22 @@ describe('HomeScreen', () => {
     render(<HomeScreen onOpen={() => undefined} />)
 
     expect(await screen.findByText('Server running · localhost:3000')).toBeTruthy()
+  })
+
+  it.each([
+    ['starting', 'The local server is starting', 'This takes a few seconds.'],
+    [
+      'restarting',
+      'The local server stopped',
+      'The hub is starting it again. If it keeps stopping, the Server screen says why.'
+    ]
+  ] as const)('says what the server is doing while it is %s', async (state, title, body) => {
+    window.hub = fakeHub({ server: { status: async () => ({ ...RUNNING, state }) } })
+    render(<HomeScreen onOpen={() => undefined} />)
+
+    const next = await screen.findByRole('region', { name: 'Next step' })
+    expect(within(next).getByRole('heading', { name: title })).toBeTruthy()
+    expect(next.textContent).toContain(body)
+    expect(within(next).getByRole('button', { name: 'Open Server' })).toBeTruthy()
   })
 })

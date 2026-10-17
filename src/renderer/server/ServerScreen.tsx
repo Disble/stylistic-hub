@@ -126,10 +126,7 @@ export function ServerScreen({ onOpen }: { onOpen: (screen: Screen) => void }) {
             title="Analysis API"
             state={label}
             color={color}
-            lines={[
-              `${status.address}/api`,
-              'Corrections and feedback for Word, one run at a time per paragraph group'
-            ]}
+            lines={[`${status.address}/api`, 'Corrections and feedback for the Word add-in']}
           />
           <Service
             title="Database"
