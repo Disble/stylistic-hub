@@ -1,0 +1,8 @@
+{
+  "DisplayName": "Stylistic",
+  "GetStarted.Title": "Stylistic",
+  "GetStarted.Description": "Editorial suggestions with tracked changes, inside your document.",
+  "CommandsGroup.Label": "Stylistic",
+  "TaskpaneButton.Label": "Stylistic",
+  "TaskpaneButton.Tooltip": "Show Stylistic's editorial suggestions"
+}
