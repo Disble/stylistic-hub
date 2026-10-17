@@ -7,7 +7,7 @@ import {
   type DocumentGenre,
   type ResolveDocumentInput
 } from '../../profile/document-context'
-import type { DocumentRepository } from '../../ports/document-repository'
+import type { DocumentRepository, StoredDocument } from '../../ports/document-repository'
 
 /** A row of the `document` table. */
 interface DocumentRow {
@@ -52,11 +52,33 @@ export class SqliteDocumentRepository implements DocumentRepository {
     }
   }
 
-  /** Replaces the style profile; the document must exist. */
+  get(documentKey: string): StoredDocument | undefined {
+    const row = this.db
+      .prepare(
+        'SELECT document_key, genre, profile_markdown, profile_updated_at FROM document WHERE document_key = ?'
+      )
+      .get(documentKey) as
+      | {
+          document_key: string
+          genre: DocumentGenre
+          profile_markdown: string
+          profile_updated_at: string | null
+        }
+      | undefined
+    if (!row) return undefined
+    return {
+      documentKey: row.document_key,
+      genre: row.genre,
+      profileMarkdown: row.profile_markdown,
+      profileUpdatedAt: row.profile_updated_at
+    }
+  }
+
+  /** Replaces the style profile and records when; the document must exist. */
   updateStyleProfile(documentKey: string, profileMarkdown: string): void {
     const { changes } = this.db
-      .prepare('UPDATE document SET profile_markdown = ? WHERE document_key = ?')
-      .run(profileMarkdown, documentKey)
+      .prepare('UPDATE document SET profile_markdown = ?, profile_updated_at = ? WHERE document_key = ?')
+      .run(profileMarkdown, new Date().toISOString(), documentKey)
     if (changes === 0) throw new Error(`Document ${documentKey} not found`)
   }
 }

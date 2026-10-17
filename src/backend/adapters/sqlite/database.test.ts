@@ -44,6 +44,42 @@ describe('openDatabase', () => {
     expect(userVersion(file)).toBe(version)
   })
 
+  it('upgrades a database from before API v1 and keeps its documents and preferences', () => {
+    const file = join(dir, 'stylistic.db')
+    const raw = new DatabaseSync(file)
+    // The schema the hub shipped before API v1 (user_version 2).
+    raw.exec(`CREATE TABLE document (
+      document_key TEXT PRIMARY KEY, title TEXT,
+      genre TEXT NOT NULL CHECK (genre IN ('narrativa-literaria', 'ensayo-academico', 'periodismo-cultural', 'general')),
+      processing_config TEXT NOT NULL CHECK (json_valid(processing_config) AND json_type(processing_config) = 'object'),
+      profile_markdown TEXT NOT NULL) STRICT;
+    CREATE TABLE preferences (id INTEGER PRIMARY KEY CHECK (id = 1),
+      correction_instructions TEXT CHECK (length(correction_instructions) <= 4000)) STRICT;
+    INSERT INTO document VALUES ('doc', 'Sofía', 'narrativa-literaria', '{}', '# Perfil');
+    INSERT INTO preferences VALUES (1, 'Respeta el voseo');
+    PRAGMA user_version = 2;`)
+    raw.close()
+
+    const db = openDatabase(file)
+
+    expect(
+      db.prepare('SELECT document_key, genre, profile_markdown, profile_updated_at FROM document').all()
+    ).toEqual([
+      {
+        document_key: 'doc',
+        genre: 'narrativa-literaria',
+        profile_markdown: '# Perfil',
+        profile_updated_at: null
+      }
+    ])
+    expect(db.prepare('SELECT correction_instructions FROM preferences').get()).toEqual({
+      correction_instructions: 'Respeta el voseo'
+    })
+    expect(db.prepare('SELECT count(*) AS n FROM analysis').get()).toEqual({ n: 0 })
+    db.close()
+    expect(userVersion(file)).toBe(3)
+  })
+
   it('refuses a database written by a newer hub', () => {
     const file = join(dir, 'stylistic.db')
     const raw = new DatabaseSync(file)

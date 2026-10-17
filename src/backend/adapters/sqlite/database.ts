@@ -17,6 +17,49 @@ const MIGRATIONS: readonly string[] = [
   `CREATE TABLE preferences (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     correction_instructions TEXT CHECK (length(correction_instructions) <= 4000)
+  ) STRICT`,
+  // API v1: the analyses the add-in starts, their chunks and suggestions, and the feedback on them.
+  `ALTER TABLE document ADD COLUMN profile_updated_at TEXT;
+  CREATE TABLE analysis (
+    id TEXT PRIMARY KEY,
+    document_key TEXT NOT NULL REFERENCES document (document_key),
+    status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'partial', 'failed', 'canceled')),
+    profile_status TEXT NOT NULL CHECK (profile_status IN ('pending', 'updated', 'unchanged', 'failed')),
+    run_id TEXT,
+    created_at TEXT NOT NULL,
+    finished_at TEXT
+  ) STRICT;
+  CREATE TABLE analysis_chunk (
+    analysis_id TEXT NOT NULL REFERENCES analysis (id),
+    chunk_id TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'completed', 'failed', 'canceled')),
+    parts_total INTEGER NOT NULL CHECK (parts_total > 0),
+    parts_done INTEGER NOT NULL DEFAULT 0,
+    dropped INTEGER NOT NULL DEFAULT 0,
+    error TEXT,
+    PRIMARY KEY (analysis_id, chunk_id)
+  ) STRICT;
+  CREATE TABLE suggestion (
+    id TEXT PRIMARY KEY,
+    analysis_id TEXT NOT NULL,
+    chunk_id TEXT NOT NULL,
+    part INTEGER NOT NULL,
+    position INTEGER NOT NULL,
+    body TEXT NOT NULL CHECK (json_valid(body)),
+    FOREIGN KEY (analysis_id, chunk_id) REFERENCES analysis_chunk (analysis_id, chunk_id)
+  ) STRICT;
+  CREATE INDEX suggestion_by_chunk ON suggestion (analysis_id, chunk_id, part, position);
+  CREATE TABLE feedback (
+    id TEXT PRIMARY KEY,
+    suggestion_id TEXT NOT NULL REFERENCES suggestion (id),
+    action TEXT NOT NULL CHECK (action IN ('accept', 'reject')),
+    comment TEXT,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'completed', 'failed')),
+    outcome TEXT CHECK (outcome IN ('updated', 'ignored', 'acknowledged')),
+    summary TEXT,
+    error TEXT,
+    created_at TEXT NOT NULL
   ) STRICT`
 ]
 

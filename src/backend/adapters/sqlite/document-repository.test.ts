@@ -94,4 +94,28 @@ describe('SqliteDocumentRepository', () => {
     expect(() => repository.updateStyleProfile(KEY, '# Profile')).toThrow(/not found/)
     db.close()
   })
+
+  it('reads a known document with its profile and when the profile last changed', () => {
+    const { db, repository } = open()
+    repository.resolve({ documentKey: KEY, genre: 'narrativa-literaria' })
+    expect(repository.get(KEY)).toEqual({
+      documentKey: KEY,
+      genre: 'narrativa-literaria',
+      profileMarkdown: INITIAL_STYLE_PROFILE,
+      profileUpdatedAt: null
+    })
+
+    repository.updateStyleProfile(KEY, '# Mine')
+
+    expect(repository.get(KEY)?.profileMarkdown).toBe('# Mine')
+    expect(repository.get(KEY)?.profileUpdatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+    db.close()
+  })
+
+  it('has nothing for a document it never saw', () => {
+    const { db, repository } = open()
+
+    expect(repository.get(KEY)).toBeUndefined()
+    db.close()
+  })
 })
