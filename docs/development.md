@@ -5,7 +5,6 @@
 - Windows 10/11 x64
 - [Bun](https://bun.com) 1.4+ (package manager and script runner)
 - Node 24.15+ only for tooling that shells out to `node`; the app runs on Electron's bundled Node
-- For `bun run dist` and `bun run word:hook`: MSYS2's `mingw-w64-ucrt-x86_64-gcc` on PATH, to compile the Word hook DLL (`native/word-hook`); without the DLL the hub still loads Stylistic, but Word shows its trigger window for about a second
 
 The Electron binary downloads on first run (`bunx electron --version`).
 
