@@ -13,7 +13,9 @@
   // See `dharness sync`.
 
   // Hexagonal layout (docs/architecture.md) across Electron's processes:
-  // - domain: correction, feedback and profile rules, prompts and schemas; sees only ports.
+  // - integration: domain tests that run workflows and services over the real SQLite adapters,
+  //   because rules such as how an analysis settles live in the repository's SQL.
+  // - domain: analysis, feedback and profile rules, prompts and schemas; sees only ports.
   // - ports: the interfaces the domain needs (LlmPort, WorkflowEngine, repositories, ProviderAuth).
   // - adapters: one per adopted tool (Pi, OpenWorkflow, node:sqlite, Hono) implementing ports.
   // - backend: composition root of the backend utilityProcess.
@@ -22,7 +24,8 @@
   // - preload / renderer: the UI side sees only the shared contracts.
   "boundaries": {
     "zones": [
-      { "name": "domain", "patterns": ["src/backend/correction/**", "src/backend/feedback/**", "src/backend/profile/**"] },
+      { "name": "integration", "patterns": ["src/backend/**/*.integration.test.ts"] },
+      { "name": "domain", "patterns": ["src/backend/analysis/**", "src/backend/feedback/**", "src/backend/profile/**"] },
       { "name": "ports", "patterns": ["src/backend/ports/**"] },
       { "name": "adapters", "patterns": ["src/backend/adapters/**"] },
       { "name": "backend", "patterns": ["src/backend/*.ts"] },
@@ -32,6 +35,7 @@
       { "name": "renderer", "patterns": ["src/renderer/**"] }
     ],
     "rules": [
+      { "from": "integration", "allow": ["domain", "ports", "adapters"] },
       { "from": "domain", "allow": ["ports"] },
       { "from": "ports", "allow": [], "allowTypeOnly": ["domain"] },
       { "from": "adapters", "allow": ["ports", "domain"] },
