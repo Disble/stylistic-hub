@@ -2,7 +2,13 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { createAnalysisService } from '../../analysis/analysis-service'
+import { createFeedbackService } from '../../feedback/feedback-service'
+import type { WorkflowEngine } from '../../ports/workflow-engine'
+import { SqliteAnalysisRepository } from '../sqlite/analysis-repository'
 import { openDatabase } from '../sqlite/database'
+import { SqliteDocumentRepository } from '../sqlite/document-repository'
+import { SqliteFeedbackRepository } from '../sqlite/feedback-repository'
 import { SqlitePreferencesRepository } from '../sqlite/preferences-repository'
 import { createHttpApp } from './app'
 
@@ -10,15 +16,32 @@ import { createHttpApp } from './app'
 const token = 'a'.repeat(64)
 /** Port the app under test serves on. */
 const port = 3000
+/** The API's dependencies over an in-memory database and an engine that runs nothing. */
+function services() {
+  const db = openDatabase(':memory:')
+  const documents = new SqliteDocumentRepository(db)
+  const analyses = new SqliteAnalysisRepository(db)
+  const engine: WorkflowEngine = {
+    start: async () => 'run',
+    get: async () => undefined,
+    cancel: async () => {}
+  }
+  return {
+    serverVersion: '0.0.1',
+    analyses: createAnalysisService({
+      documents,
+      analyses,
+      engine,
+      model: async () => ({ provider: 'opencode-go', id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash' })
+    }),
+    feedback: createFeedbackService({ analyses, feedback: new SqliteFeedbackRepository(db), engine }),
+    documents,
+    preferences: new SqlitePreferencesRepository(db)
+  }
+}
+
 /** The app under test. */
-const app = createHttpApp({
-  token,
-  port,
-  serverVersion: '0.0.1',
-  engine: { start: async () => 'run', get: async () => undefined, cancel: async () => {} },
-  workflows: ['stylistic-workflow'],
-  preferences: new SqlitePreferencesRepository(openDatabase(':memory:'))
-})
+const app = createHttpApp({ token, port, ...services() })
 
 /** Simulates the TCP peer @hono/node-server exposes to getConnInfo. */
 function fromPeer(remoteAddress: string) {
@@ -36,7 +59,7 @@ function fromPeer(remoteAddress: string) {
 /** A request from the task pane: right host, origin and token, from loopback. */
 function health(headers: Record<string, string> = {}, peer = '127.0.0.1') {
   return app.request(
-    '/api/health',
+    '/api/v1/status',
     {
       headers: {
         host: `localhost:${port}`,
@@ -50,11 +73,11 @@ function health(headers: Record<string, string> = {}, peer = '127.0.0.1') {
 }
 
 describe('createHttpApp', () => {
-  it('answers health with the server version for a trusted request', async () => {
+  it('answers the status with the server version for a trusted request', async () => {
     const response = await health()
 
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ status: 'ok', version: '0.0.1' })
+    expect(await response.json()).toMatchObject({ version: '0.0.1', analysis: { ready: true } })
   })
 
   it('accepts 127.0.0.1 as the host too', async () => {
@@ -85,6 +108,14 @@ describe('createHttpApp', () => {
 
     expect(missing.status).toBe(401)
     expect(wrong.status).toBe(401)
+    expect(wrong.headers.get('content-type')).toBe('application/problem+json')
+    expect(await wrong.json()).toEqual({
+      type: 'urn:stylistic:problem:unauthorized',
+      title: 'The hub token is missing or wrong',
+      status: 401,
+      detail: 'Send the hub token as "Authorization: Bearer <token>".',
+      code: 'unauthorized'
+    })
   })
 
   it('only grants CORS to the task pane origin', async () => {
@@ -127,7 +158,7 @@ describe('createHttpApp', () => {
 
   it('answers the CORS preflight of the task pane without a token', async () => {
     const response = await app.request(
-      '/api/health',
+      '/api/v1/status',
       {
         method: 'OPTIONS',
         headers: {
@@ -144,50 +175,30 @@ describe('createHttpApp', () => {
     expect(response.headers.get('access-control-allow-origin')).toBe(`https://localhost:${port}`)
   })
 
-  it('serves the workflow API behind the same guards', async () => {
-    const trusted = { host: `localhost:${port}`, origin: `https://localhost:${port}` }
-
-    const withToken = await app.request(
+  it('answers an API route that does not exist with a not_found problem', async () => {
+    const response = await app.request(
       '/api/workflows/stylistic-workflow',
-      { headers: { ...trusted, authorization: `Bearer ${token}` } },
+      {
+        headers: {
+          host: `localhost:${port}`,
+          origin: `https://localhost:${port}`,
+          authorization: `Bearer ${token}`
+        }
+      },
       fromPeer('127.0.0.1')
     )
-    const withoutToken = await app.request(
-      '/api/workflows/stylistic-workflow',
-      { headers: trusted },
-      fromPeer('127.0.0.1')
-    )
 
-    expect(withToken.status).toBe(200)
-    expect(withoutToken.status).toBe(401)
-  })
-
-  it('serves the preferences behind the same guards', async () => {
-    const trusted = { host: `localhost:${port}`, origin: `https://localhost:${port}` }
-
-    const withToken = await app.request(
-      '/user/preferences',
-      { headers: { ...trusted, authorization: `Bearer ${token}` } },
-      fromPeer('127.0.0.1')
-    )
-    const withoutToken = await app.request('/user/preferences', { headers: trusted }, fromPeer('127.0.0.1'))
-
-    expect(withToken.status).toBe(200)
-    expect(withoutToken.status).toBe(401)
+    expect(response.status).toBe(404)
+    expect(await response.json()).toMatchObject({
+      code: 'not_found',
+      detail: 'No route GET /api/workflows/stylistic-workflow.'
+    })
   })
 
   it('serves the task pane without a token but only to our Host', async () => {
     const addinDir = mkdtempSync(join(tmpdir(), 'hub-app-addin-'))
     writeFileSync(join(addinDir, 'taskpane.html'), '<html><head></head></html>')
-    const withAddin = createHttpApp({
-      token,
-      port,
-      serverVersion: '0.0.1',
-      engine: { start: async () => 'run', get: async () => undefined, cancel: async () => {} },
-      workflows: [],
-      preferences: new SqlitePreferencesRepository(openDatabase(':memory:')),
-      addinDir
-    })
+    const withAddin = createHttpApp({ token, port, ...services(), addinDir })
 
     const page = await withAddin.request(
       '/taskpane.html',

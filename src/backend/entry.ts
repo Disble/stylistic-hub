@@ -3,16 +3,33 @@ import { dirname, join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { serve } from '@hono/node-server'
 import { SERVER_VERSION } from '../shared/versions'
+import { createAnalysisService } from './analysis/analysis-service'
+import {
+  ANALYSIS_WORKFLOW,
+  analysisWorkflow,
+  analyzePartWorkflow,
+  PART_WORKFLOW,
+  PROFILE_WORKFLOW,
+  updateProfileWorkflow
+} from './analysis/analysis-workflow'
 import { createHttpApp } from './adapters/http/app'
 import { createOpenWorkflowEngine } from './adapters/openworkflow/engine'
 import { createPiLlm } from './adapters/pi/pi-llm'
 import { createChosenModel } from './adapters/pi/pi-runtime'
+import { SqliteAnalysisRepository } from './adapters/sqlite/analysis-repository'
 import { openDatabase } from './adapters/sqlite/database'
 import { SqliteDocumentRepository } from './adapters/sqlite/document-repository'
+import { SqliteFeedbackRepository } from './adapters/sqlite/feedback-repository'
 import { SqlitePreferencesRepository } from './adapters/sqlite/preferences-repository'
 import { ensureCertificates } from './adapters/tls/certificates'
-import { STYLISTIC_WORKFLOW_ID, stylisticWorkflow } from './correction/stylistic-workflow'
-import { FEEDBACK_WORKFLOW_ID, feedbackWorkflow } from './feedback/feedback-workflow'
+import { createFeedbackService } from './feedback/feedback-service'
+import {
+  FEEDBACK_WORKFLOW,
+  feedbackWorkflow,
+  PROCESS_FEEDBACK_WORKFLOW,
+  processFeedbackWorkflow
+} from './feedback/feedback-workflow'
+import { createProfileUpdater } from './profile/profile-updater'
 
 /** Arguments the main process passes when it forks this utility process. */
 const { values } = parseArgs({
@@ -52,24 +69,49 @@ const { key, cert } = await ensureCertificates(values.certs)
 const preferences = new SqlitePreferencesRepository(db)
 /** Document contexts and their style profiles. */
 const documents = new SqliteDocumentRepository(db)
-/** Workflow bodies by the id the add-in uses. */
-const workflows = {
-  [FEEDBACK_WORKFLOW_ID]: feedbackWorkflow({ llm, documents }),
-  [STYLISTIC_WORKFLOW_ID]: stylisticWorkflow({
-    llm,
-    documents,
-    correctionInstructions: async () => preferences.getCorrectionInstructions() ?? undefined
-  })
+/** Analyses, their chunks and suggestions. */
+const analyses = new SqliteAnalysisRepository(db)
+/** Feedback on suggestions. */
+const feedback = new SqliteFeedbackRepository(db)
+/** Profile writes, one at a time per document. */
+const profile = createProfileUpdater(documents)
+/** What the analysis workflows need. */
+const analysisDeps = {
+  llm,
+  documents,
+  analyses,
+  profile,
+  correctionInstructions: async () => preferences.getCorrectionInstructions() ?? undefined
 }
+/** What the feedback workflows need. */
+const feedbackDeps = { llm, analyses, feedback, profile }
 /** Durable runs in OpenWorkflow's own file next to the hub database. */
-const engine = await createOpenWorkflowEngine({ file: join(dirname(values.db), 'workflows.db'), workflows })
+const engine = await createOpenWorkflowEngine({
+  file: join(dirname(values.db), 'workflows.db'),
+  workflows: {
+    [ANALYSIS_WORKFLOW]: analysisWorkflow(analysisDeps),
+    [PART_WORKFLOW]: analyzePartWorkflow(analysisDeps),
+    [PROFILE_WORKFLOW]: updateProfileWorkflow(analysisDeps),
+    [FEEDBACK_WORKFLOW]: feedbackWorkflow(feedbackDeps),
+    [PROCESS_FEEDBACK_WORKFLOW]: processFeedbackWorkflow(feedbackDeps)
+  }
+})
 /** The HTTP surface both listeners serve. */
 const app = createHttpApp({
   token,
   port,
   serverVersion: SERVER_VERSION,
-  engine,
-  workflows: Object.keys(workflows),
+  analyses: createAnalysisService({
+    documents,
+    analyses,
+    engine,
+    model: async () => {
+      const model = await pi.getModel()
+      return model && { provider: model.provider, id: model.id, name: model.name }
+    }
+  }),
+  feedback: createFeedbackService({ analyses, feedback, engine }),
+  documents,
   preferences,
   addinDir: values.addin
 })
