@@ -115,6 +115,32 @@ describe('createPiLlm', () => {
     expect(fn.mock.calls[0]?.[2]).not.toHaveProperty('toolChoice')
   })
 
+  it('leaves the tool choice alone on reasoning models whose thinking cannot be turned off', async () => {
+    const fn = answering(fauxAssistantMessage(fauxToolCall('submit', { verdict: 'ok', notes: [] })))
+    // As DeepSeek V4.1 Flash on OpenCode Go, which answers 400 to a forced tool.
+    const alwaysOn = {
+      ...modelOf('openai-completions'),
+      reasoning: true,
+      thinkingLevelMap: { off: null, high: 'high' }
+    } as unknown as Model<Api>
+    const llm = createPiLlm({ complete: fn, getModel: async () => alwaysOn })
+
+    await expect(llm.structuredCall(request)).resolves.toEqual({ verdict: 'ok', notes: [] })
+    expect(fn.mock.calls[0]?.[2]).not.toHaveProperty('toolChoice')
+  })
+
+  it('still forces the tool on reasoning models whose thinking can be turned off', async () => {
+    const fn = answering(fauxAssistantMessage(fauxToolCall('submit', { verdict: 'ok', notes: [] })))
+    const optional = { ...modelOf('openai-completions'), reasoning: true } as Model<Api>
+    const llm = createPiLlm({ complete: fn, getModel: async () => optional })
+
+    await llm.structuredCall(request)
+
+    expect(fn.mock.calls[0]?.[2]).toMatchObject({
+      toolChoice: { type: 'function', function: { name: 'submit' } }
+    })
+  })
+
   it('accepts null for an optional field, as strict tool schemas send it', async () => {
     const optional = z.object({ anchor: z.string(), suggestedText: z.string().optional() })
     const fn = answering(

@@ -54,6 +54,17 @@ const FORCED_TOOL_CHOICE: Record<string, unknown> = {
 }
 
 /**
+ * The option that forces the submit tool, or nothing where thinking only allows `auto`/`none`: Pi
+ * always sends adaptive thinking to `supportsMidConvoEffort` models, and models it marks `off: null`
+ * cannot turn thinking off, as DeepSeek on OpenCode Go.
+ */
+function forcedToolChoice(model: Model<Api>): unknown {
+  const adaptive = (model.compat as { supportsMidConvoEffort?: boolean } | undefined)?.supportsMidConvoEffort
+  const alwaysOn = model.reasoning && model.thinkingLevelMap?.off === null
+  return adaptive || alwaysOn ? undefined : FORCED_TOOL_CHOICE[model.api]
+}
+
+/**
  * Pi turns optional properties into required nullable ones for strict tools, so an omitted field
  * arrives as `null`. Drops those keys; used only when the answer does not parse as sent.
  */
@@ -84,10 +95,7 @@ export function createPiLlm({ complete, getModel, timeoutMs = 180_000 }: PiLlmDe
         parameters: parametersOf(schema),
         constrainedSampling: { type: 'json_schema', strict: 'prefer' }
       }
-      // Pi always sends adaptive thinking to these models, and thinking only allows `auto`/`none`.
-      const alwaysThinks = (model.compat as { supportsMidConvoEffort?: boolean } | undefined)
-        ?.supportsMidConvoEffort
-      const toolChoice = alwaysThinks ? undefined : FORCED_TOOL_CHOICE[model.api]
+      const toolChoice = forcedToolChoice(model)
       const timeout = AbortSignal.timeout(timeoutMs)
       const message = await complete(
         model,
