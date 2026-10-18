@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync, rmSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
@@ -104,35 +104,6 @@ export function openDatabase(file: string): DatabaseSync {
     db.close()
     throw error
   }
-}
-
-/**
- * Reads a database's schema version and `minReaderSchema` without opening it for writing. A
- * database from before `schema_meta` (0.0.1) reads as `minReaderSchema` = its `user_version`.
- */
-export function readSchemaState(file: string): { userVersion: number; minReaderSchema: number } {
-  const db = new DatabaseSync(file, { readOnly: true })
-  try {
-    const userVersion = userVersionOf(db)
-    const hasMeta = db.prepare(`SELECT 1 FROM sqlite_schema WHERE name = 'schema_meta'`).get() !== undefined
-    const row = hasMeta
-      ? (db.prepare('SELECT min_reader_schema AS value FROM schema_meta').get() as
-          { value: number } | undefined)
-      : undefined
-    return { userVersion, minReaderSchema: row?.value ?? userVersion }
-  } finally {
-    db.close()
-  }
-}
-
-/**
- * Puts a backup back in place of the database, which must be closed. The stale `-wal` and `-shm`
- * files go first so SQLite never replays them over the restored file.
- */
-export function restoreBackup(file: string, backup: string): void {
-  rmSync(`${file}-wal`, { force: true })
-  rmSync(`${file}-shm`, { force: true })
-  copyFileSync(backup, file)
 }
 
 /** SQLite's `user_version`: how many migrations the database has seen. */

@@ -4,6 +4,7 @@
     "src/backend/",
     "src/main/",
     "src/renderer/",
+    "src/shared/schema-state.ts",
     "src/shared/signing/"
   ],
   "features": [
@@ -116,6 +117,12 @@
       "path": "src/shared/signing/",
       "defaultTier": "core",
       "reason": "Signature and integrity checks of the key list, catalog and components: a miss installs untrusted code"
+    },
+    {
+      "id": "schema-state",
+      "path": "src/shared/schema-state.ts",
+      "defaultTier": "core",
+      "reason": "The database's schema state and the backup restore the hub's rollback relies on: a miss loses the author's documents"
     }
   ]
 }
