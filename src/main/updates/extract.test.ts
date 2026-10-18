@@ -65,13 +65,22 @@ describe('extractZip', () => {
     expect(existsSync(dest)).toBe(false)
   })
 
-  it.each(['CON', 'sub/nul.txt', 'Com1.log', 'lpt9', 'aux/file.js', 'PRN.tar.gz'])(
-    'rejects the reserved name %s',
-    async (name) => {
-      expect(await extract(await withEntry({ name, data: 'x' }))).toBe('reserved_name')
-      expect(existsSync(dest)).toBe(false)
-    }
-  )
+  it.each([
+    'CON',
+    'sub/nul.txt',
+    'Com1.log',
+    'lpt9',
+    'aux/file.js',
+    'PRN.tar.gz',
+    // Windows strips trailing spaces and dots, and reads `:` as an alternate data stream.
+    'aux ',
+    'x/Lpt1 ',
+    'entry.js.',
+    'entry.js:ads'
+  ])('rejects the reserved name %s', async (name) => {
+    expect(await extract(await withEntry({ name, data: 'x' }))).toBe('reserved_name')
+    expect(existsSync(dest)).toBe(false)
+  })
 
   it('stops once the uncompressed total passes the signed cap', async () => {
     const zip = await makeZip([
