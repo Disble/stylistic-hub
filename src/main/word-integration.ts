@@ -3,6 +3,7 @@ import { createHash, X509Certificate } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, sep } from 'node:path'
 import type { WordStatus } from '../shared/bridge'
+import { WORD_MODULE_ID } from '../shared/bridge'
 
 /** Runs a Windows command and reports its exit code and output; it never throws on failure. */
 export type RunCommand = (command: string, args: string[]) => Promise<{ code: number; stdout: string }>
@@ -15,7 +16,11 @@ export interface WordIntegrationOptions {
   run?: RunCommand
   /** The local CA the backend wrote (`certs/ca.pem`). */
   caFile: string
-  /** The bundled add-in's manifest, which points Word at `https://localhost:3000`. */
+  /**
+   * The legacy bundled manifest path. The installer ships no add-in, so this file is normally absent: it is
+   * never registered from, only recognized so a registration an earlier hub left behind can be removed.
+   * It still exists in development when `bun run addin:bundle` produced `resources/addin/`.
+   */
   manifestFile: string
   /**
    * The stable manifests (`components/<id>/manifest.xml`) of the installed modules served now
@@ -64,8 +69,9 @@ function changedSinceRegistered(file: string): boolean {
  * (Windows asks the user to confirm) and sideloads the manifest the way Office's own dev tools do.
  * Custom code: office-addin-dev-settings writes the same registry value but brings Teams publishing,
  * prompts and usage telemetry along, so the hub calls Windows' `certutil` and `reg` directly.
- * With modules installed, their stable manifests replace the bundled one, registered again only when their
- * content hash changes; the bundled root-URL entry is then removed (ADR 0001 D8, cutover step two).
+ * Only downloaded modules are registered, from their stable manifests: the installer carries no add-in
+ * (odd/tasks/catalog-only-word.md S1), so a registration that names the legacy bundled path is stale
+ * once that file is gone and is removed, never re-registered (S1, S3).
  */
 export function createWordIntegration({
   run = execute,
@@ -74,11 +80,8 @@ export function createWordIntegration({
   moduleManifests = () => [],
   componentsRoot
 }: WordIntegrationOptions) {
-  /** What Word should load: the served module manifests, else the bundled one when it exists. */
-  const targets = () => {
-    const served = moduleManifests().filter((file) => existsSync(file))
-    return served.length > 0 || !existsSync(manifestFile) ? served : [manifestFile]
-  }
+  /** What Word should load: the stable manifests of the served modules, nothing else. */
+  const targets = () => moduleManifests().filter((file) => existsSync(file))
   /** Every manifest Stylistic may be registered with now: the targets, then the bundled one. */
   const known = () => [...new Set([...targets(), ...(existsSync(manifestFile) ? [manifestFile] : [])])]
   const available = () => existsSync(caFile) && targets().length > 0
@@ -159,8 +162,12 @@ export function createWordIntegration({
     },
 
     async connect(): Promise<void> {
-      if (!available())
-        throw new Error('The Word add-in is not bundled with this hub, or the server has not started yet')
+      if (targets().length === 0)
+        throw new Error(
+          `Stylistic for Word is not downloaded yet. Install "${WORD_MODULE_ID}" from the Library screen, then add it to Word here.`
+        )
+      if (!existsSync(caFile))
+        throw new Error('The local server has not started yet, so there is no certificate for Word to trust')
       if (
         !(await caTrusted()) &&
         (await run('certutil', ['-user', '-addstore', 'Root', caFile])).code !== 0
@@ -172,18 +179,30 @@ export function createWordIntegration({
 
     /**
      * After the served modules changed (module-switch.ts): while Stylistic is in Word, registers each module
-     * manifest whose content hash changed, or the bundled one when no module is served, and removes the entries
-     * nothing serves any more, the bundled root-URL entry included. Adds nothing while Stylistic is not in Word.
+     * manifest whose content hash changed and removes the entries nothing serves any more. With no module
+     * served, removes only the entries whose file is gone (an uninstalled module, the removed bundle) and
+     * leaves a live registration alone until a module is served again. Adds nothing while Stylistic is not
+     * in Word.
      */
     async sync(): Promise<void> {
-      if (!available() || !(await listed()).some(({ path }) => ours(path))) return
+      const values = await listed()
+      if (!values.some(({ path }) => ours(path))) return
+      const wanted = targets()
+      if (wanted.length === 0) {
+        for (const { name, path } of values) if (ours(path) && !existsSync(path)) await remove(name)
+        return
+      }
       await registerTargets(false)
     },
 
     async disconnect(): Promise<void> {
+      const values = await listed()
       for (const file of known()) await remove(addinId(file))
+      // A stale entry names a file that is gone, so its id cannot be read back: remove it by its listed name.
+      for (const { name, path } of values) if (ours(path)) await remove(name)
       // `reg delete` also fails when the value is already gone, so check the outcome instead.
-      if (await addinRegistered()) throw new Error('Could not remove Stylistic from Word')
+      if ((await listed()).some(({ path }) => ours(path)))
+        throw new Error('Could not remove Stylistic from Word')
     }
   }
 }

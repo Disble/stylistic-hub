@@ -1,6 +1,6 @@
 {
   "name": "stylistic-hub",
-  "version": "1.0.0",
+  "version": "1.1.0-beta.1",
   "description": "Windows desktop hub for Stylistic: installs the Word add-in and runs the local backend",
   "private": true,
   "type": "module",
@@ -28,8 +28,8 @@
     "release:hub": "semantic-release",
     "test:coverage": "vitest run --coverage --config .dharness/vitest.coverage.mjs",
     "check": "bun run format:check && bun run lint && bun run typecheck && bun run test:coverage && bun run check:word",
-    "dist": "bun scripts/require-addin.ts && bun run build && bun scripts/stage-prod-addin.ts && electron-builder --win nsis --x64 --publish never",
-    "dist:dir": "bun scripts/require-addin.ts && bun run build && bun scripts/stage-prod-addin.ts && electron-builder --win dir --x64",
+    "dist": "bun run build && bun scripts/stage-word.ts && electron-builder --win nsis --x64 --publish never",
+    "dist:dir": "bun run build && bun scripts/stage-word.ts && electron-builder --win dir --x64",
     "prepare": "lefthook install"
   },
   "dependencies": {

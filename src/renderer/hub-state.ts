@@ -1,5 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { ModelSummary, ProviderSummary, ServerStatus, WordStatus } from '../shared/bridge'
+import type {
+  Library,
+  LibraryComponent,
+  ModelSummary,
+  ProviderSummary,
+  ServerStatus,
+  WordStatus,
+  WORD_MODULE_ID as SharedWordModuleId
+} from '../shared/bridge'
+
+/** The bridge pins this literal at compile time; renderer dependencies on shared stay type-only. */
+export const WORD_MODULE_ID: typeof SharedWordModuleId = 'stylistic-word-addin'
 
 /** The hub's screens, in navigation order. */
 export type Screen = 'home' | 'word' | 'server' | 'provider' | 'library'
@@ -21,20 +32,26 @@ export function useServerStatus(): ServerStatus | undefined {
   return status
 }
 
-/** Word's status with this hub, read again whenever `refresh` is called. */
+/** Word's status with this hub, read again whenever `refresh` is called and after each catalog check. */
 export function useWordStatus(): { status: WordStatus | undefined; refresh: () => void } {
   const [status, setStatus] = useState<WordStatus | undefined>()
   const [reloads, setReloads] = useState(0)
+  const refresh = useCallback(() => setReloads((n) => n + 1), [])
 
   useEffect(() => {
     let live = true
-    void window.hub.word.status().then((current) => live && setStatus(current))
+    void window.hub.word
+      .status()
+      .then((current) => live && setStatus(current))
+      .catch(() => undefined)
     return () => {
       live = false
     }
   }, [reloads])
+  // A completed check can download the module Word was waiting for, so a mounted screen follows it.
+  useEffect(() => window.hub.library.onChecked(refresh), [refresh])
 
-  return { status, refresh: useCallback(() => setReloads((n) => n + 1), []) }
+  return { status, refresh }
 }
 
 /** The signed-in providers and the model the corrections use. */
@@ -68,6 +85,32 @@ export function providerReady(state: ProviderState | undefined): boolean {
 /** True once Windows trusts the hub certificate and Word lists the add-in. */
 export function wordReady(status: WordStatus | undefined): boolean {
   return Boolean(status?.caTrusted && status.addinRegistered)
+}
+
+/** The Library, read again after each catalog check and whenever `refresh` is called. */
+export function useLibrary(): { library: Library | undefined; refresh: () => void } {
+  const [library, setLibrary] = useState<Library | undefined>()
+  const [reloads, setReloads] = useState(0)
+  const refresh = useCallback(() => setReloads((n) => n + 1), [])
+
+  useEffect(() => {
+    let live = true
+    void window.hub.library
+      .list()
+      .then((current) => live && setLibrary(current))
+      .catch(() => undefined)
+    return () => {
+      live = false
+    }
+  }, [reloads])
+  useEffect(() => window.hub.library.onChecked(refresh), [refresh])
+
+  return { library, refresh }
+}
+
+/** The Word module in the Library, if the last catalog check listed it. */
+export function wordModule(library: Library | undefined): LibraryComponent | undefined {
+  return library?.components.find((component) => component.id === WORD_MODULE_ID)
 }
 
 /** The message to show for a rejected action. */

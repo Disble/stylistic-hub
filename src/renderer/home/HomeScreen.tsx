@@ -1,4 +1,13 @@
-import { Badge, Button, makeStyles, mergeClasses, Text, tokens } from '@fluentui/react-components'
+import {
+  Badge,
+  Button,
+  makeStyles,
+  mergeClasses,
+  MessageBar,
+  MessageBarBody,
+  Text,
+  tokens
+} from '@fluentui/react-components'
 import {
   CheckmarkCircle20Filled,
   DocumentText24Regular,
@@ -7,12 +16,17 @@ import {
   type FluentIcon
 } from '@fluentui/react-icons'
 import type { ReactNode } from 'react'
-import type { ServerStatus, WordStatus } from '../../shared/bridge'
+import { useState } from 'react'
+import type { LibraryComponent, ServerStatus, WordStatus } from '../../shared/bridge'
 import {
+  errorMessage,
   providerReady,
+  useLibrary,
   useProviderState,
   useServerStatus,
   useWordStatus,
+  WORD_MODULE_ID,
+  wordModule,
   wordReady,
   type ProviderState,
   type Screen
@@ -214,18 +228,89 @@ function ComponentCard({
   )
 }
 
-/** The Word add-in: whether it is added, its version, and the Word screen. */
+/** The Download detail of the Word card: what the last catalog check offers, if anything is known. */
+function downloadLabel(module: LibraryComponent | undefined, catalogKnown: boolean): string {
+  if (!catalogKnown) return '—'
+  if (module?.installed) return module.installed
+  if (module?.requested) return 'Install requested'
+  return module?.available ?? 'Not offered'
+}
+
+/** Installs the Word module from the catalog, or shows its pending request. Renders nothing otherwise. */
+function WordDownloadAction({
+  module,
+  catalogKnown,
+  installing,
+  onInstall
+}: {
+  module: LibraryComponent | undefined
+  catalogKnown: boolean
+  installing: boolean
+  onInstall: () => void
+}) {
+  const styles = useStyles()
+  if (!catalogKnown) return null
+  if (module?.installed) return null
+  if (module?.requested) {
+    return (
+      <Text size={200} className={styles.caption}>
+        Install requested. The hub downloads it at the next catalog check.
+      </Text>
+    )
+  }
+  if (!module?.available) return null
+  return (
+    <Button appearance="primary" disabled={installing} onClick={onInstall}>
+      {installing ? 'Installing…' : 'Install Stylistic for Word'}
+    </Button>
+  )
+}
+
+/** Opens the Word screen to add Stylistic, or to manage it once downloaded. Renders nothing otherwise. */
+function WordManageButton({
+  downloaded,
+  catalogKnown,
+  inWord,
+  onOpen
+}: {
+  downloaded: boolean
+  catalogKnown: boolean
+  inWord: boolean
+  onOpen: (screen: Screen) => void
+}) {
+  if (!downloaded && catalogKnown) return null
+  return (
+    <Button appearance={inWord ? 'secondary' : 'primary'} onClick={() => onOpen('word')}>
+      {inWord ? 'Manage Word' : 'Add to Word'}
+    </Button>
+  )
+}
+
+/** The Word add-in: its download from the catalog, whether it is added, and the Word screen. */
 function WordCard({
   word,
   server,
+  module,
+  catalogKnown,
+  installing,
+  installError,
+  onInstall,
   onOpen
 }: {
   word: WordStatus | undefined
   server: ServerStatus | undefined
+  /** The Word module in the Library, if the last catalog check listed it. */
+  module: LibraryComponent | undefined
+  /** A catalog check succeeded since the hub opened, so the download state is known. */
+  catalogKnown: boolean
+  installing: boolean
+  installError: string | undefined
+  onInstall: () => void
   onOpen: (screen: Screen) => void
 }) {
   const styles = useStyles()
   const inWord = wordReady(word)
+  const downloaded = Boolean(module?.installed)
   return (
     <ComponentCard
       title="Word add-in"
@@ -239,12 +324,29 @@ function WordCard({
       }
       details={[
         { term: 'Version', value: word?.version ?? '—', mono: true },
+        { term: 'Download', value: downloadLabel(module, catalogKnown), mono: true },
         { term: 'Task pane', value: server?.address ?? '—', mono: true }
       ]}
       action={
-        <Button appearance={inWord ? 'secondary' : 'primary'} onClick={() => onOpen('word')}>
-          {inWord ? 'Manage Word' : 'Add to Word'}
-        </Button>
+        <>
+          <WordDownloadAction
+            module={module}
+            catalogKnown={catalogKnown}
+            installing={installing}
+            onInstall={onInstall}
+          />
+          <WordManageButton
+            downloaded={downloaded}
+            catalogKnown={catalogKnown}
+            inWord={inWord}
+            onOpen={onOpen}
+          />
+          {installError && (
+            <MessageBar intent="error">
+              <MessageBarBody>{installError}</MessageBarBody>
+            </MessageBar>
+          )}
+        </>
       }
     />
   )
@@ -287,8 +389,21 @@ export function HomeScreen({ onOpen }: { onOpen: (screen: Screen) => void }) {
   const server = useServerStatus()
   const provider = useProviderState()
   const { status: word } = useWordStatus()
+  const { library, refresh } = useLibrary()
+  const [installing, setInstalling] = useState(false)
+  const [installError, setInstallError] = useState<string | undefined>()
   const inWord = wordReady(word)
   const withModel = providerReady(provider)
+
+  /** Requests the same catalog installation as the Library screen; nothing is installed automatically. */
+  const installWord = () => {
+    setInstalling(true)
+    setInstallError(undefined)
+    window.hub.library
+      .install(WORD_MODULE_ID)
+      .then(refresh, (reason: unknown) => setInstallError(errorMessage(reason)))
+      .finally(() => setInstalling(false))
+  }
 
   const steps = [
     { label: 'Local server running', done: server?.state === 'running' },
@@ -314,7 +429,16 @@ export function HomeScreen({ onOpen }: { onOpen: (screen: Screen) => void }) {
 
       <Section title="Components" caption="What runs on this computer">
         <div className={styles.cards}>
-          <WordCard word={word} server={server} onOpen={onOpen} />
+          <WordCard
+            word={word}
+            server={server}
+            module={wordModule(library)}
+            catalogKnown={Boolean(library?.catalog)}
+            installing={installing}
+            installError={installError}
+            onInstall={installWord}
+            onOpen={onOpen}
+          />
           <ServerCard server={server} onOpen={onOpen} />
         </div>
       </Section>

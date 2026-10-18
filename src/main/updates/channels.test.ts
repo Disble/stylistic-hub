@@ -182,7 +182,11 @@ describe('staged rollout', () => {
     ({ id: 'server', version, channel: 'stable', rolloutPercent, blocked: [] }) as unknown as CatalogEntry
 
   it('offers an entry at 10% to about 10% of a population of install ids', () => {
-    const ids = Array.from({ length: 10_000 }, () => randomUUID())
+    // Fixed ids: random ones put the share outside ±1% about once in a thousand runs (σ ≈ 0.3%).
+    const ids = Array.from(
+      { length: 10_000 },
+      (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`
+    )
     const share = ids.filter((id) => inRollout(id, entry(10))).length / ids.length
 
     expect(share).toBeGreaterThanOrEqual(0.09)
