@@ -8,7 +8,7 @@ import {
   tokens,
   type BadgeProps
 } from '@fluentui/react-components'
-import { ArrowClockwise20Regular, FolderOpen20Regular } from '@fluentui/react-icons'
+import { ArrowClockwise20Regular, ArrowDownload20Regular, FolderOpen20Regular } from '@fluentui/react-icons'
 import { useState } from 'react'
 import type { ServerStatus } from '../../shared/bridge'
 import { errorMessage, useProviderState, useServerStatus, type Screen } from '../hub-state'
@@ -95,6 +95,8 @@ export function ServerScreen({ onOpen }: { onOpen: (screen: Screen) => void }) {
   const status = useServerStatus()
   const provider = useProviderState()
   const [error, setError] = useState<string | undefined>()
+  /** Where the last diagnostics bundle was saved. */
+  const [saved, setSaved] = useState<string | undefined>()
   const { electron, node } = window.hub.versions
 
   if (!status) return null
@@ -119,6 +121,17 @@ export function ServerScreen({ onOpen }: { onOpen: (screen: Screen) => void }) {
             Open logs folder
           </Button>
           <Button
+            icon={<ArrowDownload20Regular />}
+            onClick={() =>
+              run(async () => {
+                setSaved(undefined)
+                setSaved(await window.hub.server.exportDiagnostics())
+              })
+            }
+          >
+            Export diagnostics
+          </Button>
+          <Button
             icon={<ArrowClockwise20Regular />}
             disabled={status.state === 'starting'}
             onClick={() => run(window.hub.server.restart)}
@@ -132,6 +145,14 @@ export function ServerScreen({ onOpen }: { onOpen: (screen: Screen) => void }) {
       {error && (
         <MessageBar intent="error">
           <MessageBarBody>{error}</MessageBarBody>
+        </MessageBar>
+      )}
+      {saved && (
+        <MessageBar intent="success">
+          <MessageBarBody>
+            Diagnostics saved to {saved}. It includes the logs, which may hold excerpts of analyzed text;
+            check it before attaching it to a report.
+          </MessageBarBody>
         </MessageBar>
       )}
 

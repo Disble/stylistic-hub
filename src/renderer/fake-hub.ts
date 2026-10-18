@@ -31,6 +31,7 @@ export function fakeHub(overrides: { [K in keyof HubBridge]?: Partial<HubBridge[
       status: async () => RUNNING,
       restart: async () => undefined,
       openLogs: async () => undefined,
+      exportDiagnostics: async () => undefined,
       onStatus: () => () => undefined,
       ...overrides.server
     },

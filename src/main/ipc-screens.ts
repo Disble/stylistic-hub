@@ -1,15 +1,21 @@
 import { mkdir } from 'node:fs/promises'
-import { ipcMain, shell } from 'electron'
+import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { exportDiagnostics, type DiagnosticsSources } from './diagnostics'
 import type { createServerStatus } from './server-status'
 import type { Supervisor } from './supervisor'
 import type { createWordIntegration } from './word-integration'
 
-/** Serves the Server screen (status, restart, logs) and the Word screen (status, connect, disconnect). */
+/** The save dialog's title: Windows shows no message in it, so the title says what the bundle holds. */
+const DIAGNOSTICS_TITLE =
+  "Export diagnostics (includes the hub's logs, which may hold excerpts of analyzed text)"
+
+/** Serves the Server screen (status, restart, logs, diagnostics) and the Word screen (status, connect, disconnect). */
 export function registerScreenIpc(
   server: ReturnType<typeof createServerStatus>,
   backend: Supervisor,
   logsDir: string,
   word: ReturnType<typeof createWordIntegration>,
+  diagnostics: DiagnosticsSources,
   restartAllowed: () => boolean = () => true
 ): void {
   ipcMain.handle('hub:server:status', () => server.get())
@@ -23,6 +29,23 @@ export function registerScreenIpc(
     const failure = await shell.openPath(logsDir)
     if (failure) throw new Error(failure)
   })
+  ipcMain.handle('hub:server:export-diagnostics', (event) =>
+    exportDiagnostics({
+      ...diagnostics,
+      choosePath: async () => {
+        const options = {
+          title: DIAGNOSTICS_TITLE,
+          defaultPath: 'stylistic-diagnostics.zip',
+          filters: [{ name: 'Zip', extensions: ['zip'] }]
+        }
+        const window = BrowserWindow.fromWebContents(event.sender)
+        const result = await (window
+          ? dialog.showSaveDialog(window, options)
+          : dialog.showSaveDialog(options))
+        return result.canceled ? undefined : result.filePath
+      }
+    })
+  )
   ipcMain.handle('hub:word:status', () => word.status())
   ipcMain.handle('hub:word:connect', () => word.connect())
   ipcMain.handle('hub:word:disconnect', () => word.disconnect())

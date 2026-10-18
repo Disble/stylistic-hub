@@ -31,6 +31,7 @@ const bridge: HubBridge = {
     status: () => ipcRenderer.invoke('hub:server:status'),
     restart: () => ipcRenderer.invoke('hub:server:restart'),
     openLogs: () => ipcRenderer.invoke('hub:server:open-logs'),
+    exportDiagnostics: () => ipcRenderer.invoke('hub:server:export-diagnostics'),
     onStatus: (listener) => {
       const handler = (_event: unknown, status: ServerStatus) => listener(status)
       ipcRenderer.on('hub:server-status', handler)

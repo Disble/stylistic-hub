@@ -81,6 +81,8 @@ export interface HubBridge {
     restart(): Promise<void>
     /** Opens the hub's logs folder in Explorer. */
     openLogs(): Promise<void>
+    /** Asks where to save the diagnostics zip and writes it; resolves to its path, or undefined when canceled. */
+    exportDiagnostics(): Promise<string | undefined>
     /** Subscribes to status changes; returns the unsubscribe function. */
     onStatus(listener: (status: ServerStatus) => void): () => void
   }
