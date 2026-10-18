@@ -1,0 +1,230 @@
+import { createHash } from 'node:crypto'
+import { existsSync } from 'node:fs'
+import { readdir, rm } from 'node:fs/promises'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { CheckReport } from './engine'
+import { createSelfUpdate, type SelfUpdate } from './self-update'
+import { envelope, makeRelease, newKey, makeWorld, type Release, type World } from './test-fixtures'
+
+/** The bytes of the hub installer 0.2.0. */
+const INSTALLER = Buffer.from('MZ\u0090 Stylistic Hub 0.2.0 installer')
+
+/** What the fake electron-updater saw when it was asked to check: the feed's latest.yml and installer. */
+interface SeenCheck {
+  url: string
+  latest: { version: string; sha512: string; path: string }
+  installer: Buffer
+}
+
+/** The current test's world. */
+let world: World
+/** The hub 0.2.0 release. */
+let hub: Release
+/** Every check the fake updater was asked for. */
+let checks: SeenCheck[]
+/** The self-update under test, stopped after each test. */
+let selfUpdate: SelfUpdate | undefined
+
+beforeEach(async () => {
+  world = await makeWorld()
+  hub = await hubRelease('0.2.0')
+  checks = []
+})
+
+afterEach(async () => {
+  await selfUpdate?.stop()
+  selfUpdate = undefined
+  await rm(join(world.root, '..'), { recursive: true, force: true })
+})
+
+/** A signed hub release whose artifact is `INSTALLER`. */
+function hubRelease(version: string, options: Parameters<typeof makeRelease>[0] = { version }) {
+  return makeRelease(
+    { id: 'stylistic-hub', kind: 'hub', zip: INSTALLER, maxUncompressedSize: INSTALLER.length, ...options },
+    world.componentKey
+  )
+}
+
+/** A fake electron-updater: reads the feed it is pointed at, as the generic provider would. */
+const updater = {
+  async check(url: string): Promise<void> {
+    const latest = (await (await fetch(new URL('latest.yml', url))).json()) as SeenCheck['latest']
+    const installer = Buffer.from(await (await fetch(new URL(latest.path, url))).arrayBuffer())
+    checks.push({ url, latest, installer })
+  }
+}
+
+/** A self-update for a hub running `currentVersion`. */
+function start(currentVersion = '0.1.0', check = updater.check): SelfUpdate {
+  selfUpdate = createSelfUpdate({ currentVersion, updater: { check } })
+  return selfUpdate
+}
+
+/** Publishes `releases` and runs the engine's check; returns its report. */
+async function runCheck(releases: Release[], serial = 100): Promise<CheckReport> {
+  world.publish({ releases, serial })
+  return world.engine.runCheck()
+}
+
+/** The hub's staging folder. */
+const staging = () => join(world.root, 'stylistic-hub', '.staging')
+
+/** Whether the installer was ever requested from the internet. */
+const installerRequested = () => world.seen.some((request) => request.url === hub.entry.artifactUrl)
+
+describe('createSelfUpdate', () => {
+  it('serves the verified installer and its sha512, then asks electron-updater to check that feed', async () => {
+    const report = await runCheck([hub])
+
+    expect(await start().onReport(report, world.engine)).toEqual({ status: 'served', version: '0.2.0' })
+    expect(checks).toHaveLength(1)
+    expect(checks[0]?.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/$/)
+    expect(checks[0]?.latest).toMatchObject({
+      version: '0.2.0',
+      path: 'stylistic-hub-0.2.0.exe',
+      sha512: createHash('sha512').update(INSTALLER).digest('base64')
+    })
+    expect(checks[0]?.installer).toEqual(INSTALLER)
+    expect(await readdir(staging())).toContain('stylistic-hub-0.2.0.exe')
+    // The engine itself never installs the hub as a component.
+    expect((await world.engine.readState()).components['stylistic-hub']).toBeUndefined()
+  })
+
+  it('serves the same version once and stops the feed on stop()', async () => {
+    const report = await runCheck([hub])
+    const self = start()
+    await self.onReport(report, world.engine)
+    const downloads = world.seen.filter((request) => request.url === hub.entry.artifactUrl).length
+
+    expect(await self.onReport(report, world.engine)).toEqual({ status: 'skipped', reason: 'already_served' })
+    expect(world.seen.filter((request) => request.url === hub.entry.artifactUrl)).toHaveLength(downloads)
+    expect(checks).toHaveLength(1)
+
+    await self.stop()
+    await expect(fetch(new URL('latest.yml', checks[0]?.url))).rejects.toThrow()
+  })
+
+  it('never serves a tampered installer: the sha256 differs, the download is deleted', async () => {
+    world.publish({ releases: [hub], serial: 100 })
+    const tampered = Buffer.from(INSTALLER)
+    tampered.writeUInt8(tampered.readUInt8(0) ^ 1, 0)
+    world.routes.set(hub.entry.artifactUrl, tampered)
+
+    const outcome = await start().onReport(await world.engine.runCheck(), world.engine)
+
+    expect(outcome).toEqual({ status: 'failed', reason: 'sha256_mismatch' })
+    expect(checks).toEqual([])
+    expect(existsSync(join(staging(), 'stylistic-hub-0.2.0.exe'))).toBe(false)
+  })
+
+  it('never serves an installer whose component.json signature is bad', async () => {
+    world.publish({ releases: [hub], serial: 100 })
+    const forged = { ...hub.component, releaseNotes: 'https://example.test/forged' }
+    world.routes.set(`${hub.entry.componentUrl}.sig`, JSON.stringify(envelope(forged, world.componentKey)))
+
+    const outcome = await start().onReport(await world.engine.runCheck(), world.engine)
+
+    expect(outcome).toEqual({ status: 'failed', reason: 'bad_signature' })
+    expect(checks).toEqual([])
+    expect(installerRequested()).toBe(false)
+  })
+
+  it('verifies the hub against the stylistic-hub key scope, whatever publisher the catalog names', async () => {
+    const addinKey = newKey()
+    const signedByAddin = await makeRelease(
+      {
+        id: 'stylistic-hub',
+        kind: 'hub',
+        version: '0.2.0',
+        zip: INSTALLER,
+        maxUncompressedSize: INSTALLER.length
+      },
+      addinKey
+    )
+    const release = { ...signedByAddin, entry: { ...signedByAddin.entry, publisher: 'stylistic-addon' } }
+    const keys = world.keyList()
+    keys.keys.push({
+      id: addinKey.id,
+      role: 'component',
+      scope: 'stylistic-addon',
+      publicKey: addinKey.raw.toString('base64')
+    })
+    world.publish({ releases: [release], keys, serial: 100 })
+
+    const outcome = await start().onReport(await world.engine.runCheck(), world.engine)
+
+    expect(outcome).toEqual({ status: 'failed', reason: 'wrong_scope' })
+    expect(checks).toEqual([])
+  })
+
+  it('never serves an installer whose component.json does not match the catalog entry', async () => {
+    hub = await hubRelease('0.2.0', { version: '0.2.0', component: { version: '0.2.1' } })
+
+    const outcome = await start().onReport(await runCheck([hub]), world.engine)
+
+    expect(outcome).toEqual({ status: 'failed', reason: 'binding_mismatch' })
+    expect(checks).toEqual([])
+    expect(installerRequested()).toBe(false)
+  })
+
+  it.each([
+    ['0.2.0', 'the same version'],
+    ['0.3.0', 'a newer hub'],
+    ['0.2.1-beta.1', 'a newer beta'],
+    ['not a version', 'an unreadable version']
+  ])('ignores the catalog hub when this hub runs %s (%s)', async (current) => {
+    const outcome = await start(current).onReport(await runCheck([hub]), world.engine)
+
+    expect(outcome).toEqual({ status: 'skipped', reason: 'not_newer' })
+    expect(installerRequested()).toBe(false)
+    expect(checks).toEqual([])
+  })
+
+  it.each(['0.1.9', '0.2.0-beta.3', '0.1.10'])('updates a hub running %s to 0.2.0', async (current) => {
+    expect(await start(current).onReport(await runCheck([hub]), world.engine)).toEqual({
+      status: 'served',
+      version: '0.2.0'
+    })
+  })
+
+  it('follows only the stable stylistic-hub entry of kind hub', async () => {
+    const beta = { ...hub, entry: { ...hub.entry, channel: 'beta' as const } }
+    const other = await makeRelease({ id: 'other-hub', kind: 'hub', version: '9.0.0' }, world.componentKey)
+    const outcome = await start().onReport(await runCheck([beta, other]), world.engine)
+
+    expect(outcome).toEqual({ status: 'skipped', reason: 'no_hub_entry' })
+  })
+
+  it('does nothing without a verified catalog', async () => {
+    const report = await runCheck([hub])
+    world.publish({ releases: [hub], serial: 99 })
+
+    expect(await start().onReport(await world.engine.runCheck(), world.engine)).toEqual({
+      status: 'skipped',
+      reason: 'no_catalog'
+    })
+    expect(report.verified).toBeDefined()
+    expect(installerRequested()).toBe(false)
+  })
+
+  it('reports why electron-updater failed, stops that feed, and tries again at the next report', async () => {
+    const urls: string[] = []
+    const self = start('0.1.0', (url) => {
+      urls.push(url)
+      return Promise.reject(new Error('offline'))
+    })
+    const report = await runCheck([hub])
+
+    expect(await self.onReport(report, world.engine)).toEqual({
+      status: 'failed',
+      reason: 'updater: Error: offline'
+    })
+    await expect(fetch(new URL('latest.yml', urls[0]))).rejects.toThrow()
+    expect(await self.onReport(report, world.engine)).toEqual({
+      status: 'failed',
+      reason: 'updater: Error: offline'
+    })
+    expect(urls).toHaveLength(2)
+  })
+})

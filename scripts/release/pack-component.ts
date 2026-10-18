@@ -1,8 +1,9 @@
 // Packs a directory as a signed component release (docs/signed-releases.md): `<id>-<version>.zip`, its
 // `component.json` and `component.json.sig`, signed with the PKCS#8 PEM in STYLISTIC_COMPONENT_KEY. Generic, so
-// the add-in packs with the same format. Usage:
-//   bun scripts/release/pack-component.ts --dir <dir> --out <dir> --id <id> --kind <kind> --version <version>
-//     --channel <stable|beta> --release-notes <url> [--requires <json>] [--provides <json>]
+// the add-in packs with the same format. With `--file` instead of `--dir` it describes one file as it is (the
+// hub's NSIS installer): no zip, and `maxUncompressedSize` is the file's size. Usage:
+//   bun scripts/release/pack-component.ts (--dir <dir> | --file <file>) --out <dir> --id <id> --kind <kind>
+//     --version <version> --channel <stable|beta> --release-notes <url> [--requires <json>] [--provides <json>]
 import { createWriteStream, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { createHash, type KeyObject } from 'node:crypto'
 import { join, relative, sep } from 'node:path'
@@ -12,20 +13,53 @@ import { ZipFile } from 'yazl'
 import { componentSchema, type Component } from '../../src/shared/signing/documents'
 import { keyFromEnv, signEnvelope } from '../keys/key-list'
 
-/** What `component.json` says about a release besides what packing measures. */
-export type PackOptions = Pick<
+/** What `component.json` says about a release besides what packing measures, and where it is written. */
+type ReleaseOptions = Pick<
   Component,
   'id' | 'kind' | 'version' | 'channel' | 'requires' | 'provides' | 'releaseNotes'
 > & {
+  /** Where `component.json` and `component.json.sig` (and the zip) are written. */
+  out: string
+}
+
+/** A directory to pack as a zip. */
+export type PackOptions = ReleaseOptions & {
   /** The directory whose files the zip holds, at its root. */
   dir: string
-  /** Where the zip, `component.json` and `component.json.sig` are written. */
-  out: string
+}
+
+/** One file to describe as it is. */
+type FileOptions = ReleaseOptions & {
+  /** The artifact itself, such as the hub installer. */
+  file: string
+}
+
+/** Writes the signed `component.json` pinning `artifact` into `out`; returns it. */
+function describeArtifact(
+  { out, ...release }: ReleaseOptions,
+  artifact: string,
+  maxUncompressedSize: number,
+  privateKey: KeyObject
+): Component {
+  const bytes = readFileSync(artifact)
+  const component = componentSchema.parse({
+    ...release,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+    size: bytes.length,
+    maxUncompressedSize
+  })
+  mkdirSync(out, { recursive: true })
+  writeFileSync(join(out, 'component.json'), `${JSON.stringify(component, null, 2)}\n`)
+  writeFileSync(
+    join(out, 'component.json.sig'),
+    `${JSON.stringify(signEnvelope(component, privateKey), null, 2)}\n`
+  )
+  return component
 }
 
 /** Zips `options.dir` and writes the signed `component.json` beside the zip. */
 export async function packComponent(
-  { dir, out, ...release }: PackOptions,
+  { dir, ...release }: PackOptions,
   privateKey: KeyObject
 ): Promise<{ zip: string; component: Component }> {
   const files = readdirSync(dir, { recursive: true, withFileTypes: true })
@@ -39,29 +73,22 @@ export async function packComponent(
     uncompressed += statSync(file).size
   }
   zipfile.end()
-  mkdirSync(out, { recursive: true })
-  const zip = join(out, `${release.id}-${release.version}.zip`)
+  mkdirSync(release.out, { recursive: true })
+  const zip = join(release.out, `${release.id}-${release.version}.zip`)
   await pipeline(zipfile.outputStream, createWriteStream(zip))
+  return { zip, component: describeArtifact(release, zip, uncompressed, privateKey) }
+}
 
-  const bytes = readFileSync(zip)
-  const component = componentSchema.parse({
-    ...release,
-    sha256: createHash('sha256').update(bytes).digest('hex'),
-    size: bytes.length,
-    maxUncompressedSize: uncompressed
-  })
-  writeFileSync(join(out, 'component.json'), `${JSON.stringify(component, null, 2)}\n`)
-  writeFileSync(
-    join(out, 'component.json.sig'),
-    `${JSON.stringify(signEnvelope(component, privateKey), null, 2)}\n`
-  )
-  return { zip, component }
+/** Writes the signed `component.json` of `options.file` as it is: nothing to extract, so the cap is its size. */
+export function packFile({ file, ...release }: FileOptions, privateKey: KeyObject): Component {
+  return describeArtifact(release, file, statSync(file).size, privateKey)
 }
 
 if (import.meta.main) {
   const { values } = parseArgs({
     options: {
       dir: { type: 'string' },
+      file: { type: 'string' },
       out: { type: 'string' },
       id: { type: 'string' },
       kind: { type: 'string' },
@@ -72,19 +99,22 @@ if (import.meta.main) {
       provides: { type: 'string', default: '{}' }
     }
   })
-  const { zip, component } = await packComponent(
-    {
-      dir: values.dir ?? '',
-      out: values.out ?? '',
-      id: values.id ?? '',
-      kind: values.kind ?? '',
-      version: values.version ?? '',
-      channel: values.channel as Component['channel'],
-      releaseNotes: values['release-notes'] ?? '',
-      requires: JSON.parse(values.requires) as Component['requires'],
-      provides: JSON.parse(values.provides) as Component['provides']
-    },
-    keyFromEnv('STYLISTIC_COMPONENT_KEY')
-  )
-  console.log(`${zip}: ${component.size} bytes, sha256 ${component.sha256}`)
+  const release: ReleaseOptions = {
+    out: values.out ?? '',
+    id: values.id ?? '',
+    kind: values.kind ?? '',
+    version: values.version ?? '',
+    channel: values.channel as Component['channel'],
+    releaseNotes: values['release-notes'] ?? '',
+    requires: JSON.parse(values.requires) as Component['requires'],
+    provides: JSON.parse(values.provides) as Component['provides']
+  }
+  const key = keyFromEnv('STYLISTIC_COMPONENT_KEY')
+  const { artifact, component } = values.file
+    ? { artifact: values.file, component: packFile({ ...release, file: values.file }, key) }
+    : await packComponent({ ...release, dir: values.dir ?? '' }, key).then(({ zip, component }) => ({
+        artifact: zip,
+        component
+      }))
+  console.log(`${artifact}: ${component.size} bytes, sha256 ${component.sha256}`)
 }

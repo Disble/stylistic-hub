@@ -17,5 +17,5 @@
     "noEmit": true
   },
   "include": ["src/renderer/**/*", "src/shared/**/*"],
-  "exclude": ["src/shared/signing/**"]
+  "exclude": ["src/shared/signing/**", "src/shared/schema-state.ts", "src/shared/schema-state.test.ts"]
 }

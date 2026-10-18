@@ -42,6 +42,18 @@ describe('ServerScreen', () => {
     )
   })
 
+  it('shows a rollback and its reason', async () => {
+    const reason = 'Server 1.1.0 failed its health check; the hub went back to 1.0.0.'
+    window.hub = fakeHub({
+      server: { status: async () => ({ ...RUNNING, state: 'rolled-back', version: '1.0.0', reason }) }
+    })
+    render(<ServerScreen onOpen={() => undefined} />)
+
+    expect(await screen.findByText('Version 1.0.0')).toBeTruthy()
+    expect(screen.getByRole('article', { name: 'Analysis API' }).textContent).toContain('Rolled back')
+    expect(screen.getByText(reason)).toBeTruthy()
+  })
+
   it('keeps a past crash visible as a warning once the server runs again', async () => {
     window.hub = fakeHub({ server: { status: async () => ({ ...RUNNING, crashes: 1, lastExitCode: 9 }) } })
     render(<ServerScreen onOpen={() => undefined} />)
