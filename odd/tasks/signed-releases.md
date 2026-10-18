@@ -30,7 +30,7 @@ Exit criteria quoted from the roadmap: "CI publishes a signed server artifact an
 |---|---|---|---|---|
 | T1 | S1, S7 | delegated (context backstop) | done | d58c8b4 |
 | T2 | S2, S3 | delegated, after T1 | done | a462017 |
-| T3 | S4, S5, S6 | delegated, after T1 | open | |
+| T3 | S4, S5, S6 | delegated, after T1 | done | eb6c280 |
 | T4 | all | independent verifier (high-risk item 2: signatures) | open | |
 
 ## Log
@@ -47,3 +47,4 @@ Exit criteria quoted from the roadmap: "CI publishes a signed server artifact an
 - **L10** T3 choices: `ONLINE_KEYS` moved from `ceremony.ts` (which runs on import) to `key-list.ts`, with `setGitHubSecret`, so the ceremony and `update-key-list.ts` share one list; a rotation target is named by its scope, or `catalog`. A rotation drops the target's old entry and appends the new one (order is not meaningful). `update-key-list.ps1` reads the passphrase with the ceremony's visible `Read-Host` but without generating or confirming one, because it decrypts an existing key and a typo fails the decryption. The yearly re-sign is a rotation of any one key (S5 names only `--rotate` and `--revoke`).
 - **L11** T3: `sign-catalog.ts` writes to `out/catalog/` by default; the workflow signs on `ubuntu-latest`, creates the `catalog` release with `gh release create catalog --prerelease --latest=false` when `gh release view` fails, then `gh release upload --clobber`. `keys:dev` overwrites `.dev-keys/` on every run and writes unencrypted PEMs there (root, catalog, component) plus `root.pub`.
 - **L12** T3 evidence: the S4 re-sign and S5 rotate/revoke tests pass with throwaway keys (no `gh`); `sign-catalog.ts` run twice with a throwaway key gave serials 1792302026 and 1792302029, both `ok` under `verifyCatalog`; `update-key-list.ts --revoke` against a throwaway encrypted root wrote version 2, and a wrong passphrase failed with `BAD_DECRYPT` before writing.
+- **L13** Finding: `.fallowrc.json` puts `scripts/**` in `ignorePatterns`, so fallow analyzes no script ("boundary zone 'scripts' matched 0 files"): the `scripts` rule in `.dharness/fallow.jsonc` (now `allow: ["shared"]`) and the suppression in `pack-server.ts` are not enforced, and exports used only by scripts count as unused. So the catalog source schema is derived in `sign-catalog.ts` (`catalogSchema.omit`) instead of exported from `src/shared/signing`.
