@@ -67,7 +67,7 @@ const SCHEMA_HOLD = ' reads this database'
 
 /** Whether a failed install's reason is the schema guard's. */
 export function isSchemaHold(reason: string): boolean {
-  return reason.endsWith(SCHEMA_HOLD)
+  return reason.includes(SCHEMA_HOLD)
 }
 
 /**
@@ -77,10 +77,21 @@ export function isSchemaHold(reason: string): boolean {
 async function schemaHold(context: EngineContext, component: Component): Promise<string | undefined> {
   if (component.kind !== 'server' || !context.database || !existsSync(context.database)) return undefined
   const schema = component.provides['schemaVersion']
-  if (typeof schema === 'number' && schema >= readSchemaState(context.database).minReaderSchema)
-    return undefined
+  // An unreadable database holds the server like a newer one, instead of aborting the whole check.
+  let minReader: number
+  try {
+    minReader = readSchemaState(context.database).minReaderSchema
+  } catch (error) {
+    return `${await heldOn(context, component)}${SCHEMA_HOLD} (unreadable: ${(error as Error).message})`
+  }
+  if (typeof schema === 'number' && schema >= minReader) return undefined
+  return `${await heldOn(context, component)}${SCHEMA_HOLD}`
+}
+
+/** The start of a schema-guard reason: the server version that stays, and the channel it waits for. */
+async function heldOn(context: EngineContext, component: Component): Promise<string> {
   const current = (await readState(context.root)).components[component.id]?.current ?? 'the built-in server'
-  return `stays on ${current} until ${component.channel}${SCHEMA_HOLD}`
+  return `stays on ${current} until ${component.channel}`
 }
 
 /** The JSON value of `text`, or undefined when it is not JSON. */

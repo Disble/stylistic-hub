@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { rm } from 'node:fs/promises'
+import { rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -148,6 +148,23 @@ describe('switching back with a database a stable server cannot read', () => {
       status: 'failed',
       reason: 'stays on the built-in server until stable reads this database'
     })
+  })
+
+  it('holds the server, without aborting the check, when the database cannot be read', async () => {
+    const corrupt = join(world.root, '..', 'corrupt.db')
+    await writeFile(corrupt, 'not a database, just bytes that are long enough to be read as a header')
+    const engine = createUpdateEngine({ ...world.context, database: corrupt }, [world.rootKey.raw])
+    world.publish({ releases: [await server('1.0.0', 'stable', 3)], serial: 100 })
+
+    const report = await engine.runCheck()
+
+    expect(report.catalog).toBe('ok')
+    expect(report.verified).toBeDefined()
+    expect(report.installs[0]?.outcome).toMatchObject({ status: 'failed' })
+    const outcome = report.installs[0]?.outcome as { reason: string }
+    expect(outcome.reason).toMatch(
+      /^stays on the built-in server until stable reads this database \(unreadable: .+\)$/
+    )
   })
 
   it('applies no guard when the database does not exist yet', async () => {
