@@ -1,4 +1,3 @@
-/// <reference types="node" />
 import { createHash, generateKeyPairSync, sign, type KeyObject } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
@@ -116,6 +115,38 @@ describe('verifyKeyList', () => {
     const later = new Date('2027-11-18T12:00:00.000Z')
 
     expect(verifyKeyList(list, signature(list, root.privateKey), roots, 0, later)).toBe('expired')
+  })
+
+  it('rejects a root-signed list with duplicate key ids as invalid_list', () => {
+    const { root, list, roots } = world()
+    const duplicated = { ...list, keys: [...list.keys, ...list.keys.slice(0, 1)] }
+
+    expect(verifyKeyList(duplicated, signature(duplicated, root.privateKey), roots, 0, NOW)).toBe(
+      'invalid_list'
+    )
+  })
+
+  it('rejects a root-signed list whose key id does not match its public key as invalid_list', () => {
+    const { root, list, roots } = world()
+    const [first, second] = list.keys
+    const mismatched = { ...list, keys: [{ ...first!, id: second!.id }] }
+
+    expect(verifyKeyList(mismatched, signature(mismatched, root.privateKey), roots, 0, NOW)).toBe(
+      'invalid_list'
+    )
+  })
+
+  it('rejects a root-signed list with a public key that is not 32 bytes as invalid_list', () => {
+    const { root, list, roots } = world()
+    const short = Buffer.alloc(31, 7)
+    const truncated = {
+      ...list,
+      keys: [{ id: keyId(short), role: 'catalog' as const, publicKey: short.toString('base64') }]
+    }
+
+    expect(verifyKeyList(truncated, signature(truncated, root.privateKey), roots, 0, NOW)).toBe(
+      'invalid_list'
+    )
   })
 
   it('still verifies the committed keys/keys.json with the committed root public key', () => {
@@ -241,5 +272,48 @@ describe('documents', () => {
     expect(componentSchema.safeParse({ ...COMPONENT, id: 'Server' }).success).toBe(false)
     expect(componentSchema.safeParse({ ...COMPONENT, version: '1.0.0-rc.1' }).success).toBe(false)
     expect(envelopeSchema.safeParse({ keyId: 'xyz', signature: 'AA==' }).success).toBe(false)
+  })
+})
+
+describe('forward compatibility', () => {
+  /** Raw documents carrying an optional field a later version adds, at the top level and nested. */
+  const futureCatalog = {
+    ...CATALOG,
+    mirrors: ['https://mirror.example.com'],
+    components: CATALOG.components.map((component) => ({ ...component, minHub: '0.3.0' }))
+  }
+  const futureComponent = { ...COMPONENT, signedAt: '2026-10-18T12:00:00.000Z' }
+
+  it('verifies a catalog with added fields when signed over its full content', () => {
+    const { catalogKey, list } = world()
+    const catalog = catalogSchema.parse(futureCatalog)
+    const envelope = { keyId: catalogKey.id, signature: signature(futureCatalog, catalogKey.privateKey) }
+
+    expect(verifyCatalog(catalog, envelope, list, 0, NOW)).toBe('ok')
+    expect(verifyCatalog({ ...catalog, mirrors: [] }, envelope, list, 0, NOW)).toBe('bad_signature')
+  })
+
+  it('verifies a component.json with an added field when signed over its full content', () => {
+    const { componentKey, list } = world()
+    const component = componentSchema.parse(futureComponent)
+    const envelope = {
+      keyId: componentKey.id,
+      signature: signature(futureComponent, componentKey.privateKey)
+    }
+
+    expect(verifyComponent(component, envelope, list, 'stylistic-hub')).toBe('ok')
+    expect(verifyComponent({ ...component, signedAt: 'x' }, envelope, list, 'stylistic-hub')).toBe(
+      'bad_signature'
+    )
+  })
+
+  it('verifies a key list with added fields when signed over its full content', () => {
+    const { root, list, roots } = world()
+    const future = { ...list, issuer: 'disble', keys: list.keys.map((key) => ({ ...key, notAfter: '2028' })) }
+    const parsed = keyListSchema.parse(future)
+    const sig = signature(future, root.privateKey)
+
+    expect(verifyKeyList(parsed, sig, roots, 0, NOW)).toBe('ok')
+    expect(verifyKeyList({ ...parsed, issuer: 'mallory' }, sig, roots, 0, NOW)).toBe('bad_signature')
   })
 })

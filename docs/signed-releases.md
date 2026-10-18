@@ -20,15 +20,17 @@ The envelope names its signer, so a verifier can tell an unknown key from a know
 
 For the server, `provides` is `{ "api": ["v1"], "schemaVersion": <n>, "minReaderSchema": <n> }`; both numbers are the database schema version the server migrates to (M4 gives `minReaderSchema` its own value), and `requires` is `{}`.
 
+Formats evolve only by adding optional fields. The schemas keep fields they do not know, so the signature, which covers every received field, still verifies on hubs released before the field existed. A new value in an existing enum (a new key role or channel) fails parsing on those hubs, so it needs a hub release first.
+
 ## Verification
 
 `src/shared/signing/verify.ts` holds pure functions over parsed documents (`node:crypto` and zod only, coverage tier `core`). Each returns `'ok'` or the reason:
 
 | Function | Inputs | Rejections, in the order checked |
 |---|---|---|
-| `verifyKeyList` | list, `keys.json.sig`, root and next-root public keys, last seen `version`, now | `bad_signature`, `replayed` (lower `version`), `expired` |
+| `verifyKeyList` | list, `keys.json.sig`, root and next-root public keys, last seen `version`, now | `bad_signature`, `invalid_list` (duplicate ids, an id that is not its public key's, a public key that is not 32 bytes), `replayed` (lower `version`), `expired` |
 | `verifyCatalog` | catalog, envelope, verified key list, last seen `serial`, now | `unknown_key`, `wrong_role`, `bad_signature`, `rollback` (lower `serial`; equal is accepted), `expired` |
-| `verifyComponent` | component.json, envelope, key list, expected publisher | `unknown_key`, `wrong_role`, `wrong_scope`, `bad_signature` |
+| `verifyComponent` | component.json, envelope, key list, expected publisher | `unknown_key`, `wrong_role`, `bad_signature`, `wrong_scope` (checked in that order) |
 | `verifyArtifact` | component.json, measured `sha256` and `size` of the zip | `size_mismatch`, `sha256_mismatch` |
 
 A revoked key is a key the current `keys.json` no longer lists, so whatever it signed fails as `unknown_key`.
@@ -37,7 +39,7 @@ A revoked key is a key the current `keys.json` no longer lists, so whatever it s
 
 | Command | What it does |
 |---|---|
-| `bun run build:server` | Bundles `src/backend/entry.ts` into `out/server/entry.js` with vite (`vite.server.config.ts`), keeping `@earendil-works/*` and the Node builtins external, then writes `out/server/package.json` with the hub's exact Pi versions and runs `bun install --production` there. |
+| `bun run build:server` | Bundles `src/backend/entry.ts` into `out/server/entry.js` with vite (`vite.server.config.ts`), keeping `@earendil-works/*` and the Node builtins external, then copies the hub's `package.json` and `bun.lock` into `out/server/` unchanged and runs `bun install --production --frozen-lockfile --ignore-scripts` there, so every transitive dependency is the locked one. |
 | `bun scripts/release/pack-server.ts --version <v> --channel <stable\|beta> [--out <dir>]` | Packs `out/server/` as the `server` component into `out/server-release/`: `server-<version>.zip`, `component.json`, `component.json.sig`, signed with `STYLISTIC_COMPONENT_KEY`. |
 | `bun scripts/release/pack-component.ts (--dir <dir> | --file <file>) --out <dir> --id <id> --kind <kind> --version <v> --channel <c> --release-notes <url> [--requires <json>] [--provides <json>]` | The generic packer behind `pack-server.ts`: zips a directory (`yazl`) as `<id>-<version>.zip` and writes the signed `component.json` beside it. A module packs with it too. With `--file` it zips nothing and pins that one file as it is, with `maxUncompressedSize` equal to its size (the hub's NSIS installer). |
 | `bun scripts/catalog/sign-catalog.ts [--source <file>] [--out <dir>]` | Writes `catalog.json` (the source plus `serial` and `expires`) and `catalog.json.sig` into `out/catalog/`, signed with `STYLISTIC_CATALOG_KEY`. |
@@ -50,6 +52,6 @@ Signing keys are PKCS#8 PEMs read from the environment; in CI they are the GitHu
 
 - **Server release** (`.github/workflows/ci.yml`, job `release-server`, on a push to `dev` or `main`): semantic-release's prepare step (`src/backend/.releaserc.json`, `@semantic-release/exec`) runs `build:server` and `pack-server.ts` with the computed version and channel (`beta` on `dev`, `stable` on `main`), and `@semantic-release/github` attaches the three files to the `server-v<version>` release: `https://github.com/Disble/stylistic-hub/releases/download/server-v<version>/server-<version>.zip`, and `component.json` and `component.json.sig` at the same path.
 - **Hub release** (job `release-hub`, after `release-server`): semantic-release (`.releaserc.json`) runs `bun run dist`, then `pack-component.ts --file release/StylisticHub-Setup-<version>.exe --id stylistic-hub --kind hub` with the same channel rule and `STYLISTIC_COMPONENT_KEY`, and attaches the installer, `component.json` and `component.json.sig` to the `hub-v<version>` release. The catalog entry of `stylistic-hub` points `artifactUrl` at the installer and `componentUrl` at that `component.json`; the hub verifies it and installs it through electron-updater ([architecture](architecture.md#install-update-and-rollback)).
-- **Catalog** (`.github/workflows/catalog.yml`, daily, on a push to `main` that touches `catalog/**`, and by hand): signs `catalog/catalog.source.json`, which changes only by reviewed pull request, and uploads `catalog.json`, `catalog.json.sig`, `keys/keys.json` and `keys/keys.json.sig` to the release tagged `catalog` (created once as a prerelease, never marked latest, assets replaced in place). The hub reads all four from `https://github.com/Disble/stylistic-hub/releases/download/catalog/<file>`. Re-signing an unchanged source gives a higher `serial`, the same components and a valid signature, so the catalog never expires unattended.
+- **Catalog** (`.github/workflows/catalog.yml`, daily, on a push to `main` that touches `catalog/**` or `keys/**`, and by hand): signs `catalog/catalog.source.json`, which changes only by reviewed pull request, and uploads `catalog.json`, `catalog.json.sig`, `keys/keys.json` and `keys/keys.json.sig` to the release tagged `catalog` (created once as a prerelease, never marked latest, assets replaced in place). The hub reads all four from `https://github.com/Disble/stylistic-hub/releases/download/catalog/<file>`. Re-signing an unchanged source gives a higher `serial`, the same components and a valid signature, so the catalog never expires unattended.
 
 The catalog source starts with no components: an entry is added by pull request once a release has published its artifact.

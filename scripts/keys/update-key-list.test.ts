@@ -24,9 +24,10 @@ function firstList() {
 }
 
 describe('updateKeyList', () => {
-  it('rotates an online key end to end: new secret, new root-signed list, old list then replayed', () => {
+  it('rotates an online key end to end: new secret, new root-signed list, old list then replayed, old key kept until revoked', () => {
     const { root, catalog, list, signature } = firstList()
     const roots = [rawPublicKey(root.publicKey)]
+    const oldId = keyId(rawPublicKey(catalog.publicKey))
     const secrets: { secret: string; repo: string; pem: string }[] = []
 
     const rotated = updateKeyList(list, { rotate: 'catalog' }, root.privateKey, LATER, (target, pem) =>
@@ -39,14 +40,20 @@ describe('updateKeyList', () => {
     const newKey = createPrivateKey(secrets[0]?.pem ?? '')
     expect(rotated.list.version).toBe(2)
     expect(rotated.list.expires).toBe('2028-02-10T12:00:00.000Z')
-    expect(rotated.list.keys.map((key) => key.role).sort()).toEqual(['catalog', 'component'])
+    expect(rotated.list.keys.map((key) => key.role).sort()).toEqual(['catalog', 'catalog', 'component'])
     expect(verifyKeyList(rotated.list, rotated.signature, roots, list.version, LATER)).toBe('ok')
     expect(verifyKeyList(list, signature, roots, rotated.list.version, LATER)).toBe('replayed')
 
     const byNewKey = signCatalog({ components: [] }, newKey, LATER)
     const byOldKey = signCatalog({ components: [] }, catalog.privateKey, LATER)
     expect(verifyCatalog(byNewKey.catalog, byNewKey.envelope, rotated.list, 0, LATER)).toBe('ok')
-    expect(verifyCatalog(byOldKey.catalog, byOldKey.envelope, rotated.list, 0, LATER)).toBe('unknown_key')
+    // Rotation is not revocation: what the old key already signed keeps verifying until it is revoked.
+    expect(verifyCatalog(byOldKey.catalog, byOldKey.envelope, rotated.list, 0, LATER)).toBe('ok')
+
+    const revoked = updateKeyList(rotated.list, { revoke: oldId }, root.privateKey, LATER, () => {})
+    expect(revoked.list.keys.map((key) => key.id)).not.toContain(oldId)
+    expect(verifyCatalog(byNewKey.catalog, byNewKey.envelope, revoked.list, 0, LATER)).toBe('ok')
+    expect(verifyCatalog(byOldKey.catalog, byOldKey.envelope, revoked.list, 0, LATER)).toBe('unknown_key')
   })
 
   it('revokes a key: a catalog it signed is then rejected as unknown_key', () => {

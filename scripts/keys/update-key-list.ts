@@ -1,6 +1,7 @@
 // Changes the signed key list with the root key (docs/keys.md): rotates one online key or revokes one. Run it
 // through update-key-list.ps1, which asks for the root passphrase and keeps it out of its log. A rotation sets the
-// new private key as the target's GitHub secret through gh's stdin, never a file. Both bump `version`, reset
+// new private key as the target's GitHub secret through gh's stdin, never a file, and keeps the old key listed
+// until a later --revoke, once no current release depends on it. Both bump `version`, reset
 // `expires` (+13 months) and sign with the root key; commit keys/ afterwards, and the catalog job publishes it.
 // Usage: bun scripts/keys/update-key-list.ts (--rotate <catalog|stylistic-hub|stylistic-addon> | --revoke <keyId>)
 //   [--root <encrypted root key>] [--public <dir>]
@@ -28,7 +29,11 @@ function targetName(target: OnlineKeyTarget): string {
   return 'scope' in target ? target.scope : target.role
 }
 
-/** The entries left after the change; a rotation sets the new key's secret first. */
+/**
+ * The entries after the change; a rotation sets the new key's secret first. A rotation adds the new key and keeps
+ * the old one, so what the old key already signed (published component.json files) keeps verifying; only a
+ * revocation removes a key.
+ */
 function changedKeys(
   keys: KeyList['keys'],
   change: KeyListChange,
@@ -43,10 +48,7 @@ function changedKeys(
   const scope = 'scope' in target ? target.scope : undefined
   const key = generateKey()
   setSecret(target, key.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString())
-  return [
-    ...keys.filter((entry) => entry.role !== target.role || entry.scope !== scope),
-    entryFor(key.publicKey, target.role, scope)
-  ]
+  return [...keys, entryFor(key.publicKey, target.role, scope)]
 }
 
 /** The next key list after `change`, signed by the root key. */
