@@ -1,8 +1,8 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import 'reflect-metadata'
-import { webcrypto, X509Certificate } from 'node:crypto'
+import { createHash, webcrypto, X509Certificate } from 'node:crypto'
 import * as x509 from '@peculiar/x509'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createWordIntegration, execute, type RunCommand } from './word-integration'
@@ -211,5 +211,162 @@ describe('execute', () => {
     await expect(createWordIntegration({ run, caFile, manifestFile }).disconnect()).rejects.toThrow(
       /Could not remove/
     )
+  })
+})
+
+describe('module manifests', () => {
+  /** The module's add-in id, another than the bundled add-in's. */
+  const moduleId = 'c0ffee00-4f1e-4939-83c8-0ddba48f3dff'
+  /** The components directory. */
+  let components: string
+  /** The module's stable manifest. */
+  let moduleManifest: string
+  /** Where the hash of the last registered module manifest is kept. */
+  let hashFile: string
+
+  beforeEach(() => {
+    components = join(dir, 'components')
+    mkdirSync(join(components, 'word-addin'), { recursive: true })
+    moduleManifest = join(components, 'word-addin', 'manifest.xml')
+    hashFile = join(components, 'word-addin.registered.sha256')
+    writeFileSync(moduleManifest, `<OfficeApp><Id>${moduleId}</Id><Version>2.0.0.0</Version></OfficeApp>`)
+  })
+
+  /** The registry listing with these values. */
+  const listing = (...values: [string, string][]) => ({
+    code: 0,
+    stdout: [developerKey, ...values.map(([name, path]) => `    ${name}    REG_SZ    ${path}`), ''].join(
+      '\r\n'
+    )
+  })
+
+  /** An integration with the module manifest installed (or `manifests`). */
+  const word = (run: RunCommand, manifests = () => [moduleManifest]) =>
+    createWordIntegration({
+      run,
+      caFile,
+      manifestFile,
+      moduleManifests: manifests,
+      componentsRoot: components
+    })
+
+  /** The sha256 of the module manifest. */
+  const hashOf = (file: string) => createHash('sha256').update(readFileSync(file)).digest('hex')
+
+  /** The `reg add` of `file` under `id`. */
+  const added = (id: string, file: string) => [
+    'add',
+    developerKey,
+    '/v',
+    id,
+    '/t',
+    'REG_SZ',
+    '/d',
+    file,
+    '/f'
+  ]
+
+  it('registers the module manifest once Stylistic is in Word, and removes the bundled root-URL entry', async () => {
+    const run = commands({ 'reg query': listing([addinId, manifestFile]) })
+
+    await word(run).sync()
+
+    expect(run).toHaveBeenCalledWith('reg', added(moduleId, moduleManifest))
+    expect(run).toHaveBeenCalledWith('reg', ['delete', developerKey, '/v', addinId, '/f'])
+    expect(readFileSync(hashFile, 'utf8')).toBe(hashOf(moduleManifest))
+  })
+
+  it('does not register the module again while its manifest hash is unchanged', async () => {
+    writeFileSync(hashFile, hashOf(moduleManifest))
+    const run = commands({ 'reg query': listing([moduleId, moduleManifest]) })
+
+    await word(run).sync()
+
+    expect(run).not.toHaveBeenCalledWith('reg', expect.arrayContaining(['add']))
+    expect(run).not.toHaveBeenCalledWith('reg', expect.arrayContaining(['delete']))
+  })
+
+  it('registers the module again when its manifest content changes', async () => {
+    writeFileSync(hashFile, 'an older hash')
+    const run = commands({ 'reg query': listing([moduleId, moduleManifest]) })
+
+    await word(run).sync()
+
+    expect(run).toHaveBeenCalledWith('reg', added(moduleId, moduleManifest))
+    expect(readFileSync(hashFile, 'utf8')).toBe(hashOf(moduleManifest))
+  })
+
+  it('drops the old add-in id when a changed module manifest names a new one', async () => {
+    const run = commands({ 'reg query': listing(['older-module-id', moduleManifest]) })
+
+    await word(run).sync()
+
+    expect(run).toHaveBeenCalledWith('reg', ['delete', developerKey, '/v', 'older-module-id', '/f'])
+    expect(run).toHaveBeenCalledWith('reg', added(moduleId, moduleManifest))
+  })
+
+  it('adds nothing to Word while Stylistic is not in it', async () => {
+    const run = commands({ 'reg query': listing(['someone-else', 'D:\\other\\manifest.xml']) })
+
+    await word(run).sync()
+
+    expect(run).not.toHaveBeenCalledWith('reg', expect.arrayContaining(['add']))
+    expect(existsSync(hashFile)).toBe(false)
+  })
+
+  it('goes back to the bundled add-in when no module is served any more', async () => {
+    const run = commands({ 'reg query': listing([moduleId, moduleManifest]) })
+
+    await word(run, () => []).sync()
+
+    expect(run).toHaveBeenCalledWith('reg', added(addinId, manifestFile))
+    expect(run).toHaveBeenCalledWith('reg', ['delete', developerKey, '/v', moduleId, '/f'])
+  })
+
+  it('keeps the bundled registration as it is when no module is installed', async () => {
+    const run = commands({ 'reg query': listing([addinId, manifestFile]) })
+
+    await word(run, () => []).sync()
+
+    expect(run).not.toHaveBeenCalledWith('reg', expect.arrayContaining(['add']))
+    expect(run).not.toHaveBeenCalledWith('reg', expect.arrayContaining(['delete']))
+  })
+
+  it('connects with the module manifest instead of the bundled one', async () => {
+    const run = commands({ 'reg query': listing([addinId, manifestFile]) })
+
+    await word(run).connect()
+
+    expect(run).toHaveBeenCalledWith('reg', added(moduleId, moduleManifest))
+    expect(run).not.toHaveBeenCalledWith('reg', added(addinId, manifestFile))
+    expect(run).toHaveBeenCalledWith('reg', ['delete', developerKey, '/v', addinId, '/f'])
+    expect(readFileSync(hashFile, 'utf8')).toBe(hashOf(moduleManifest))
+  })
+
+  it('reports the module registered, with its version, and is available without the bundled add-in', async () => {
+    rmSync(manifestFile)
+    const run = commands({ certutil: { code: 0 }, 'reg query': listing([moduleId, moduleManifest]) })
+
+    expect(await word(run).status()).toEqual({
+      available: true,
+      caTrusted: true,
+      addinRegistered: true,
+      version: '2.0.0.0'
+    })
+  })
+
+  it('counts the bundled registration as Stylistic in Word until the module is registered', async () => {
+    const run = commands({ 'reg query': listing([addinId, manifestFile]) })
+
+    expect((await word(run).status()).addinRegistered).toBe(true)
+  })
+
+  it('disconnects the module and the bundled add-in', async () => {
+    const run = commands({})
+
+    await word(run).disconnect()
+
+    expect(run).toHaveBeenCalledWith('reg', ['delete', developerKey, '/v', moduleId, '/f'])
+    expect(run).toHaveBeenCalledWith('reg', ['delete', developerKey, '/v', addinId, '/f'])
   })
 })

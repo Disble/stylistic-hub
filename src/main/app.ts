@@ -148,6 +148,13 @@ if (!isSingleInstance) {
         waitUntilHealthy({ request: hubStatusRequest({ port: HUB_PORT, token, caFile: paths.caCert }) }),
       status
     })
+    // Word gets the served modules' stable manifests, else the bundled add-in (odd/tasks/module-library.md S4).
+    const word = createWordIntegration({
+      caFile: paths.caCert,
+      manifestFile: join(ADDIN_DIR, 'manifest.xml'),
+      moduleManifests: () => moduleSwitch.manifests(),
+      componentsRoot: join(userData, 'components')
+    })
     const hubRequest = (path: string) =>
       hubStatusRequest({ port: HUB_PORT, token, caFile: paths.caCert, path })
     const moduleSwitch = createModuleSwitch({
@@ -165,7 +172,10 @@ if (!isSingleInstance) {
           }
         }),
       serverHealthy: () => waitUntilHealthy({ request: hubRequest('/api/v1/status') }),
-      onChange: () => undefined,
+      onChange: () =>
+        void word
+          .sync()
+          .catch((error: unknown) => console.error('Could not update Stylistic in Word:', error)),
       report: status.setReason
     })
     // The backend's first start already serves the installed modules.
@@ -183,10 +193,6 @@ if (!isSingleInstance) {
       createLocalModel({ modelsFile: join(paths.piDir, 'models.json'), fetch }),
       () => mainWindow?.webContents
     )
-    const word = createWordIntegration({
-      caFile: paths.caCert,
-      manifestFile: join(ADDIN_DIR, 'manifest.xml')
-    })
     const wordSession = createWordSession({
       script: join(WORD_DIR, 'word-session.ps1'),
       document: join(ADDIN_DIR, 'Stylistic.docx'),
