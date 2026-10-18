@@ -20,6 +20,7 @@ How branches are named, where they start and where they merge. Releases themselv
 - Merge with `--no-ff` so each feature, release and hotfix stays visible as one merge commit.
 - New branches use `feature/<topic>`; the older `feat/*` branches are historical and keep their names.
 - Conventional Commits stay mandatory (`commit-msg` hook): semantic-release reads them to pick versions and write changelogs.
+- No line of a commit body may begin with the words "breaking change" (any case, also after wrapping): the parser reads it as a `BREAKING CHANGE` note and semantic-release bumps the major version. That is how `server-v1.0.0-beta.1` came out of a non-breaking commit (`7311666`); say "no API break" instead.
 - Pushing and setting up the remote are the user's. Until `origin` exists, merges are local and the only release is a local installer.
 
 ## Releases and Git Flow
