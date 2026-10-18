@@ -205,8 +205,11 @@ describe('openDatabase', () => {
   })
 })
 
-/** Statements an expand migration must not contain: they break what the previous release reads. */
-const CONTRACT_ONLY = /\b(DROP\s+COLUMN|DROP\s+TABLE|RENAME|ALTER\s+COLUMN)\b/i
+/**
+ * Statements an expand migration must not contain: they break what the previous release reads. Any DROP counts,
+ * since SQLite accepts `ALTER TABLE t DROP b` without the COLUMN keyword.
+ */
+const CONTRACT_ONLY = /\bDROP\b|\bRENAME\b|\bALTER\s+COLUMN\b/i
 
 describe('expand/contract rule', () => {
   it('flags the statements that break the previous release, case-insensitively', () => {
@@ -214,6 +217,7 @@ describe('expand/contract rule', () => {
     expect(CONTRACT_ONLY.test('drop table preferences')).toBe(true)
     expect(CONTRACT_ONLY.test('ALTER TABLE document Rename TO doc')).toBe(true)
     expect(CONTRACT_ONLY.test('ALTER TABLE document alter column title')).toBe(true)
+    expect(CONTRACT_ONLY.test('ALTER TABLE t DROP b')).toBe(true)
     expect(CONTRACT_ONLY.test('ALTER TABLE document ADD COLUMN x TEXT; CREATE TABLE y (id TEXT)')).toBe(false)
   })
 
