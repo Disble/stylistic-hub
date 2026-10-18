@@ -155,7 +155,9 @@ if (!isSingleInstance) {
       devServerDir: serverDirFlag(process.argv, app.isPackaged),
       backend,
       healthy: () =>
-        waitUntilHealthy({ request: hubStatusRequest({ port: HUB_PORT, token, caFile: paths.caCert }) }),
+        waitUntilHealthy({
+          request: hubStatusRequest({ port: HUB_PORT, token, caFile: paths.caCert, leafFile: paths.leafCert })
+        }),
       status
     })
     // Word gets the stable manifests of the downloaded modules only; the installer ships no add-in (S1).
@@ -166,7 +168,7 @@ if (!isSingleInstance) {
       componentsRoot: join(userData, 'components')
     })
     const hubRequest = (path: string) =>
-      hubStatusRequest({ port: HUB_PORT, token, caFile: paths.caCert, path })
+      hubStatusRequest({ port: HUB_PORT, token, caFile: paths.caCert, leafFile: paths.leafCert, path })
     const moduleSwitch = createModuleSwitch({
       engine: updates.engine,
       componentsRoot: join(userData, 'components'),
