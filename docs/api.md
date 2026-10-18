@@ -36,7 +36,7 @@ The HTTP contract the add-in's `HubAnalysisAdapter` is written against. The mach
 
 ## Scopes
 
-Each route belongs to one scope, the group a module declares in its `component.json` `requires.scopes` ([add-in contract](addin-contract.md#modules)). A module's token on a route outside its scopes gets `401 unauthorized`, the same problem as a wrong token.
+Each route belongs to one scope, the group a module declares in its `component.json` `requires.scopes` ([add-in contract](addin-contract.md#modules)). A module's token on a route outside its scopes gets `401 unauthorized`, the same problem as a wrong token. Scopes limit a module's mistakes, not a hostile module: every module and the root add-in share one origin, and any `taskpane.html`, with the token it carries, is fetchable without authentication, so a module can read another module's token.
 
 | Scope | Routes |
 |---|---|
