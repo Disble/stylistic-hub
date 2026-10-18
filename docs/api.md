@@ -23,7 +23,7 @@ The HTTP contract the add-in's `HubAnalysisAdapter` is written against. The mach
 
 ## Feedback
 
-`POST /feedback` with `{ suggestionId, action: "accept" | "reject", comment? }` answers `202`. The hub learns from it in the background; `GET /feedback/{feedbackId}` says what became of it: `outcome` is `acknowledged` without a comment, otherwise `updated` or `ignored`, with the model's `summary`.
+`POST /feedback` with `{ suggestionId, action: "accept" | "reject", comment? }` answers `202`. The hub learns from it in the background; `GET /feedback/{feedbackId}` says what became of it: `outcome` is `acknowledged` without a comment, otherwise `updated` or `ignored`, with the model's `summary`. If the hub cannot start learning from it, the `202` already carries `status: "failed"` with the `error`.
 
 ## Preferences
 
@@ -36,7 +36,7 @@ Every error is `application/problem+json` (RFC 9457): `{ type, title, status, de
 | `code` | Status | When |
 |---|---|---|
 | `unauthorized` | 401 | The token is missing, empty or wrong, or the header is not `Bearer` |
-| `validation_failed` | 400, 415 | The body or a path parameter does not match the contract, or the body is malformed JSON (400) or not JSON (415); `detail` names what is wrong |
+| `validation_failed` | 400, 415 | The body or a path parameter does not match the contract, or the body is malformed JSON (400) or not JSON (415); `detail` names what is wrong. The analysis request and its chunks refuse fields the contract does not name |
 | `not_found` | 404 | No such analysis, document, feedback or suggestion, or no such route |
 | `no_model` | 409 | An analysis was requested before a model was chosen in the hub |
 | `payload_too_large` | 413 | The body is over 10 MB |
