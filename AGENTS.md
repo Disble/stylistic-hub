@@ -28,9 +28,13 @@ Hexagonal (ports and adapters) with a feature-first layout. Read [`docs/architec
 
 Bun, electron-vite 5, TypeScript, vitest. Commands, hooks and layout: [`docs/development.md`](docs/development.md). Run `bun run check` before pushing.
 
+## Branches
+
+Git Flow: `main` is deployable and only takes merges from `release/*` and `hotfix/*`; `dev` is the development branch; new work goes on `feature/<topic>` from `dev` and merges back with `--no-ff`. Never commit directly to `main`. Details: [`docs/git-flow.md`](docs/git-flow.md).
+
 ## Skills
 
-- `release` (`.agents/skills/release/SKILL.md`): releasing the server or the hub, test releases and the installer.
+- `release` (`.agents/skills/release/SKILL.md`): building the Windows installer locally, and releasing the server or the hub (stable and test releases) once the remote exists.
 
 ## Research artifacts
 
