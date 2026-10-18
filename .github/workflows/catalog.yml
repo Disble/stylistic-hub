@@ -1,7 +1,7 @@
 # Signs catalog/catalog.source.json with the catalog key and publishes catalog.json, its signature and the
 # current key list (keys/keys.json and its root signature) on the `catalog` GitHub Release, so the hub reads
 # both from one stable URL (docs/signed-releases.md). Runs daily, so the catalog never expires unattended
-# (+14 days), on every catalog change merged to main, and by hand.
+# (+14 days), on every catalog or key list change merged to main, and by hand.
 name: Catalog
 
 on:
@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['catalog/**']
+    paths: ['catalog/**', 'keys/**']
 
 permissions:
   contents: write
