@@ -127,8 +127,9 @@ if (!isSingleInstance) {
     const selfUpdate = startSelfUpdate({ userData, currentVersion: app.getVersion() })
     const updates = startUpdateChecks({
       userData,
+      database: paths.database,
       fetch,
-      onChecked: () => void serverSwitch.refresh(),
+      onChecked: (report) => void serverSwitch.refresh(report),
       onReport: selfUpdate.onReport
     })
     const serverSwitch = createServerSwitch({

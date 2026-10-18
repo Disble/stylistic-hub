@@ -5,8 +5,8 @@
 import { existsSync, readdirSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { readSchemaState, restoreBackup } from '../shared/schema-state'
-import type { UpdateEngine } from './updates/engine'
-import { readInstalled } from './updates/install'
+import type { CheckReport, UpdateEngine } from './updates/engine'
+import { isSchemaHold, readInstalled } from './updates/install'
 import type { ComponentState } from './updates/state'
 
 /** The server's component id in the catalog and under `components/`. */
@@ -91,6 +91,14 @@ function rollbackData(database: string, previousSchema: number): 'kept' | 'refus
   if (!backup) return 'refused'
   restoreBackup(database, backup)
   return { restored: basename(backup) }
+}
+
+/** The schema guard's reason when a check held a server install back (odd/tasks/channels.md S2). */
+function schemaHoldOf(report: Pick<CheckReport, 'installs'> | undefined): string | undefined {
+  for (const { id, outcome } of report?.installs ?? []) {
+    if (id === SERVER_ID && outcome.status === 'failed' && isSchemaHold(outcome.reason)) return outcome.reason
+  }
+  return undefined
 }
 
 /** What the switch needs from the backend process. */
@@ -217,8 +225,13 @@ export function createServerSwitch({
   return {
     /** Starts the backend from the resolved target (at hub start). */
     start: async () => launch(await currentTarget()),
-    /** After a catalog check: moves to the newly resolved target when it changed. */
-    async refresh() {
+    /**
+     * After a catalog check: shows why a server install was held by the schema guard (odd/tasks/channels.md S2),
+     * then moves to the newly resolved target when it changed.
+     */
+    async refresh(report?: Pick<CheckReport, 'installs'>) {
+      const held = schemaHoldOf(report)
+      if (held) status.setReason(`The server ${held}.`)
       if (rollingBack || !target) return
       const next = await currentTarget()
       if (next.entry === target?.entry || (refused && next.component === null)) return

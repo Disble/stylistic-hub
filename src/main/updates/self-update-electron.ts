@@ -39,12 +39,14 @@ export function startSelfUpdate({
   const selfUpdate = createSelfUpdate({
     currentVersion,
     updater: {
-      async check(url) {
+      async check(url, { allowDowngrade }) {
         await mkdir(dirname(configFile), { recursive: true })
         const config = { provider: 'generic', url, updaterCacheDirName: `${HUB_ID}-updater` }
         await writeFile(configFile, JSON.stringify(config))
         autoUpdater.updateConfigPath = configFile
         autoUpdater.setFeedURL({ provider: 'generic', url })
+        // electron-updater installs an older version only when allowed: after a channel switch (channels.md S2).
+        autoUpdater.allowDowngrade = allowDowngrade
         const result = await autoUpdater.checkForUpdates()
         // Resolves once the installer is downloaded and its sha512 matched; it is installed when the hub quits.
         await result?.downloadPromise

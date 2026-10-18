@@ -3,6 +3,7 @@
 // extraction into staging, the rename into place, and only then the state switch. The hub's installer (S4) goes
 // through the same checks and download into staging, and stops there: electron-updater installs it.
 import { createHash } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { z } from 'zod'
@@ -13,6 +14,7 @@ import {
   type Component,
   type KeyList
 } from '../../shared/signing/documents'
+import { readSchemaState } from '../../shared/schema-state'
 import { verifyArtifact, verifyComponent } from '../../shared/signing/verify'
 import { fetchText, type EngineContext } from './catalog'
 import { downloadResumable, fileSize } from './download'
@@ -60,6 +62,27 @@ async function brokenRequirements(root: string, component: Component): Promise<s
   return broken
 }
 
+/** How a schema-guard refusal ends, so the Server screen can tell it from other failed installs. */
+const SCHEMA_HOLD = ' reads this database'
+
+/** Whether a failed install's reason is the schema guard's. */
+export function isSchemaHold(reason: string): boolean {
+  return reason.endsWith(SCHEMA_HOLD)
+}
+
+/**
+ * The schema guard (odd/tasks/channels.md S2): a server whose `provides.schemaVersion` is below the database's
+ * `minReaderSchema` would refuse the database, so the running server stays; why, or undefined when it may install.
+ */
+async function schemaHold(context: EngineContext, component: Component): Promise<string | undefined> {
+  if (component.kind !== 'server' || !context.database || !existsSync(context.database)) return undefined
+  const schema = component.provides['schemaVersion']
+  if (typeof schema === 'number' && schema >= readSchemaState(context.database).minReaderSchema)
+    return undefined
+  const current = (await readState(context.root)).components[component.id]?.current ?? 'the built-in server'
+  return `stays on ${current} until ${component.channel}${SCHEMA_HOLD}`
+}
+
 /** The JSON value of `text`, or undefined when it is not JSON. */
 function parseJson(text: string): unknown {
   try {
@@ -93,6 +116,8 @@ async function fetchComponent(
   if (signature !== 'ok') return signature
   const broken = await brokenRequirements(context.root, component.data)
   if (broken.length > 0) return `incompatible: ${broken.join('; ')}`
+  const hold = await schemaHold(context, component.data)
+  if (hold) return hold
   return { component: component.data, envelope: envelope.data }
 }
 
