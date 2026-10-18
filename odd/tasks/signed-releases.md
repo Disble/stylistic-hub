@@ -32,7 +32,7 @@ Exit criteria quoted from the roadmap: "CI publishes a signed server artifact an
 | T2 | S2, S3 | delegated, after T1 | done | a462017 |
 | T3 | S4, S5, S6 | delegated, after T1 | done | eb6c280 |
 | T4 | all | independent verifier (high-risk item 2: signatures) | done: S1–S7 approved, advisories A1–A4 | |
-| T5 | S1, S3, S5, S7 | delegated (verifier advisories A1–A4) | in progress | |
+| T5 | S1, S3, S5, S7 | delegated (verifier advisories A1–A4) | done | 3b3e5c4 (A2), c7964df (A1), ec07afb (A3), d5266fc (A4), bea1e1c (leftovers) |
 
 ## Log
 
@@ -54,3 +54,4 @@ Exit criteria quoted from the roadmap: "CI publishes a signed server artifact an
 - **L16** T5 A3 measured (2026-10-18, bun 1.4.1, Windows): with the root `package.json` and `bun.lock` copied into `out/server/`, the frozen production install took 151 packages (it now includes the bundled-anyway production dependencies such as hono and zod); `out/server` 133,712,104 bytes uncompressed, zip 37,752,353 bytes (37.8 MB) < 100 MB, so H3 still holds; packed and signed with a throwaway key into a `mktemp -d` scratch dir outside the repo; schema version 3.
 - **L17** T5 A4 (rotation): `catalog.yml` also runs on a push to `main` touching `keys/**`, so a merged key list change is published without waiting for the daily run. `--rotate` keeps the old entry (rotation is not revocation: `component.json` files the old key signed keep verifying); only `--revoke` removes one. The S5 test now proves: the rotated list holds both catalog keys, the old key's catalog still verifies `ok` under it, and after revoking the old key it fails `unknown_key` while the new key's stays `ok` (RED first against the dropping rotation). docs/keys.md: the yearly re-sign names `-Rotate catalog`; after a rotation, revoke the old key once no current release depends on it.
 - **L18** T5 leftovers: `tsconfig.web.json` excludes `src/shared/signing/**` (the renderer never imports it; `tsconfig.node.json` still type-checks it with Node types), so the four `/// <reference types="node" />` lines are gone and `bun run typecheck` exits 0 for both tsconfigs. docs/development.md lists `build:server` and `keys:dev`, the only scripts this branch adds.
+- **L19** T5 evidence (2026-10-18): `bunx vitest run src/shared/signing scripts` 7 files, 53 tests passed; `bun run check` exit 0 (format, lint, typecheck, coverage tiers enforced, with no threshold failure for the core `src/shared/signing`, Word session script); every commit passed the lefthook gate.
