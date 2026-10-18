@@ -23,6 +23,7 @@
     "check:word": "bun scripts/check-word-session.ts",
     "check:providers": "bun src/backend/check-providers.ts",
     "addin:bundle": "bun scripts/bundle-addin.ts",
+    "keys:dev": "bun scripts/keys/dev-keys.ts",
     "release:server": "cd src/backend && semantic-release",
     "release:hub": "semantic-release",
     "test:coverage": "vitest run --coverage --config .dharness/vitest.coverage.mjs",

@@ -29,7 +29,7 @@ Exit criteria quoted from the roadmap: "CI publishes a signed server artifact an
 | ID | Specs | Route | Status | Evidence |
 |---|---|---|---|---|
 | T1 | S1, S7 | delegated (context backstop) | done | d58c8b4 |
-| T2 | S2, S3 | delegated, after T1 | open | |
+| T2 | S2, S3 | delegated, after T1 | done | a462017 |
 | T3 | S4, S5, S6 | delegated, after T1 | open | |
 | T4 | all | independent verifier (high-risk item 2: signatures) | open | |
 
@@ -44,3 +44,6 @@ Exit criteria quoted from the roadmap: "CI publishes a signed server artifact an
 - **L7** T2: `schemaVersion` is the `user_version` of an in-memory database opened with the backend's own `openDatabase` (one `fallow-ignore` for scripts → adapters, like `src/shared/versions.ts`), because `MIGRATIONS` is not exported and `database.ts` is outside the edit surface; `minReaderSchema` equals it until M4.
 - **L8** T2: `build:server` = vite SSR build of `src/backend/entry.ts` into `out/server/entry.js` (everything bundled except `@earendil-works/*` and builtins), then a generated `package.json` with the root's exact `@earendil-works/*` versions and `bun install --production` (no lockfile is kept there, so transitive versions resolve at release time; 2 blocked postinstalls, protobufjs's version notice among them). Assets go to `out/server-release/`, which `@semantic-release/github` reads as `../../out/server-release/*` (tinyglobby resolves `../`). The exec step runs after `@semantic-release/npm`, so the bundle carries the bumped version.
 - **L9** H3 measured (2026-10-18, bun 1.4.1, Windows): `out/server` 117,117,810 bytes uncompressed, zip 33,104,930 bytes (33.1 MB) < 100 MB, so H3 holds; schema version 3.
+- **L10** T3 choices: `ONLINE_KEYS` moved from `ceremony.ts` (which runs on import) to `key-list.ts`, with `setGitHubSecret`, so the ceremony and `update-key-list.ts` share one list; a rotation target is named by its scope, or `catalog`. A rotation drops the target's old entry and appends the new one (order is not meaningful). `update-key-list.ps1` reads the passphrase with the ceremony's visible `Read-Host` but without generating or confirming one, because it decrypts an existing key and a typo fails the decryption. The yearly re-sign is a rotation of any one key (S5 names only `--rotate` and `--revoke`).
+- **L11** T3: `sign-catalog.ts` writes to `out/catalog/` by default; the workflow signs on `ubuntu-latest`, creates the `catalog` release with `gh release create catalog --prerelease --latest=false` when `gh release view` fails, then `gh release upload --clobber`. `keys:dev` overwrites `.dev-keys/` on every run and writes unencrypted PEMs there (root, catalog, component) plus `root.pub`.
+- **L12** T3 evidence: the S4 re-sign and S5 rotate/revoke tests pass with throwaway keys (no `gh`); `sign-catalog.ts` run twice with a throwaway key gave serials 1792302026 and 1792302029, both `ok` under `verifyCatalog`; `update-key-list.ts --revoke` against a throwaway encrypted root wrote version 2, and a wrong passphrase failed with `BAD_DECRYPT` before writing.

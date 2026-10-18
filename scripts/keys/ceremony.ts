@@ -2,30 +2,12 @@
 // passphrase and keeps it out of its log. Private keys are never printed: the root keys are written encrypted to --out,
 // and the online keys go straight to GitHub secrets through gh's stdin, never to a file.
 // Usage: bun scripts/keys/ceremony.ts [--out <dir>] [--dry-run]
-import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { KeyObject } from 'node:crypto'
 import { keyId, rawPublicKey } from '../../src/shared/signing/keys'
-import { createKeyList, entryFor, generateKey, signKeyList } from './key-list'
-
-/** Where each online key's secret goes: repository, secret name, and the key list entry it becomes. */
-const ONLINE_KEYS = [
-  { repo: 'Disble/stylistic-hub', secret: 'STYLISTIC_CATALOG_KEY', role: 'catalog' },
-  {
-    repo: 'Disble/stylistic-hub',
-    secret: 'STYLISTIC_COMPONENT_KEY',
-    role: 'component',
-    scope: 'stylistic-hub'
-  },
-  {
-    repo: 'Disble/stylistic-addon',
-    secret: 'STYLISTIC_COMPONENT_KEY',
-    role: 'component',
-    scope: 'stylistic-addon'
-  }
-] as const
+import { createKeyList, entryFor, generateKey, ONLINE_KEYS, setGitHubSecret, signKeyList } from './key-list'
 
 /** The shortest root passphrase accepted. */
 const MIN_PASSPHRASE = 12
@@ -68,14 +50,10 @@ const nextRoot = generateKey()
 const online = ONLINE_KEYS.map((target) => ({ ...target, key: generateKey() }))
 
 // Secrets first: if gh fails, nothing is written and the ceremony can run again.
-for (const { repo, secret, key } of online) {
+for (const { key, ...target } of online) {
   const pem = key.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
-  if (dryRun) console.log(`[dry run] would set ${secret} in ${repo}`)
-  else
-    execFileSync('gh', ['secret', 'set', secret, '--repo', repo], {
-      input: pem,
-      stdio: ['pipe', 'inherit', 'inherit']
-    })
+  if (dryRun) console.log(`[dry run] would set ${target.secret} in ${target.repo}`)
+  else setGitHubSecret(target, pem)
 }
 
 mkdirSync(out, { recursive: true })

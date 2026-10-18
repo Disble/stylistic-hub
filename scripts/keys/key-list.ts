@@ -1,5 +1,6 @@
 // The signed list of online keys (docs/keys.md): the root key signs it, the hub trusts what it lists.
 // The signing side; verification lives in src/shared/signing, which the hub uses too.
+import { execFileSync } from 'node:child_process'
 import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, type KeyObject } from 'node:crypto'
 import type { Envelope, KeyList, KeyRole } from '../../src/shared/signing/documents'
 import { canonicalJson, keyId, rawPublicKey } from '../../src/shared/signing/keys'
@@ -9,6 +10,26 @@ export type KeyEntry = KeyList['keys'][number]
 
 /** How long a key list stays valid: re-signed every year, a month of margin for a late ceremony. */
 const VALID_MONTHS = 13
+
+/** Where each online key's secret goes: repository, secret name, and the key list entry it becomes. */
+export const ONLINE_KEYS = [
+  { repo: 'Disble/stylistic-hub', secret: 'STYLISTIC_CATALOG_KEY', role: 'catalog' },
+  {
+    repo: 'Disble/stylistic-hub',
+    secret: 'STYLISTIC_COMPONENT_KEY',
+    role: 'component',
+    scope: 'stylistic-hub'
+  },
+  {
+    repo: 'Disble/stylistic-addon',
+    secret: 'STYLISTIC_COMPONENT_KEY',
+    role: 'component',
+    scope: 'stylistic-addon'
+  }
+] as const
+
+/** One online key's target: where its secret goes and the entry it becomes. */
+export type OnlineKeyTarget = (typeof ONLINE_KEYS)[number]
 
 /** A new ed25519 key pair. */
 export function generateKey(): { publicKey: KeyObject; privateKey: KeyObject } {
@@ -21,11 +42,16 @@ export function entryFor(publicKey: KeyObject, role: KeyRole, scope?: string): K
   return { id: keyId(raw), role, ...(scope ? { scope } : {}), publicKey: raw.toString('base64') }
 }
 
-/** The first key list: version 1, valid for 13 months from `now`. */
-export function createKeyList(keys: KeyEntry[], now = new Date()): KeyList {
+/** When a key list signed at `now` expires: 13 months later. */
+export function listExpiry(now: Date): string {
   const expires = new Date(now)
   expires.setUTCMonth(expires.getUTCMonth() + VALID_MONTHS)
-  return { version: 1, expires: expires.toISOString(), keys }
+  return expires.toISOString()
+}
+
+/** The first key list: version 1, valid for 13 months from `now`. */
+export function createKeyList(keys: KeyEntry[], now = new Date()): KeyList {
+  return { version: 1, expires: listExpiry(now), keys }
 }
 
 /** A signature over a document's canonical JSON, base64. */
@@ -51,4 +77,12 @@ export function keyFromEnv(name: string): KeyObject {
   const pem = process.env[name]
   if (!pem) throw new Error(`${name} is not set: it holds the signing key's PKCS#8 PEM`)
   return createPrivateKey(pem)
+}
+
+/** Sets an online private key as a GitHub secret through gh's standard input, so it never touches a file. */
+export function setGitHubSecret({ repo, secret }: OnlineKeyTarget, pem: string): void {
+  execFileSync('gh', ['secret', 'set', secret, '--repo', repo], {
+    input: pem,
+    stdio: ['pipe', 'inherit', 'inherit']
+  })
 }

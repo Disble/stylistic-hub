@@ -12,7 +12,7 @@ The keys that sign what the hub installs, as [ADR 0001](adr/0001-component-deliv
 | Component (`stylistic-hub`) | `component.json` of the `hub` and `server` streams | GitHub secret `STYLISTIC_COMPONENT_KEY` in `Disble/stylistic-hub` | Listed in `keys/keys.json` with scope `stylistic-hub` |
 | Component (`stylistic-addon`) | `component.json` of the add-in module stream | GitHub secret `STYLISTIC_COMPONENT_KEY` in `Disble/stylistic-addon` | Listed in `keys/keys.json` with scope `stylistic-addon` |
 
-All keys are ed25519. A key's id is the first 16 hex characters of the sha256 of its raw public key. `keys/keys.json` carries a `version` and an `expires` 13 months ahead; its detached signature (`keys/keys.json.sig`, base64) is the root key's signature over the list's canonical JSON (object keys sorted at every depth), as `scripts/keys/key-list.ts` computes it.
+All keys are ed25519. A key's id is the first 16 hex characters of the sha256 of its raw public key. `keys/keys.json` carries a `version` and an `expires` 13 months ahead; its detached signature (`keys/keys.json.sig`, base64) is the root key's signature over the list's canonical JSON (object keys sorted at every depth), as `src/shared/signing/keys.ts` computes it (formats: [signed releases](signed-releases.md)).
 
 ## The ceremony
 
@@ -31,8 +31,8 @@ Created on 2026-10-18 (UTC): root `a49bd78323e2340c`, next root `d31edbcad900d12
 
 ## Later
 
-- **Yearly:** re-sign `keys/keys.json` with the root key (new `version`, new `expires`) before it expires; the hub warns 30 days ahead.
-- **Online key lost or compromised:** generate a new key, set its secret, and publish a key list signed by the root key that lists the new key and drops the old one. No new hub is needed.
-- **Root key:** rotating it ships in a hub release, using the next root key the hub already embeds.
+Key list changes run on the maintainer's machine with the root key: `powershell -ExecutionPolicy Bypass -File scripts\keys\update-key-list.ps1` asks for the root passphrase (typed as in the ceremony; a wrong one fails to decrypt the root key, so nothing is written), logs each step without secrets to `%TEMP%\stylistic-key-list.log`, then `scripts/keys/update-key-list.ts` changes `keys/keys.json`, raises its `version`, resets `expires` to 13 months ahead and signs it with the root key (`-Root <file>` when the root key is not in the default folder). Commit `keys/keys.json` and `keys/keys.json.sig` and merge them to `main`; the catalog job publishes them ([signed releases](signed-releases.md#workflows-and-urls)). No new hub is needed.
 
-The tooling for the yearly re-sign and rotation comes with the signed-releases milestone (roadmap M3).
+- **Yearly:** re-sign `keys/keys.json` before it expires (the hub warns 30 days ahead) by rotating any one online key, which also renews `expires`.
+- **Online key lost or compromised:** `-Rotate catalog`, `-Rotate stylistic-hub` or `-Rotate stylistic-addon` generates a new key for that target, sets its GitHub secret through `gh secret set` and replaces the target's entry; `-Revoke <keyId>` drops an entry without a replacement. Whatever the dropped key signed is then rejected as `unknown_key`.
+- **Root key:** rotating it ships in a hub release, using the next root key the hub already embeds.
