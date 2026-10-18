@@ -65,6 +65,10 @@ beforeEach(() => {
 
 afterEach(cleanup)
 
+/** The privacy notice (odd/tasks/readiness.md S1); the add-in team gets the same sentence for the task pane. */
+const PRIVACY =
+  'The text you analyze and the document’s style profile go only to the provider you choose here; the hub sends nothing else anywhere (no telemetry).'
+
 /** Renders the screen and waits for its first load. */
 async function renderScreen() {
   render(<ProviderScreen />)
@@ -72,6 +76,12 @@ async function renderScreen() {
 }
 
 describe('ProviderScreen', () => {
+  it('says what leaves this computer and where it goes', async () => {
+    await renderScreen()
+
+    expect(screen.getByText(PRIVACY)).toBeTruthy()
+  })
+
   it('lists subscription sign-ins with their state', async () => {
     await renderScreen()
 

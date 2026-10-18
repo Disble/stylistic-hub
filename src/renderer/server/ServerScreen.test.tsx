@@ -84,6 +84,32 @@ describe('ServerScreen', () => {
     expect(openLogs).toHaveBeenCalledOnce()
   })
 
+  it('exports diagnostics and says where they are and that they include the logs', async () => {
+    const exportDiagnostics = vi.fn(async () => 'C:\\Users\\me\\stylistic-diagnostics.zip')
+    window.hub = fakeHub({ server: { exportDiagnostics } })
+    render(<ServerScreen onOpen={() => undefined} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Export diagnostics' }))
+
+    expect(
+      await screen.findByText(
+        'Diagnostics saved to C:\\Users\\me\\stylistic-diagnostics.zip. It includes the logs, which may hold excerpts of analyzed text; check it before attaching it to a report.'
+      )
+    ).toBeTruthy()
+    expect(exportDiagnostics).toHaveBeenCalledOnce()
+  })
+
+  it('says nothing when the diagnostics save dialog is canceled', async () => {
+    const exportDiagnostics = vi.fn(async () => undefined)
+    window.hub = fakeHub({ server: { exportDiagnostics } })
+    render(<ServerScreen onOpen={() => undefined} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Export diagnostics' }))
+
+    await waitFor(() => expect(exportDiagnostics).toHaveBeenCalledOnce())
+    expect(screen.queryByText(/Diagnostics saved/)).toBeNull()
+  })
+
   it('shows the AI provider in use and opens its screen', async () => {
     const onOpen = vi.fn()
     window.hub = fakeHub({ provider: { list: async () => [CHATGPT], getModel: async () => SOL } })
