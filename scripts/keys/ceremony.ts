@@ -7,7 +7,8 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { KeyObject } from 'node:crypto'
-import { createKeyList, entryFor, generateKey, keyId, rawPublicKey, signKeyList } from './key-list'
+import { keyId, rawPublicKey } from '../../src/shared/signing/keys'
+import { createKeyList, entryFor, generateKey, signKeyList } from './key-list'
 
 /** Where each online key's secret goes: repository, secret name, and the key list entry it becomes. */
 const ONLINE_KEYS = [
