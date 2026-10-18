@@ -15,6 +15,7 @@ The Electron binary downloads on first run (`bunx electron --version`).
 | `bun install` | Install dependencies and the git hooks (lefthook) |
 | `bun run dev` | Run the hub with hot reload |
 | `bunx electron-vite dev -- --server <dir>` | Run the hub with a server build instead of the installed server component or the built-in backend: it forks `<dir>/entry.js` (for example `out/server` after `bun run build:server`), with no health check or rollback. Ignored by a packaged hub |
+| `bunx electron-vite dev -- --module <id>=<dir>` | Serve a module build at `/m/<id>/` instead of the installed version of that module: `<dir>` (for example the add-in's `dist/`) must hold a `manifest.xml` with a `<Version>`, its token gets every [API scope](api.md#scopes), and it gets no health check, rollback or Word registration. Repeat the flag for more modules. It needs a server with module serving (the built-in backend or `--server`). Ignored by a packaged hub |
 | `bun run build` | Build main, preload and renderer into `out/` |
 | `bun run start` | Run the built app |
 | `bun run build:server` | Bundle the Local server into `out/server/` and install its locked production dependencies beside it, the directory the server release packs and signs ([signed releases](signed-releases.md#scripts)) |

@@ -5,7 +5,8 @@
 // it is marked bad and goes back to the previous version, as server-switch.ts does for the server.
 import { existsSync, readFileSync } from 'node:fs'
 import { copyFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import { componentSchema } from '../shared/signing/documents'
 import type { UpdateEngine } from './updates/engine'
 import { readInstalled } from './updates/install'
 
@@ -36,6 +37,23 @@ const MANIFEST_VERSION = /<Version>\s*([^<\s]+)\s*<\/Version>/
 function servable(dir: string): boolean {
   const manifest = join(dir, 'manifest.xml')
   return existsSync(manifest) && MANIFEST_VERSION.test(readFileSync(manifest, 'utf8'))
+}
+
+/**
+ * Every `--module <id>=<dir>` an unpackaged hub was started with, as absolute directories (development only,
+ * D12). A value without `=`, with no directory or with an invalid component id is ignored.
+ */
+export function moduleDirFlags(argv: readonly string[], packaged: boolean): Record<string, string> {
+  const modules: Record<string, string> = {}
+  if (packaged) return modules
+  argv.forEach((arg, index) => {
+    const value = arg === '--module' ? (argv[index + 1] ?? '') : ''
+    const at = value.indexOf('=')
+    const id = value.slice(0, at)
+    const dir = value.slice(at + 1)
+    if (at > 0 && dir && componentSchema.shape.id.safeParse(id).success) modules[id] = resolve(dir)
+  })
+  return modules
 }
 
 /** The stable manifest Word registers for module `id` (S4). */

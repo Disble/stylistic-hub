@@ -13,7 +13,7 @@ import { loadOrCreateHubToken } from './hub-token'
 import { registerProviderIpc } from './ipc-provider'
 import { registerScreenIpc } from './ipc-screens'
 import { createPiProvider } from './pi-provider'
-import { createModuleSwitch } from './module-switch'
+import { createModuleSwitch, moduleDirFlags } from './module-switch'
 import { createServerStatus } from './server-status'
 import { createServerSwitch, serverDirFlag } from './server-switch'
 import { channelControls } from './updates/channels'
@@ -160,7 +160,8 @@ if (!isSingleInstance) {
     const moduleSwitch = createModuleSwitch({
       engine: updates.engine,
       componentsRoot: join(userData, 'components'),
-      devModules: {},
+      // `--module <id>=<dir>` serves a development build of a module (unpackaged hub only).
+      devModules: moduleDirFlags(process.argv, app.isPackaged),
       backend,
       restartAllowed: () => serverSwitch.restartAllowed(),
       // A module is healthy once its manifest and its task pane both answer 200 at `/m/<id>/`.

@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createModuleSwitch, MODULE_SCOPES } from './module-switch'
+import { createModuleSwitch, MODULE_SCOPES, moduleDirFlags } from './module-switch'
 import { ADDON_PUBLISHER, makeRelease, makeWorld, type World } from './updates/test-fixtures'
 
 /** The module the tests install. */
@@ -96,6 +96,26 @@ function makeSwitch({
   }
   return { moduleSwitch, backend, onChange, report, healthCheck, served, log }
 }
+
+describe('moduleDirFlags', () => {
+  it('reads every --module <id>=<dir> as an absolute directory', () => {
+    expect(
+      moduleDirFlags(['electron', '.', '--module', `${ID}=out/addin`, '--module', 'other-module=C:/m'], false)
+    ).toEqual({ [ID]: resolve('out/addin'), 'other-module': resolve('C:/m') })
+    expect(moduleDirFlags(['electron', '.'], false)).toEqual({})
+  })
+
+  it('ignores a value that is not <id>=<dir> or names an invalid id', () => {
+    expect(
+      moduleDirFlags(['electron', '--module', 'no-dir', '--module', 'Bad_Id=x', '--module', `${ID}=`], false)
+    ).toEqual({})
+    expect(moduleDirFlags(['electron', '--module'], false)).toEqual({})
+  })
+
+  it('ignores --module in a packaged hub', () => {
+    expect(moduleDirFlags(['stylistic-hub.exe', '--module', `${ID}=C:/dev/addin`], true)).toEqual({})
+  })
+})
 
 describe('MODULE_SCOPES', () => {
   it('lists the scopes the backend accepts in STYLISTIC_MODULES', () => {
