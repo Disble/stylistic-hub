@@ -1,5 +1,17 @@
 # Stylistic Hub changelog
 
+## [1.1.0](https://github.com/Disble/stylistic-hub/compare/hub-v1.0.0...hub-v1.1.0) (2026-10-18)
+
+### Features
+
+* **word:** install the catalog add-in from Home and Word ([cffe66b](https://github.com/Disble/stylistic-hub/commit/cffe66bd2c634d2b129ac7006872af0eaef3500c))
+* **word:** load only catalog add-ins in packaged hubs ([0a0cd1c](https://github.com/Disble/stylistic-hub/commit/0a0cd1c9e938db245712e3ddf8c3daea391d5218))
+
+### Bug Fixes
+
+* **health:** trust the managed leaf for server health checks ([fb2be58](https://github.com/Disble/stylistic-hub/commit/fb2be5845fc4d116e6069ba5fcdcf7b67aae6878))
+* **scripts:** stage the Word directory without a CLI path ([2ec7b7a](https://github.com/Disble/stylistic-hub/commit/2ec7b7abcfcad9b35e20a3fb403153980b1cd8d8))
+
 ## [1.1.0-beta.1](https://github.com/Disble/stylistic-hub/compare/hub-v1.0.0...hub-v1.1.0-beta.1) (2026-10-18)
 
 ### Features
