@@ -103,31 +103,16 @@ jobs:
           # The branch head, which includes the server release commit pushed by the previous job.
           ref: ${{ github.ref_name }}
           fetch-depth: 0
-      - uses: actions/checkout@v4
-        with:
-          repository: Disble/stylistic-addon
-          path: addin-src
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - name: Is the add-in's hub build on its main?
-        id: addin
-        shell: bash
-        run: |
-          if grep -q '"build:hub"' addin-src/package.json; then echo "ready=true" >> "$GITHUB_OUTPUT"
-          else echo "::notice::The add-in's main has no build:hub yet; the hub release waits for it (docs/roadmap.md M2)."; fi
-      - if: steps.addin.outputs.ready == 'true'
-        run: bun install --frozen-lockfile
-      - if: steps.addin.outputs.ready == 'true'
-        run: bun install --frozen-lockfile
-        working-directory: addin-src
-      - if: steps.addin.outputs.ready == 'true'
-        run: bun run addin:bundle addin-src
-      - if: steps.addin.outputs.ready == 'true'
-        run: bun run release:hub
+      # The installer carries no add-in: Word loads the downloaded module (odd/tasks/catalog-only-word.md S1),
+      # so the hub release never checks out or builds the sibling add-in.
+      - run: bun install --frozen-lockfile
+      - run: bun run release:hub
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Signs the installer's component.json (scope stylistic-hub), like the server's.

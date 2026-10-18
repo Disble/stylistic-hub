@@ -1,5 +1,11 @@
 import type { LoginAuthType, LoginEvent } from './login/login'
 
+/**
+ * The catalog component id of Stylistic for Word (catalog/catalog.source.json): Home and Word install it
+ * through the Library, and the Word integration names it when nothing is downloaded.
+ */
+export const WORD_MODULE_ID = 'stylistic-word-addin'
+
 /** A Pi provider as the Provider screen shows it. */
 export interface ProviderSummary {
   id: string
@@ -25,7 +31,10 @@ export interface LocalModel {
 
 /** Where Word stands with this hub. */
 export interface WordStatus {
-  /** The add-in is bundled with the hub and the backend has written its CA. */
+  /**
+   * A downloaded Word module is served and the backend has written its CA, so Word can be connected.
+   * False before the first download: install "stylistic-word-addin" from the Library, which downloads nothing by itself.
+   */
   available: boolean
   caTrusted: boolean
   addinRegistered: boolean
