@@ -39,7 +39,7 @@ A revoked key is a key the current `keys.json` no longer lists, so whatever it s
 
 | Command | What it does |
 |---|---|
-| `bun run build:server` | Bundles `src/backend/entry.ts` into `out/server/entry.js` with vite (`vite.server.config.ts`), keeping `@earendil-works/*` and the Node builtins external, then writes `out/server/package.json` with the hub's exact Pi versions and runs `bun install --production` there. |
+| `bun run build:server` | Bundles `src/backend/entry.ts` into `out/server/entry.js` with vite (`vite.server.config.ts`), keeping `@earendil-works/*` and the Node builtins external, then copies the hub's `package.json` and `bun.lock` into `out/server/` unchanged and runs `bun install --production --frozen-lockfile --ignore-scripts` there, so every transitive dependency is the locked one. |
 | `bun scripts/release/pack-server.ts --version <v> --channel <stable\|beta> [--out <dir>]` | Packs `out/server/` as the `server` component into `out/server-release/`: `server-<version>.zip`, `component.json`, `component.json.sig`, signed with `STYLISTIC_COMPONENT_KEY`. |
 | `bun scripts/release/pack-component.ts --dir <dir> --out <dir> --id <id> --kind <kind> --version <v> --channel <c> --release-notes <url> [--requires <json>] [--provides <json>]` | The generic packer behind `pack-server.ts`: zips a directory (`yazl`) as `<id>-<version>.zip` and writes the signed `component.json` beside it. A module packs with it too. |
 | `bun scripts/catalog/sign-catalog.ts [--source <file>] [--out <dir>]` | Writes `catalog.json` (the source plus `serial` and `expires`) and `catalog.json.sig` into `out/catalog/`, signed with `STYLISTIC_CATALOG_KEY`. |
