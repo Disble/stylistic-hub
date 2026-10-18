@@ -9,8 +9,8 @@ import { z } from 'zod'
 /** How many history entries `state.json` keeps; older ones are dropped first. */
 export const HISTORY_LIMIT = 200
 
-/** What happened to a component: installed, failed to install, disabled by revocation, marked bad, switched, uninstalled. */
-const outcomeSchema = z.enum(['installed', 'failed', 'disabled', 'marked_bad', 'switched', 'uninstalled'])
+/** What happened to a component: installed, failed to install, disabled by revocation, marked bad, switched (an uninstall is `disabled` with the reason `uninstalled`: a new value would make older hubs, reached by a channel switch, refuse this file). */
+const outcomeSchema = z.enum(['installed', 'failed', 'disabled', 'marked_bad', 'switched'])
 
 /** One line of the append-only update history. */
 const historyEntrySchema = z.object({

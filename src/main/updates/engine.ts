@@ -155,7 +155,14 @@ export function createUpdateEngine(context: EngineContext, rootKeys: readonly Bu
         delete state.components[module]
         const time = context.now().toISOString()
         const from = installed.current
-        addHistory(state, { time, component: module, from, to: null, outcome: 'uninstalled', reason: null })
+        addHistory(state, {
+          time,
+          component: module,
+          from,
+          to: null,
+          outcome: 'disabled',
+          reason: 'uninstalled'
+        })
       })
       await rm(join(context.root, module), { recursive: true, force: true })
     },

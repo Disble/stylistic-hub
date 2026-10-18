@@ -318,8 +318,8 @@ describe('modules on request', () => {
       component: 'word-addin',
       from: '1.1.0',
       to: null,
-      outcome: 'uninstalled',
-      reason: null
+      outcome: 'disabled',
+      reason: 'uninstalled'
     })
     world.publish({ releases: [first, await addin('1.1.0')], serial: 103 })
     expect((await world.engine.runCheck()).installs).toEqual([])
