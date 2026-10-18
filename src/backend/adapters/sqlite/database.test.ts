@@ -1,9 +1,9 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { openDatabase } from './database'
+import { MIGRATIONS, SCHEMA_VERSION, openDatabase, readSchemaState, restoreBackup } from './database'
 
 /** Fresh folder for each test's database file. */
 let dir: string
@@ -22,6 +22,14 @@ function userVersion(file: string): number {
   const { user_version } = raw.prepare('PRAGMA user_version').get() as { user_version: number }
   raw.close()
   return user_version
+}
+
+/** Writes a database as a newer hub would: a higher user_version and its own minReaderSchema. */
+function writeNewerDatabase(file: string, version: number, minReaderSchema: number): void {
+  openDatabase(file).close()
+  const raw = new DatabaseSync(file)
+  raw.exec(`UPDATE schema_meta SET min_reader_schema = ${minReaderSchema}; PRAGMA user_version = ${version};`)
+  raw.close()
 }
 
 describe('openDatabase', () => {
@@ -89,10 +97,168 @@ describe('openDatabase', () => {
     expect(() => openDatabase(file)).toThrow(/newer/)
   })
 
+  it('opens a newer database whose minReaderSchema this hub meets, leaving it as it was', () => {
+    const file = join(dir, 'stylistic.db')
+    writeNewerDatabase(file, SCHEMA_VERSION + 2, SCHEMA_VERSION)
+
+    const db = openDatabase(file)
+    db.close()
+
+    expect(readSchemaState(file)).toEqual({
+      userVersion: SCHEMA_VERSION + 2,
+      minReaderSchema: SCHEMA_VERSION
+    })
+    expect(existsSync(join(dir, 'backups'))).toBe(false)
+  })
+
+  it('refuses a newer database whose minReaderSchema is above this hub, naming both numbers', () => {
+    const file = join(dir, 'stylistic.db')
+    writeNewerDatabase(file, SCHEMA_VERSION + 2, SCHEMA_VERSION + 1)
+
+    expect(() => openDatabase(file)).toThrow(/newer/)
+    expect(() => openDatabase(file)).toThrow(`readable from schema ${SCHEMA_VERSION + 1}`)
+    expect(() => openDatabase(file)).toThrow(`this hub reads schema ${SCHEMA_VERSION}`)
+  })
+
+  it('records minReaderSchema in a new database: every shipped migration is a contract', () => {
+    const file = join(dir, 'stylistic.db')
+
+    openDatabase(file).close()
+
+    expect(SCHEMA_VERSION).toBe(3)
+    expect(MIGRATIONS.map((m) => m.kind)).toEqual(['contract', 'contract', 'contract'])
+    expect(readSchemaState(file)).toEqual({ userVersion: 3, minReaderSchema: 3 })
+  })
+
+  it('takes no backup of a brand-new database or of one with no migration pending', () => {
+    const file = join(dir, 'stylistic.db')
+
+    openDatabase(file).close()
+    openDatabase(file).close()
+
+    expect(existsSync(join(dir, 'backups'))).toBe(false)
+  })
+
+  it('backs up the database with VACUUM INTO before migrating it', () => {
+    const file = join(dir, 'stylistic.db')
+    const raw = new DatabaseSync(file)
+    raw.exec(MIGRATIONS[0]!.sql)
+    raw.exec(MIGRATIONS[1]!.sql)
+    raw.exec(
+      `INSERT INTO document VALUES ('doc', 'Sofía', 'general', '{}', '# Perfil'); PRAGMA user_version = 2;`
+    )
+    raw.close()
+
+    openDatabase(file).close()
+
+    const backups = readdirSync(join(dir, 'backups'))
+    expect(backups).toHaveLength(1)
+    expect(backups[0]).toMatch(/^stylistic-schema2-\d{14}\.db$/)
+    const backup = new DatabaseSync(join(dir, 'backups', backups[0]!), { readOnly: true })
+    expect(backup.prepare('SELECT document_key, title FROM document').all()).toEqual([
+      { document_key: 'doc', title: 'Sofía' }
+    ])
+    expect(backup.prepare('PRAGMA user_version').get()).toEqual({ user_version: 2 })
+    backup.close()
+    expect(readSchemaState(file)).toEqual({ userVersion: 3, minReaderSchema: 3 })
+  })
+
+  it('opens a 0.0.1 database, keeps every row and reports minReaderSchema 3', () => {
+    const file = join(dir, 'stylistic.db')
+    const raw = new DatabaseSync(file)
+    for (const migration of MIGRATIONS) raw.exec(migration.sql)
+    raw.exec(`INSERT INTO document VALUES ('doc', 'Sofía', 'general', '{}', '# Perfil', '2026-01-01');
+    INSERT INTO preferences VALUES (1, 'Respeta el voseo');
+    INSERT INTO analysis VALUES ('a1', 'doc', 'completed', 'updated', 'run', '2026-01-01', '2026-01-02');
+    INSERT INTO analysis_chunk VALUES ('a1', 'c1', 0, 'completed', 1, 1, 0, NULL);
+    INSERT INTO suggestion VALUES ('s1', 'a1', 'c1', 0, 0, '{}');
+    INSERT INTO feedback VALUES ('f1', 's1', 'accept', NULL, 'completed', 'updated', NULL, NULL, '2026-01-02');
+    PRAGMA user_version = 3;`)
+    raw.close()
+
+    const db = openDatabase(file)
+    const counts = ['document', 'preferences', 'analysis', 'analysis_chunk', 'suggestion', 'feedback'].map(
+      (table) => (db.prepare(`SELECT count(*) AS n FROM ${table}`).get() as { n: number }).n
+    )
+    db.close()
+
+    expect(counts).toEqual([1, 1, 1, 1, 1, 1])
+    expect(readSchemaState(file)).toEqual({ userVersion: 3, minReaderSchema: 3 })
+    expect(existsSync(join(dir, 'backups'))).toBe(false)
+  })
+
   it('uses WAL', () => {
     const db = openDatabase(join(dir, 'stylistic.db'))
 
     expect(db.prepare('PRAGMA journal_mode').get()).toEqual({ journal_mode: 'wal' })
     db.close()
+  })
+})
+
+/** Statements an expand migration must not contain: they break what the previous release reads. */
+const CONTRACT_ONLY = /\b(DROP\s+COLUMN|DROP\s+TABLE|RENAME|ALTER\s+COLUMN)\b/i
+
+describe('expand/contract rule', () => {
+  it('flags the statements that break the previous release, case-insensitively', () => {
+    expect(CONTRACT_ONLY.test('ALTER TABLE document drop column title')).toBe(true)
+    expect(CONTRACT_ONLY.test('drop table preferences')).toBe(true)
+    expect(CONTRACT_ONLY.test('ALTER TABLE document Rename TO doc')).toBe(true)
+    expect(CONTRACT_ONLY.test('ALTER TABLE document alter column title')).toBe(true)
+    expect(CONTRACT_ONLY.test('ALTER TABLE document ADD COLUMN x TEXT; CREATE TABLE y (id TEXT)')).toBe(false)
+  })
+
+  it('no migration marked expand drops, renames or alters what the previous release reads', () => {
+    const offending = MIGRATIONS.filter((m) => m.kind === 'expand' && CONTRACT_ONLY.test(m.sql))
+
+    expect(offending).toEqual([])
+  })
+})
+
+describe('readSchemaState', () => {
+  it('reads minReaderSchema as the database records it', () => {
+    const file = join(dir, 'stylistic.db')
+    writeNewerDatabase(file, SCHEMA_VERSION + 1, 1)
+
+    expect(readSchemaState(file)).toEqual({ userVersion: SCHEMA_VERSION + 1, minReaderSchema: 1 })
+  })
+
+  it('reads a 0.0.1 database as minReaderSchema = user_version, without changing the file', () => {
+    const file = join(dir, 'stylistic.db')
+    const raw = new DatabaseSync(file)
+    raw.exec(`${MIGRATIONS[0]!.sql}; PRAGMA user_version = 1;`)
+    raw.close()
+    const before = readFileSync(file)
+
+    expect(readSchemaState(file)).toEqual({ userVersion: 1, minReaderSchema: 1 })
+    expect(readFileSync(file).equals(before)).toBe(true)
+  })
+
+  it('does not create a missing database', () => {
+    const file = join(dir, 'missing.db')
+
+    expect(() => readSchemaState(file)).toThrow()
+    expect(existsSync(file)).toBe(false)
+  })
+})
+
+describe('restoreBackup', () => {
+  it('copies the backup over the database and removes the stale -wal and -shm files', () => {
+    const file = join(dir, 'stylistic.db')
+    const backupFile = join(dir, 'backup.db')
+    const raw = new DatabaseSync(file)
+    raw.exec(`CREATE TABLE t (v TEXT); INSERT INTO t VALUES ('before')`)
+    raw.exec(`VACUUM INTO '${backupFile.replaceAll("'", "''")}'`)
+    raw.exec(`INSERT INTO t VALUES ('after')`)
+    raw.close()
+    writeFileSync(`${file}-wal`, 'stale')
+    writeFileSync(`${file}-shm`, 'stale')
+
+    restoreBackup(file, backupFile)
+
+    expect(existsSync(`${file}-wal`)).toBe(false)
+    expect(existsSync(`${file}-shm`)).toBe(false)
+    const restored = new DatabaseSync(file)
+    expect(restored.prepare('SELECT v FROM t').all()).toEqual([{ v: 'before' }])
+    restored.close()
   })
 })

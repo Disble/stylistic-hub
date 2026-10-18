@@ -40,7 +40,7 @@ Exit criteria quoted from the roadmap: "an installed hub moves from one `server-
 
 | ID | Specs | Route | Status | Evidence |
 |---|---|---|---|---|
-| T1 | S1 | delegated writer (parallel with T2) | open | |
+| T1 | S1 | delegated writer (parallel with T2) | done | commit `feat(server): record the minimum reader schema and back up before migrating`; 17 tests in `database.test.ts`, `bun run check` exit 0 |
 | T2 | S2 | delegated writer (parallel with T1) | open | |
 | T3 | S3 | delegated writer, after T1+T2 | open | |
 | T4 | S4 | delegated writer, after T2 | open | |
@@ -52,3 +52,6 @@ Exit criteria quoted from the roadmap: "an installed hub moves from one `server-
 - **L2** No merge to `main` while the maintainer is away: `main` deploys, and the real catalog (signed on `main`) is what installed hubs read. End-to-end runs against the real catalog wait for the maintainer; the engine is proven with signed fixtures and dev keys.
 - **L3** The built-in backend stays as the fallback in M4 so the hand-installed M4 hub works before any server component is in the catalog; M5's first-run download removes it (ADR S1: no hybrid as a goal).
 - **L4** Main-process map (explorer): supervisor restarts forever (`BACKOFF_MS` last delay repeats); backend gets CLI flags (`strict: true`) and `STYLISTIC_HUB_TOKEN`; `/api/v1/status` needs token, loopback Host and the hub CA; schema is 3; a newer schema throws at module load (endless restart today); no electron-updater, no publish block.
+- **L5** T1: `schema_meta` (`id = 1`, `min_reader_schema`) is created and backfilled (`CREATE TABLE IF NOT EXISTS` + `INSERT OR IGNORE`, value = current `user_version`) inside each migration transaction before the version check, not as a migration, so `user_version` stays 3; a brand-new database starts at 0 and each contract migration raises it, ending at 3.
+- **L6** T1: the backup runs only when `0 < user_version < SCHEMA_VERSION`, before the first migration transaction (`VACUUM INTO` cannot run inside one), stamped from `Date` with no injected clock; `readSchemaState` opens with `readOnly: true` and reports `minReaderSchema` = `user_version` when `schema_meta` is absent, writing nothing. The refusal names the database's schema, its `minReaderSchema` and this hub's `SCHEMA_VERSION`.
+- **L7** T1: the expand/contract check is a regex in `database.test.ts` applied to the real, now exported, `MIGRATIONS`; the regex is itself tested on sample SQL, so the check is not vacuous while no shipped migration is `expand`.
