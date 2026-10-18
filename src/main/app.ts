@@ -15,6 +15,7 @@ import { registerScreenIpc } from './ipc-screens'
 import { createPiProvider } from './pi-provider'
 import { createServerStatus } from './server-status'
 import { createServerSwitch, serverDirFlag } from './server-switch'
+import { channelControls } from './updates/channels'
 import { startUpdateChecks } from './updates/schedule'
 import { startSelfUpdate } from './updates/self-update-electron'
 import { createWordIntegration } from './word-integration'
@@ -128,8 +129,9 @@ if (!isSingleInstance) {
     const selfUpdate = startSelfUpdate({ userData, currentVersion: app.getVersion() })
     const updates = startUpdateChecks({
       userData,
+      database: paths.database,
       fetch,
-      onChecked: () => void serverSwitch.refresh(),
+      onChecked: (report) => void serverSwitch.refresh(report),
       onReport: selfUpdate.onReport
     })
     const serverSwitch = createServerSwitch({
@@ -187,6 +189,7 @@ if (!isSingleInstance) {
           keepInWord(false)
         }
       },
+      channelControls(updates.engine, updates.check),
       {
         logsDir: app.getPath('logs'),
         componentsRoot: join(userData, 'components'),

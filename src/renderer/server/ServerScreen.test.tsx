@@ -132,6 +132,38 @@ describe('ServerScreen', () => {
     expect(within(provider).getByRole('button', { name: 'Connect a provider' })).toBeTruthy()
   })
 
+  it('shows the channel of the server and of the hub, and sets a new one through the bridge', async () => {
+    const setChannel = vi.fn(async () => undefined)
+    window.hub = fakeHub({
+      server: { channels: async () => ({ server: 'stable', hub: 'beta' }), setChannel }
+    })
+    render(<ServerScreen onOpen={() => undefined} />)
+    const server = (await screen.findByLabelText('Server channel')) as HTMLSelectElement
+    const hub = screen.getByLabelText('Hub channel') as HTMLSelectElement
+    await waitFor(() => expect(hub.value).toBe('beta'))
+    expect(server.value).toBe('stable')
+
+    fireEvent.change(server, { target: { value: 'beta' } })
+    fireEvent.change(hub, { target: { value: 'stable' } })
+
+    await waitFor(() => expect(setChannel).toHaveBeenCalledTimes(2))
+    expect(setChannel.mock.calls).toEqual([
+      ['server', 'beta'],
+      ['hub', 'stable']
+    ])
+    expect(server.value).toBe('beta')
+  })
+
+  it('says why a channel could not be set', async () => {
+    const setChannel = vi.fn(async () => Promise.reject(new Error('Invalid channel')))
+    window.hub = fakeHub({ server: { setChannel } })
+    render(<ServerScreen onOpen={() => undefined} />)
+
+    fireEvent.change(await screen.findByLabelText('Server channel'), { target: { value: 'beta' } })
+
+    expect(await screen.findByText('Invalid channel')).toBeTruthy()
+  })
+
   it('shows the runtime the hub runs on', async () => {
     window.hub = fakeHub()
     render(<ServerScreen onOpen={() => undefined} />)

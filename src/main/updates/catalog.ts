@@ -19,6 +19,8 @@ export interface EngineContext {
   root: string
   /** The current time. */
   now: () => Date
+  /** The server's database, for the schema guard on server installs (odd/tasks/channels.md S2); none: no guard. */
+  database?: string
 }
 
 /** A verified catalog and the key list that vouches for its keys, or why there is none. */

@@ -15,6 +15,7 @@ interface SeenCheck {
   url: string
   latest: { version: string; sha512: string; path: string }
   installer: Buffer
+  allowDowngrade: boolean
 }
 
 /** The current test's world. */
@@ -48,16 +49,20 @@ function hubRelease(version: string, options: Parameters<typeof makeRelease>[0] 
 
 /** A fake electron-updater: reads the feed it is pointed at, as the generic provider would. */
 const updater = {
-  async check(url: string): Promise<void> {
+  async check(url: string, { allowDowngrade }: { allowDowngrade: boolean }): Promise<void> {
     const latest = (await (await fetch(new URL('latest.yml', url))).json()) as SeenCheck['latest']
     const installer = Buffer.from(await (await fetch(new URL(latest.path, url))).arrayBuffer())
-    checks.push({ url, latest, installer })
+    checks.push({ url, latest, installer, allowDowngrade })
   }
 }
 
+/** How many times the served installer was withdrawn from install on quit. */
+let cancels = 0
+
 /** A self-update for a hub running `currentVersion`. */
 function start(currentVersion = '0.1.0', check = updater.check): SelfUpdate {
-  selfUpdate = createSelfUpdate({ currentVersion, updater: { check } })
+  cancels = 0
+  selfUpdate = createSelfUpdate({ currentVersion, updater: { check, cancel: () => void cancels++ } })
   return selfUpdate
 }
 
@@ -86,6 +91,7 @@ describe('createSelfUpdate', () => {
       sha512: createHash('sha512').update(INSTALLER).digest('base64')
     })
     expect(checks[0]?.installer).toEqual(INSTALLER)
+    expect(checks[0]?.allowDowngrade).toBe(false)
     expect(await readdir(staging())).toContain('stylistic-hub-0.2.0.exe')
     // The engine itself never installs the hub as a component.
     expect((await world.engine.readState()).components['stylistic-hub']).toBeUndefined()
@@ -226,5 +232,82 @@ describe('createSelfUpdate', () => {
       reason: 'updater: Error: offline'
     })
     expect(urls).toHaveLength(2)
+  })
+
+  it('follows the beta channel to a published hub prerelease', async () => {
+    const beta = await hubRelease('0.3.0-beta.1', { version: '0.3.0-beta.1', channel: 'beta' })
+    await world.engine.setChannel('stylistic-hub', 'beta')
+
+    expect(await start('0.2.0').onReport(await runCheck([hub, beta]), world.engine)).toEqual({
+      status: 'served',
+      version: '0.3.0-beta.1'
+    })
+    expect(checks[0]?.allowDowngrade).toBe(false)
+  })
+
+  it('goes back to the older stable hub after a switch from beta, allowing that downgrade only', async () => {
+    const beta = await hubRelease('0.3.0-beta.1', { version: '0.3.0-beta.1', channel: 'beta' })
+    await world.engine.setChannel('stylistic-hub', 'stable')
+
+    expect(await start('0.3.0-beta.1').onReport(await runCheck([hub, beta]), world.engine)).toEqual({
+      status: 'served',
+      version: '0.2.0'
+    })
+    expect(checks[0]?.allowDowngrade).toBe(true)
+  })
+
+  it('withdraws a served beta from install on quit when the user switches back before restarting', async () => {
+    const beta = await hubRelease('0.3.0-beta.1', { version: '0.3.0-beta.1', channel: 'beta' })
+    await world.engine.setChannel('stylistic-hub', 'beta')
+    const self = start('0.2.0')
+    expect((await self.onReport(await runCheck([hub, beta]), world.engine)).status).toBe('served')
+
+    await world.engine.setChannel('stylistic-hub', 'stable')
+
+    expect(await self.onReport(await runCheck([hub, beta], 101), world.engine)).toEqual({
+      status: 'skipped',
+      reason: 'not_newer'
+    })
+    expect(cancels).toBe(1)
+    expect(await self.onReport(await runCheck([hub, beta], 102), world.engine)).toMatchObject({
+      status: 'skipped'
+    })
+    expect(cancels).toBe(1)
+  })
+
+  it('serves the beta after a switch to beta even when it is older than the running stable', async () => {
+    await world.engine.setChannel('stylistic-hub', 'beta')
+    const beta = await hubRelease('0.2.0-beta.3', { version: '0.2.0-beta.3', channel: 'beta' })
+
+    expect(await start('0.2.0').onReport(await runCheck([hub, beta]), world.engine)).toEqual({
+      status: 'served',
+      version: '0.2.0-beta.3'
+    })
+    expect(checks[0]?.allowDowngrade).toBe(true)
+  })
+
+  it('allows no downgrade within a channel', async () => {
+    await world.engine.setChannel('stylistic-hub', 'beta')
+    const beta = await hubRelease('0.3.0-beta.1', { version: '0.3.0-beta.1', channel: 'beta' })
+
+    expect(await start('0.3.0-beta.2').onReport(await runCheck([beta]), world.engine)).toEqual({
+      status: 'skipped',
+      reason: 'not_newer'
+    })
+  })
+
+  it('never offers a pulled hub version or one outside its rollout', async () => {
+    const pulled = { ...hub, entry: { ...hub.entry, blocked: ['0.2.0'] } }
+    expect(await start().onReport(await runCheck([pulled]), world.engine)).toEqual({
+      status: 'skipped',
+      reason: 'no_hub_entry'
+    })
+
+    const later = { ...hub, entry: { ...hub.entry, rolloutPercent: 0 } }
+    expect(await start().onReport(await runCheck([later], 101), world.engine)).toEqual({
+      status: 'skipped',
+      reason: 'no_hub_entry'
+    })
+    expect(installerRequested()).toBe(false)
   })
 })

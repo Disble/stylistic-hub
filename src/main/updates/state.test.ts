@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -35,6 +35,19 @@ afterEach(async () => {
 describe('state.json', () => {
   it('starts from serial 0 and key list version 0 when the hub never checked', async () => {
     expect(await readState(root)).toEqual({ serial: 0, keysVersion: 0, components: {}, history: [] })
+  })
+
+  it('reads an M4 state file, with no channel, install id or hub entry, unchanged', async () => {
+    const m4 = {
+      serial: 7,
+      keysVersion: 1,
+      components: { server: { current: '1.0.0', previous: null, bad: [], keyId: '0123456789abcdef' } },
+      history: []
+    }
+    await mkdir(root, { recursive: true })
+    await writeFile(join(root, 'state.json'), JSON.stringify(m4))
+
+    expect(await readState(root)).toEqual(m4)
   })
 
   it('keeps the newest 200 history entries', async () => {

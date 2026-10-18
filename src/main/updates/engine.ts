@@ -1,26 +1,27 @@
 // The update engine (odd/tasks/update-engine.md S2): one catalog check, revocation of installed versions whose
-// key is gone, and the install of the catalog's stable version of the server and of what is already installed.
+// key is gone, and the install of the version offered on each component's channel (odd/tasks/channels.md S1, S3,
+// S4) for the server and for what is already installed.
+import { randomUUID } from 'node:crypto'
 import type { Catalog, KeyList } from '../../shared/signing/documents'
 import { checkCatalog, type CatalogCheck, type EngineContext } from './catalog'
+import { channelOf, offered } from './channels'
 import type { StagedInstaller } from './feed'
 import {
+  HUB_ID,
   installComponent,
   readInstalled,
   stageHubInstaller,
   type CatalogEntry,
   type InstallOutcome
 } from './install'
-import { addHistory, componentState, readState, updateState, type UpdateState } from './state'
-
-/** The only channel M4 follows (M6 adds the choice). */
-const CHANNEL = 'stable'
+import { addHistory, componentState, readState, updateState, type Channel, type UpdateState } from './state'
 
 /** What one full check did: the catalog verdict and each install it attempted. */
 export interface CheckReport {
   catalog: 'ok' | string
   installs: { id: string; version: string; outcome: InstallOutcome }[]
-  /** The verified catalog and key list when `catalog` is `ok`, for the hub's self-update (S4). */
-  verified?: { catalog: Catalog; keys: KeyList }
+  /** The verified catalog, key list and install id when `catalog` is `ok`, for the hub's self-update (S4). */
+  verified?: { catalog: Catalog; keys: KeyList; installId: string }
 }
 
 /** The engine T3 and T4 drive: catalog check, install, state, and the rollback primitives. */
@@ -33,6 +34,8 @@ export interface UpdateEngine {
   markBad(id: string, version: string, reason: string): Promise<void>
   /** Switches `current` to an installed version; `reason` goes into the history line (null when none). */
   setCurrent(id: string, version: string, reason?: string | null): Promise<void>
+  /** Sets the channel component `id` follows (`HUB_ID`: the hub's own); the next check applies it. */
+  setChannel(id: string, channel: Channel): Promise<void>
   /** A catalog check, revocation, then the installs the catalog calls for. */
   runCheck(): Promise<CheckReport>
 }
@@ -65,11 +68,25 @@ async function revoke(context: EngineContext, keys: KeyList): Promise<void> {
   })
 }
 
-/** Whether the engine installs `entry` now: stable, the server or already installed, new, never marked bad. */
-function wanted(state: UpdateState, entry: CatalogEntry): boolean {
+/**
+ * Whether the engine installs `entry` now: offered to this install on the component's channel, the server or
+ * already installed, not the current version, never marked bad. An older version is a switch back (S2).
+ */
+function wanted(state: UpdateState, entry: CatalogEntry, installId: string): boolean {
   const installed = state.components[entry.id]
-  if (entry.channel !== CHANNEL || (entry.kind !== 'server' && !installed)) return false
+  if (!offered(entry, channelOf(state, entry.id), installId) || (entry.kind !== 'server' && !installed))
+    return false
   return installed?.current !== entry.version && !installed?.bad.includes(entry.version)
+}
+
+/** This install's id, created at the first check that needs it and kept from then on (S3). */
+async function installIdOf(root: string): Promise<string> {
+  let installId = ''
+  await updateState(root, (state) => {
+    state.installId ??= randomUUID()
+    installId = state.installId
+  })
+  return installId
 }
 
 /** An update engine over the components directory `context.root`, trusting `rootKeys` for `keys.json`. */
@@ -105,17 +122,24 @@ export function createUpdateEngine(context: EngineContext, rootKeys: readonly Bu
         component.keyId = envelope.keyId
       })
     },
+    async setChannel(id, channel) {
+      await updateState(context.root, (state) => {
+        if (id === HUB_ID) state.hub = { channel }
+        else componentState(state, id).channel = channel
+      })
+    },
     async runCheck() {
       const check = await engine.checkCatalog()
       if (check.status !== 'ok') return { catalog: check.reason, installs: [] }
       await revoke(context, check.keys)
+      const installId = await installIdOf(context.root)
       const state = await readState(context.root)
       const installs: CheckReport['installs'] = []
-      for (const entry of check.catalog.components.filter((item) => wanted(state, item))) {
+      for (const entry of check.catalog.components.filter((item) => wanted(state, item, installId))) {
         const outcome = await installComponent(context, entry, check.keys)
         installs.push({ id: entry.id, version: entry.version, outcome })
       }
-      return { catalog: 'ok', installs, verified: { catalog: check.catalog, keys: check.keys } }
+      return { catalog: 'ok', installs, verified: { catalog: check.catalog, keys: check.keys, installId } }
     }
   }
   return engine

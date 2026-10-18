@@ -11,6 +11,7 @@ import { canonicalJson, keyId, rawPublicKey } from '../../shared/signing/keys'
 import type { EngineContext } from './catalog'
 import { createUpdateEngine, type UpdateEngine } from './engine'
 import type { CatalogEntry } from './install'
+import type { Channel } from './state'
 import { CATALOG_URL } from './trust'
 import { makeZip, type ZipItem } from './zip-fixtures'
 
@@ -57,6 +58,8 @@ export interface ReleaseOptions {
   id?: string
   kind?: string
   version: string
+  /** The release stream, in component.json and the catalog entry (default `stable`). */
+  channel?: Channel
   items?: ZipItem[]
   zip?: Buffer
   requires?: Record<string, unknown>
@@ -68,14 +71,14 @@ export interface ReleaseOptions {
 
 /** A signed release in the M3 format, published under `https://example.test/<id>-<version>/`. */
 export async function makeRelease(options: ReleaseOptions, key: TestKey): Promise<Release> {
-  const { id = 'server', kind = 'server', version } = options
+  const { id = 'server', kind = 'server', version, channel = 'stable' } = options
   const items = options.items ?? [{ name: 'entry.js', data: `console.log('${id} ${version}')` }]
   const zip = options.zip ?? (await makeZip(items))
   const component: Component = {
     id,
     kind,
     version,
-    channel: 'stable',
+    channel,
     sha256: createHash('sha256').update(zip).digest('hex'),
     size: zip.length,
     maxUncompressedSize:
@@ -90,7 +93,7 @@ export async function makeRelease(options: ReleaseOptions, key: TestKey): Promis
     id,
     kind,
     publisher: 'stylistic-hub',
-    channel: 'stable',
+    channel,
     version,
     sha256: createHash('sha256').update(zip).digest('hex'),
     size: zip.length,

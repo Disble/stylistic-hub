@@ -361,4 +361,22 @@ describe('createServerSwitch', () => {
     expect(started).toEqual([entryOf('1.1.0'), entryOf('1.2.0')])
     expect(status.get().version).toBe('1.2.0')
   })
+
+  it('shows why the server stays on its beta after a switch to stable, and only that reason', async () => {
+    const { serverSwitch, started, status } = makeSwitch(async () => true)
+    await serverSwitch.start()
+    const failed = (reason: string) => ({
+      id: 'server',
+      version: '1.0.0',
+      outcome: { status: 'failed' as const, reason }
+    })
+
+    await serverSwitch.refresh({ installs: [failed('network')] })
+    expect(status.get().reason).toBeUndefined()
+
+    await serverSwitch.refresh({ installs: [failed('stays on 1.1.0 until stable reads this database')] })
+
+    expect(status.get().reason).toBe('The server stays on 1.1.0 until stable reads this database.')
+    expect(started).toEqual([entryOf('1.1.0')])
+  })
 })
