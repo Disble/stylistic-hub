@@ -14,6 +14,7 @@ The Electron binary downloads on first run (`bunx electron --version`).
 |---|---|
 | `bun install` | Install dependencies and the git hooks (lefthook) |
 | `bun run dev` | Run the hub with hot reload |
+| `bunx electron-vite dev -- --server <dir>` | Run the hub with a server build instead of the installed server component or the built-in backend: it forks `<dir>/entry.js` (for example `out/server` after `bun run build:server`), with no health check or rollback. Ignored by a packaged hub |
 | `bun run build` | Build main, preload and renderer into `out/` |
 | `bun run start` | Run the built app |
 | `bun run build:server` | Bundle the Local server into `out/server/` and install its locked production dependencies beside it, the directory the server release packs and signs ([signed releases](signed-releases.md#scripts)) |
@@ -21,7 +22,7 @@ The Electron binary downloads on first run (`bunx electron --version`).
 | `bun run test` | Unit tests (vitest) |
 | `bun run addin:bundle [path]` | Builds an add-in checkout (default `../stylistic-addon`) with its `build:hub` script, or `build` when it has none, checks the build against [the add-in contract](addin-contract.md), points its manifest at the hub and copies its `dist/` into `resources/addin`, plus `Stylistic.docx`, the document `word-session.ps1` shows Word once per session so Word loads the add-in, which the hub serves at `https://localhost:3000` and registers with Word |
 | `bun run check:providers [piDir]` | Sends one small structured call to every provider signed in on this hub (default `%APPDATA%/stylistic-hub/pi`); spends a few tokens per provider |
-| `bun run keys:dev` | Write development signing keys, a signed `keys.json` and an empty signed catalog to `.dev-keys/` (gitignored, overwritten on every run); production builds never trust them |
+| `bun run keys:dev` | Write development signing keys, a signed `keys.json` and an empty signed catalog to `.dev-keys/` (gitignored, overwritten on every run); production builds never trust them, and the hub does not read them yet: an unpackaged hub checks the published catalog, and there is no `--catalog <file>` flag (deferred until the manual end-to-end run) |
 | `bun run test:coverage` | Tests with the coverage tiers enforced (CORE 100%, IMPORTANT 80%) |
 | `bun run release:server [--no-ci] [--dry-run]` | semantic-release for the Local server: version from the commits under `src/backend/`, `src/backend/CHANGELOG.md`, tag `server-vX.Y.Z`. Releases only from `main` (stable) and `dev` (test releases, `X.Y.Z-beta.N`), per [Git Flow](git-flow.md). Steps: the `release` skill |
 | `bun run release:hub [--no-ci] [--dry-run]` | semantic-release for the hub: version from all commits, `CHANGELOG.md`, builds the installer, tag `hub-vX.Y.Z`; run it after `release:server` |

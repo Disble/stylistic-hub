@@ -35,8 +35,11 @@ export interface WordStatus {
 
 /** The local server process as the Server screen shows it. */
 export interface ServerStatus {
-  /** `restarting`: it exited unexpectedly and the hub starts it again after `restartInMs`. */
-  state: 'starting' | 'running' | 'restarting'
+  /**
+   * `restarting`: it exited unexpectedly and the hub starts it again after `restartInMs`. `rolled-back`: a
+   * server version failed its health check or kept crashing, and the hub went back (or stopped); see `reason`.
+   */
+  state: 'starting' | 'running' | 'restarting' | 'rolled-back'
   version: string
   /** Where the task pane and the API are served. */
   address: string
@@ -44,6 +47,8 @@ export interface ServerStatus {
   crashes: number
   lastExitCode?: number
   restartInMs?: number
+  /** Why the hub rolled back or stopped the server, kept for as long as the hub runs. */
+  reason?: string
 }
 
 /** The API the preload script exposes to the renderer as `window.hub`. */

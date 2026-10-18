@@ -13,6 +13,11 @@ export interface SupervisorOptions {
   stableAfterMs?: number
   /** Called on every unexpected exit, before the restart is scheduled. */
   onExit?: (event: { code: number; restartInMs: number }) => void
+  /**
+   * After `exits` exits of runs that never reached `stableAfterMs`, `onCrashLoop` is asked first: when it
+   * returns true it takes over and no restart is scheduled; when false the backoff goes on.
+   */
+  crashLoop?: { exits: number; onCrashLoop: () => boolean }
 }
 
 /** Controls one supervised child process. */
@@ -22,6 +27,11 @@ export interface Supervisor {
   restart(): void
   /** Stops for good: cancels a pending restart and kills the running child. */
   stop(): void
+  /**
+   * Stops until the next `start`: cancels a pending restart, kills the child and resolves once it exited, as well
+   * as a child a requested restart detached, whose replacement is cancelled.
+   */
+  halt(): Promise<void>
 }
 
 /**
@@ -32,12 +42,19 @@ export function createSupervisor({
   spawn,
   backoffMs,
   stableAfterMs = 60_000,
-  onExit
+  onExit,
+  crashLoop
 }: SupervisorOptions): Supervisor {
   let child: SupervisedChild | undefined
   let restartTimer: ReturnType<typeof setTimeout> | undefined
   let attempt = 0
+  /** Exits in a row of runs that never became stable. */
+  let unstableExits = 0
   let stopped = false
+  /** The child a requested restart killed, until it exited. */
+  let detached: SupervisedChild | undefined
+  /** Bumped by `halt`, so a restart requested before it launches nothing. */
+  let epoch = 0
 
   const launch = () => {
     restartTimer = undefined
@@ -47,7 +64,17 @@ export function createSupervisor({
     current.on('exit', (code) => {
       if (stopped || child !== current) return
       child = undefined
-      if (Date.now() - startedAt >= stableAfterMs) attempt = 0
+      if (Date.now() - startedAt >= stableAfterMs) {
+        attempt = 0
+        unstableExits = 0
+      } else {
+        unstableExits += 1
+      }
+      if (crashLoop && unstableExits >= crashLoop.exits && crashLoop.onCrashLoop()) {
+        attempt = 0
+        unstableExits = 0
+        return
+      }
       const restartInMs = backoffMs[Math.min(attempt, backoffMs.length - 1)] ?? 0
       attempt += 1
       onExit?.({ code, restartInMs })
@@ -65,6 +92,7 @@ export function createSupervisor({
       if (restartTimer) clearTimeout(restartTimer)
       restartTimer = undefined
       attempt = 0
+      unstableExits = 0
       const previous = child
       if (!previous) {
         launch()
@@ -72,8 +100,11 @@ export function createSupervisor({
       }
       // Detached first, so its exit is not a crash; the new child must not race it for the port.
       child = undefined
+      detached = previous
+      const requestedIn = epoch
       previous.on('exit', () => {
-        if (!stopped && !child && !restartTimer) launch()
+        if (detached === previous) detached = undefined
+        if (!stopped && !child && !restartTimer && requestedIn === epoch) launch()
       })
       previous.kill()
     },
@@ -83,6 +114,20 @@ export function createSupervisor({
       restartTimer = undefined
       child?.kill()
       child = undefined
+    },
+    halt() {
+      if (restartTimer) clearTimeout(restartTimer)
+      restartTimer = undefined
+      attempt = 0
+      unstableExits = 0
+      epoch += 1
+      const previous = child
+      child = undefined
+      const exited = (target: SupervisedChild | undefined) =>
+        target ? new Promise<void>((resolve) => target.on('exit', () => resolve())) : undefined
+      const waits = [exited(previous), exited(detached)]
+      previous?.kill()
+      return Promise.all(waits).then(() => undefined)
     }
   }
 }

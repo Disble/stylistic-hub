@@ -18,7 +18,8 @@ import { Details, Page, Section, Surface } from '../ui/layout'
 export const SERVER_STATE = {
   starting: { label: 'Starting', color: 'informative' },
   running: { label: 'Running', color: 'success' },
-  restarting: { label: 'Restarting', color: 'danger' }
+  restarting: { label: 'Restarting', color: 'danger' },
+  'rolled-back': { label: 'Rolled back', color: 'warning' }
 } as const satisfies Record<ServerStatus['state'], { label: string; color: NonNullable<BadgeProps['color']> }>
 
 /** Griffel classes from the Stylistic theme tokens. */
@@ -39,6 +40,24 @@ function crashMessage({ state, crashes, lastExitCode, restartInMs }: ServerStatu
   const restart =
     state === 'restarting' && restartInMs !== undefined ? ` Restarting in ${restartInMs / 1000} s.` : ''
   return `The server stopped unexpectedly ${times} since the hub opened (last exit code ${lastExitCode}).${restart}`
+}
+
+/** Unexpected exits, and why the hub rolled back or stopped the server. */
+function ServerAlerts({ status }: { status: ServerStatus }) {
+  return (
+    <>
+      {status.crashes > 0 && (
+        <MessageBar intent={status.state === 'restarting' ? 'error' : 'warning'} role="alert">
+          <MessageBarBody>{crashMessage(status)}</MessageBarBody>
+        </MessageBar>
+      )}
+      {status.reason && (
+        <MessageBar intent="warning">
+          <MessageBarBody>{status.reason}</MessageBarBody>
+        </MessageBar>
+      )}
+    </>
+  )
 }
 
 /** One service the local server provides, with its state. */
@@ -109,11 +128,7 @@ export function ServerScreen({ onOpen }: { onOpen: (screen: Screen) => void }) {
         </>
       }
     >
-      {status.crashes > 0 && (
-        <MessageBar intent={status.state === 'restarting' ? 'error' : 'warning'} role="alert">
-          <MessageBarBody>{crashMessage(status)}</MessageBarBody>
-        </MessageBar>
-      )}
+      <ServerAlerts status={status} />
       {error && (
         <MessageBar intent="error">
           <MessageBarBody>{error}</MessageBarBody>

@@ -3,7 +3,9 @@ import { join } from 'node:path'
 import { app, BrowserWindow, Menu, nativeImage, shell, Tray } from 'electron'
 import { safeExternalUrl } from '../shared/login/external-link'
 import { HUB_PORT, SERVER_VERSION } from '../shared/versions'
-import { startBackend } from './backend-host'
+import { BUILT_IN_ENTRY, createBackend } from './backend-host'
+import { waitUntilHealthy } from './health-check'
+import { hubStatusRequest } from './health-request'
 import { hubPaths } from './hub-paths'
 import { createLocalModel } from './local-model'
 import { loadOrCreateHubToken } from './hub-token'
@@ -11,6 +13,9 @@ import { registerProviderIpc } from './ipc-provider'
 import { registerScreenIpc } from './ipc-screens'
 import { createPiProvider } from './pi-provider'
 import { createServerStatus } from './server-status'
+import { createServerSwitch, serverDirFlag } from './server-switch'
+import { startUpdateChecks } from './updates/schedule'
+import { startSelfUpdate } from './updates/self-update-electron'
 import { createWordIntegration } from './word-integration'
 import { createWordSession } from './word-session'
 
@@ -96,23 +101,54 @@ if (!isSingleInstance) {
   app.on('second-instance', showWindow)
 
   void app.whenReady().then(async () => {
-    const paths = hubPaths(app.getPath('userData'))
+    const userData = app.getPath('userData')
+    const paths = hubPaths(userData)
+    const token = loadOrCreateHubToken(paths.token)
     const status = createServerStatus({
       version: SERVER_VERSION,
       address: `https://localhost:${HUB_PORT}`,
       onChange: (current) => mainWindow?.webContents.send('hub:server-status', current)
     })
-    const backend = startBackend({
+    const backend = createBackend({
       status,
       certificatesDir: paths.certificates,
       database: paths.database,
       piDir: paths.piDir,
       port: HUB_PORT,
       addinDir: existsSync(ADDIN_DIR) ? ADDIN_DIR : undefined,
-      token: loadOrCreateHubToken(paths.token),
-      logFile: join(app.getPath('logs'), 'server.log')
+      token,
+      logFile: join(app.getPath('logs'), 'server.log'),
+      // Both callbacks run only after the switch below exists: the first spawn and the first check end later.
+      onCrashLoop: () => serverSwitch.crashLoop()
     })
-    app.on('will-quit', () => backend.stop())
+    // Node's global fetch, as for the local model: the catalog and components are public HTTPS files whose
+    // signatures the engine verifies, and it is the fetch type the engine is written and tested against.
+    // The hub's own update (D10): after each check, a newer verified installer is handed to electron-updater.
+    const selfUpdate = startSelfUpdate({ userData, currentVersion: app.getVersion() })
+    const updates = startUpdateChecks({
+      userData,
+      fetch,
+      onChecked: () => void serverSwitch.refresh(),
+      onReport: selfUpdate.onReport
+    })
+    const serverSwitch = createServerSwitch({
+      engine: updates.engine,
+      componentsRoot: join(userData, 'components'),
+      database: paths.database,
+      builtIn: { entry: BUILT_IN_ENTRY, version: SERVER_VERSION },
+      // `--server <dir>` runs a development build of the server (unpackaged hub only).
+      devServerDir: serverDirFlag(process.argv, app.isPackaged),
+      backend,
+      healthy: () =>
+        waitUntilHealthy({ request: hubStatusRequest({ port: HUB_PORT, token, caFile: paths.caCert }) }),
+      status
+    })
+    void serverSwitch.start()
+    app.on('will-quit', () => {
+      updates.stop()
+      selfUpdate.stop()
+      backend.stop()
+    })
     registerProviderIpc(
       await createPiProvider(paths.piDir),
       createLocalModel({ modelsFile: join(paths.piDir, 'models.json'), fetch }),
@@ -135,17 +171,23 @@ if (!isSingleInstance) {
       else wordSession.stop()
       if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: enabled, args: [BACKGROUND_FLAG] })
     }
-    registerScreenIpc(status, backend, app.getPath('logs'), {
-      ...word,
-      connect: async () => {
-        await word.connect()
-        keepInWord(true)
+    registerScreenIpc(
+      status,
+      backend,
+      app.getPath('logs'),
+      {
+        ...word,
+        connect: async () => {
+          await word.connect()
+          keepInWord(true)
+        },
+        disconnect: async () => {
+          await word.disconnect()
+          keepInWord(false)
+        }
       },
-      disconnect: async () => {
-        await word.disconnect()
-        keepInWord(false)
-      }
-    })
+      serverSwitch.restartAllowed
+    )
 
     const icon = nativeImage.createFromPath(join(app.getAppPath(), 'resources', 'icon.png'))
     tray = new Tray(icon.resize({ width: 16, height: 16 }))
