@@ -1,0 +1,34 @@
+# M5 — Module library and add-in delivery (hub side)
+
+Objective: roadmap M5 (docs/roadmap.md), ADR 0001 D6, D8, D11, D12: the hub machinery that downloads, serves, registers, health-checks and rolls back modules, proven with signed fixtures. Branch `feature/module-library` from `dev`; units on their own branches merged `--no-ff` into it. Runner: vitest; local gate `bun run check`. No merge to `main` while the maintainer is away.
+
+## Specs
+
+Exit criteria quoted from the roadmap: "a fresh install from a hub-only installer reaches a working "Analizar y sugerir" after the first-run download; an add-in update that leaves the manifest unchanged reaches Word on the next task pane open with no re-registration and no hub reinstall, and one that changes the manifest content is re-registered; an M4 hub self-updates to the M5 hub and the add-in loads from `/m/<id>/` with no manual step, no root-URL entry left; a module whose task pane is not served after the switch is rolled back; a module token is refused by an API scope the module did not declare."
+
+- **S1 Module serving** (unit A, backend): each module served at `/m/<id>/` with today's behavior kept (token meta in `taskpane.html`, `?v=` asset versioning, `Cache-Control` from `bef61c1`); `/` keeps serving `--addin` exactly as today. Module directories reach the backend through an environment variable (`STYLISTIC_MODULES`, JSON `{ "<id>": "<dir>" }`), never a new CLI flag: older server components parse flags with `strict: true` and would exit on an unknown one (map §1), while they ignore an unknown variable. `GET /api/v1/modules` lists `{ id, version }` of the modules being served (version from the module's `manifest.xml` `<Version>`), so the task pane can offer a reload (D8).
+- **S2 Module install policy** (unit C, engine; after M6 merges because it shares `src/main/updates`): install a module the first time on request, uninstall it, and check the module's own `requires.api` against the current server's `provides.api` before install; fixtures get a publisher/scope option (`stylistic-addon`).
+- **S3 Module switch** (unit E): on a module version switch, write the stable manifest `components/<id>/manifest.xml` from the version's manifest, then a health check (manifest and `taskpane.html` served at `/m/<id>/` with 200 within 30 s); failure → `markBad`, back to `previous`, reason in history (the server-switch pattern).
+- **S4 Word registration** (unit F): register `components/<id>/manifest.xml`; store the hash of the last registered manifest and re-register only when it changes; remove the old entry that points at the bundled root-URL manifest once a module manifest is registered (cutover step two).
+- **S5 Library UI** (unit I): one card per component (server, hub, modules) with installed version, channel, available version, install/update/uninstall/roll back where the engine supports it, and the update history; first run: when no server component is installed, the screen offers the server and the modules from the catalog.
+- **S6 Module-scoped tokens** (unit G): a token per module, a scope per API route group, refusal (401 `unauthorized`) of a module token on a scope the module's `component.json` did not declare; the main process keeps its own token for health checks.
+- **S7 `--module <id>=<dir>`** for development (D12), hub side, unpackaged only, like `--server`.
+- **S8 Docs**: architecture (modules on disk, serving, registration, tokens), development (`--module`), addin-contract (what a module release must contain: manifest URLs under `/m/<id>/`), roadmap status.
+
+**Deferred (measured, not chosen by taste):** the hub-only installer (removing the bundled add-in and built-in backend) and moving the production manifest identity to the module's release. Both need a signed add-in release in the real catalog (the add-in's push is blocked on its maintainer) and a server release with S1, published from `main`; shipping the installer change first would leave a fresh install with no add-in. They stay in the roadmap as M5's last step.
+
+## Tasks
+
+| ID | Specs | Route | Status | Evidence |
+|---|---|---|---|---|
+| T1 | S1 | delegated writer, unit A (backend only; parallel with M6/M8) | open | |
+| T2 | S2 | delegated writer, unit C (after M6 merges) | open | |
+| T3 | S3, S4, S7 | delegated writer, units E+F (after T1, T2) | open | |
+| T4 | S5 | delegated writer, unit I (after T2) | open | |
+| T5 | S6 | delegated writer, unit G (after T1) | open | |
+| T6 | all | independent verifier (items 2, 3, 5) | open | |
+
+## Log
+
+- **L1** (2026-10-18) User: "desde ahora tendrás que continuar con el resto por tu cuenta … cuidado con la sobreingeniería … las decisiones delicadas se las toma midiendo, y probando hipótesis falsables …".
+- **L2** Map (explorer, dev 614f548): the add-in is served by the backend at `/` from `--addin`; the backend's `parseArgs` is strict and every server entry gets the same flags (`backend-host.ts:38-39`), so a new flag would break older or rolled-back servers — hence S1's environment variable. Word registration writes only `HKCU\…\Wef\Developer`, keyed by add-in id, no hash. One static hub token guards `/api/*`. The engine never installs a module the first time (`engine.ts:69-73`).
