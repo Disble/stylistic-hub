@@ -1,6 +1,5 @@
-// fallow-ignore-file unused-file -- T3 (odd/tasks/update-engine.md) calls startUpdateChecks from app.ts
 // Wiring of the update engine for the main process: real clock, the embedded root keys, a check at start and
-// every `intervalMs` (6 hours), never two at once. T3 calls it from app.ts with Electron's userData and fetch.
+// every `intervalMs` (6 hours), never two at once. app.ts calls it with Electron's userData and fetch.
 import { join } from 'node:path'
 import { createUpdateEngine, type UpdateEngine } from './engine'
 import { ROOT_KEYS } from './trust'
@@ -13,12 +12,15 @@ export function startUpdateChecks({
   userData,
   fetch,
   intervalMs = SIX_HOURS,
-  log = console.error
+  log = console.error,
+  onChecked = () => undefined
 }: {
   userData: string
   fetch: typeof globalThis.fetch
   intervalMs?: number
   log?: (message: string) => void
+  /** Called after each check that ran, so the hub can move to a server version it installed. */
+  onChecked?: () => void
 }): { engine: UpdateEngine; stop: () => void } {
   const engine = createUpdateEngine(
     { fetch, root: join(userData, 'components'), now: () => new Date() },
@@ -31,6 +33,7 @@ export function startUpdateChecks({
     try {
       const report = await engine.runCheck()
       log(`update check: catalog ${report.catalog}, ${JSON.stringify(report.installs)}`)
+      onChecked()
     } catch (error) {
       log(`update check failed: ${String(error)}`)
     } finally {

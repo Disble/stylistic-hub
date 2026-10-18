@@ -63,6 +63,11 @@
           "reason": "Forks the utilityProcess; exercised by launching the app"
         },
         {
+          "path": "src/main/health-request.ts",
+          "tier": "infrastructure",
+          "reason": "The node:https call of the health check to the running backend; exercised by launching the app"
+        },
+        {
           "path": "src/main/ipc-provider.ts",
           "tier": "infrastructure",
           "reason": "Electron IPC wiring, exercised by launching the app"

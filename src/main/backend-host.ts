@@ -4,7 +4,11 @@ import { utilityProcess } from 'electron'
 // fallow-ignore-next-line boundary-violation -- build-time bundle path for utilityProcess.fork, not a code import
 import backendPath from '../backend/entry?modulePath'
 import type { createServerStatus } from './server-status'
+import type { ServerBackend } from './server-switch'
 import { createSupervisor, type Supervisor } from './supervisor'
+
+/** The built-in backend, bundled with the hub: the fallback until M5 downloads the server on first run. */
+export const BUILT_IN_ENTRY = backendPath
 
 /** What the backend process needs to start. */
 export interface BackendOptions {
@@ -20,13 +24,21 @@ export interface BackendOptions {
   logFile: string
   /** Told when the process starts and when it exits unexpectedly. */
   status: ReturnType<typeof createServerStatus>
+  /** Asked after 3 exits of runs that never became stable: true when it takes over (a rollback). */
+  onCrashLoop: () => boolean
 }
 
 /** Restart delays after consecutive crashes. */
 const BACKOFF_MS = [1000, 2000, 5000, 10_000, 30_000]
 
-/** Runs the backend in its own utility process and restarts it if it crashes. */
-export function startBackend({
+/** Exits of unstable runs in a row that make a crash loop (odd/tasks/update-engine.md S3). */
+const CRASH_LOOP_EXITS = 3
+
+/**
+ * Runs the backend in its own utility process and restarts it if it crashes. Nothing runs until `startFrom`
+ * names the entry to fork; the arguments and environment are the same for every entry, so older servers start.
+ */
+export function createBackend({
   certificatesDir,
   database,
   piDir,
@@ -34,14 +46,16 @@ export function startBackend({
   token,
   addinDir,
   logFile,
-  status
-}: BackendOptions): Supervisor {
+  status,
+  onCrashLoop
+}: BackendOptions): Supervisor & Pick<ServerBackend, 'startFrom'> {
   mkdirSync(dirname(logFile), { recursive: true })
   const log = createWriteStream(logFile, { flags: 'a' })
+  let entry = BUILT_IN_ENTRY
   const supervisor = createSupervisor({
     spawn: () => {
       const child = utilityProcess.fork(
-        backendPath,
+        entry,
         [
           `--certs=${certificatesDir}`,
           `--db=${database}`,
@@ -62,6 +76,7 @@ export function startBackend({
       return child
     },
     backoffMs: BACKOFF_MS,
+    crashLoop: { exits: CRASH_LOOP_EXITS, onCrashLoop },
     onExit: (exit) => {
       const line = `backend exited with code ${exit.code}; restarting in ${exit.restartInMs} ms`
       console.warn(line)
@@ -69,6 +84,12 @@ export function startBackend({
       status.exited(exit)
     }
   })
-  supervisor.start()
-  return supervisor
+  return {
+    ...supervisor,
+    async startFrom(next) {
+      entry = next
+      await supervisor.halt()
+      supervisor.start()
+    }
+  }
 }

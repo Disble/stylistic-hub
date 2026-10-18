@@ -14,6 +14,7 @@ The Electron binary downloads on first run (`bunx electron --version`).
 |---|---|
 | `bun install` | Install dependencies and the git hooks (lefthook) |
 | `bun run dev` | Run the hub with hot reload |
+| `bunx electron-vite dev -- --server <dir>` | Run the hub with a server build instead of the installed server component or the built-in backend: it forks `<dir>/entry.js` (for example `out/server` after `bun run build:server`), with no health check or rollback. Ignored by a packaged hub |
 | `bun run build` | Build main, preload and renderer into `out/` |
 | `bun run start` | Run the built app |
 | `bun run check` | Format check, lint, typecheck and tests — run before every push |
