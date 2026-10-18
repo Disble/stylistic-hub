@@ -1,0 +1,54 @@
+# M4 — Update engine, server channel and hub self-update
+
+Objective: roadmap M4 (docs/roadmap.md), ADR 0001 D5–D7, D10, D12, as the smallest thing that meets the exit criteria. Branch `feature/update-engine` from `dev` (after M3). Runner: vitest; local gate `bun run check` with coverage tiers. Delivery: one branch per unit, merged `--no-ff` into `feature/update-engine`, then into `dev`. No merge to `main` while the maintainer is away (main deploys; L2).
+
+## Specs
+
+Exit criteria quoted from the roadmap: "an installed hub moves from one `server-v*` to the next from the catalog, and from one `hub-v*` to the next through the verified installer, with no manual reinstall; fault-injection tests pass for: the hub killed mid-install (the previous version still runs, the next check resumes or restarts), a corrupt download, a bad signature, an expired or older catalog (installed components keep running), a binding mismatch between `component.json` and the catalog entry (rejected before extraction), a zip with malicious entries (absolute path, `..`, symlink, reserved name, oversize; rejected), an update set whose API range breaks an installed module (refused), and a server that fails its health check or crash-loops (rolled back, version marked bad); a rollback after an expand step restores nothing and keeps the writes made since the upgrade, and a rollback after a contract step restores the backup; the fixture-based compatibility tests pass; a 0.0.1 install upgraded by hand to the M4 hub keeps its documents, profiles and history; a migration that drops a column read by the previous release fails a check (proposal: how the expand/contract rule is checked); after a key is revoked through a new root-signed `keys.json`, an installed version covered only by that key is disabled and replaced at the next catalog check, and an expired `keys.json` leaves installed versions running."
+
+- **S1 Data safety** (`src/backend/adapters/sqlite/database.ts`, core tests):
+  - Each migration declares `kind: 'expand' | 'contract'`. The three shipped ones are `contract` (conservative: a 0.0.1 database can only be read by 0.0.1+). `SCHEMA_VERSION` = number of migrations; exported.
+  - `minReaderSchema` is stored in the database (table `schema_meta`, one row), set by the migration that produced it: an expand leaves it, a contract raises it to its own version. A database without the row (0.0.1) gets it backfilled as its current `user_version`.
+  - `openDatabase` opens a database whose `user_version` is newer than `SCHEMA_VERSION` when `SCHEMA_VERSION >= minReaderSchema`; otherwise it refuses with an error whose message keeps "newer" and names both numbers.
+  - Before applying any migration to an existing database, `VACUUM INTO <dir of db>/backups/stylistic-schema<from>-<UTC yyyymmddHHMMss>.db`. No new command-line flag (older servers must keep starting with the hub's arguments).
+  - Expand/contract check: a test fails when a migration marked `expand` contains `DROP COLUMN`, `DROP TABLE`, `RENAME` or `ALTER COLUMN` (case-insensitive).
+  - 0.0.1 cutover test: a database created with the 0.0.1 migrations and rows in every table opens with the new code, keeps every row, and reports `minReaderSchema` 3.
+  - Exported helpers the hub uses for rollback: `readSchemaState(file) → { userVersion, minReaderSchema }` (read-only open) and `restoreBackup(file, backup)` (removes `-wal`/`-shm`, copies the backup over the database).
+- **S2 Update engine core** (`src/main/updates/`, tier `core`): injected `fetch`, filesystem root and clock; no Electron imports except in one wiring file.
+  - State in `<userData>/components/state.json` written atomically (temp file + rename): last seen catalog `serial`, last seen `keys.json` `version`, per component `{ current, previous, bad: [], keyId }`, and an append-only history list (time, component, from, to, outcome, reason) capped at 200 entries.
+  - Catalog check: fetch `keys.json`(+`.sig`) and `catalog.json`(+`.sig`) from the `catalog` release URL; verify with `src/shared/signing` using the root keys embedded at build time (`keys/root.pub`, `keys/root-next.pub`); on success store serial and version. Any failure (network, expired, rollback, replay, bad signature) leaves installed components untouched and returns the reason.
+  - Download to `<userData>/components/<id>/.staging/<version>.zip`, resuming a partial file with an HTTP `Range` request; `component.json` and its `.sig` beside it.
+  - Before extraction: binding check (`id`, `kind`, `version`, `channel`, `sha256` equal between `component.json` and the catalog entry; strict id/version patterns from the signing schemas), `verifyComponent` with the entry's `publisher`, `verifyArtifact` on the measured sha256/size.
+  - Strict extraction with `yauzl` (adopted): rejects absolute paths, `..` segments, symlinks, Windows reserved names (CON, PRN, AUX, NUL, COM1–9, LPT1–9, with or without extension) and stops past `maxUncompressedSize`; extracts into `<id>/.staging/<version>/` then renames to `<id>/<version>/`.
+  - Atomic switch: `state.json` `current` changes only after the rename; the previous version is kept; older versions are deleted. A crash before the switch leaves the previous version current; leftovers in `.staging` are discarded or resumed at the next check.
+  - Compatibility: an update is refused when the new version's `provides.api` lacks an API an installed component's `requires.api` names (tested with fixture modules; no module exists before M5).
+  - Revocation: at each successful catalog check, an installed version whose `keyId` is not in the current `keys.json` is marked disabled and the catalog's version for its channel is installed.
+  - Channel: `stable` only in M4 (M6 adds the choice). Checks at startup and every 6 hours.
+  - Fixture-based compatibility tests: a test helper builds signed fixtures (keys, catalog, component zips) with throwaway keys through the same M3 scripts' functions, so the engine and the release format cannot drift.
+- **S3 Server from components** (`src/main/`):
+  - The backend is forked from `<userData>/components/server/<current>/<entry>` when a server component is installed; otherwise from the built-in backend (transitional, removed in M5 with the first-run download; L3). `--server <dir>` (development, unpackaged only) forks that directory.
+  - Health check: after a version switch, `GET https://localhost:3000/api/v1/status` with the hub token, Host `localhost:3000` and the hub CA must answer 200 within 30 s.
+  - Crash loop (new in `supervisor.ts`): 3 exits within one run that never reached `stableAfterMs` → `onCrashLoop` instead of another restart.
+  - Failed health check or crash loop on a version → rollback to `previous`, the version added to `bad` (never retried until a newer one is in the catalog), reason in history and in the Server screen status (new state `rolled-back` in `src/shared/bridge.ts`). No previous version → built-in backend, reason shown.
+  - Rollback data rule: if the database's `minReaderSchema` is above the previous version's `provides.schemaVersion` (a contract step was crossed), stop the server, `restoreBackup` the newest backup from before that version's migrations, and record that writes since the upgrade were lost; otherwise restore nothing. No readable backup → refuse the downgrade, keep the server stopped with the reason.
+- **S4 Hub self-update** (D10): `electron-updater` (adopted, pinned exact). The hub is a catalog component (`kind: hub`, artifact = the NSIS installer). The engine downloads and verifies the installer exactly like S2 (no extraction), computes its sha512, and serves it with a `latest.yml` from a loopback HTTP server in the main process (random port, 127.0.0.1); `autoUpdater` with the generic provider reads that feed and installs on quit. Unit tests cover the feed (the bytes served are the verified file, `latest.yml` carries its sha512). The end-to-end run needs two published hub releases (blocked on the add-in, M2 L3).
+- **S5 Docs**: docs/architecture.md (components on disk, state.json, update flow, rollback rules), docs/development.md (`--server`, dev keys/catalog via `.dev-keys/` and `--catalog <file>` for unpackaged runs), roadmap status.
+
+**Out of scope:** the library UI (M5), module serving (M5), channels UI and rollout (M6), Authenticode, telemetry.
+
+## Tasks
+
+| ID | Specs | Route | Status | Evidence |
+|---|---|---|---|---|
+| T1 | S1 | delegated writer (parallel with T2) | open | |
+| T2 | S2 | delegated writer (parallel with T1) | open | |
+| T3 | S3 | delegated writer, after T1+T2 | open | |
+| T4 | S4 | delegated writer, after T2 | open | |
+| T5 | all | independent verifier (high-risk items 1, 2, 4, 5) | open | |
+
+## Log
+
+- **L1** (2026-10-18) User: "desde ahora tendrás que continuar con el resto por tu cuenta … cuidado con la sobreingeniería … las decisiones delicadas se las toma midiendo, y probando hipótesis falsables …".
+- **L2** No merge to `main` while the maintainer is away: `main` deploys, and the real catalog (signed on `main`) is what installed hubs read. End-to-end runs against the real catalog wait for the maintainer; the engine is proven with signed fixtures and dev keys.
+- **L3** The built-in backend stays as the fallback in M4 so the hand-installed M4 hub works before any server component is in the catalog; M5's first-run download removes it (ADR S1: no hybrid as a goal).
+- **L4** Main-process map (explorer): supervisor restarts forever (`BACKOFF_MS` last delay repeats); backend gets CLI flags (`strict: true`) and `STYLISTIC_HUB_TOKEN`; `/api/v1/status` needs token, loopback Host and the hub CA; schema is 3; a newer schema throws at module load (endless restart today); no electron-updater, no publish block.
