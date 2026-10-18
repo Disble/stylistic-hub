@@ -33,6 +33,12 @@
       }
     ],
     [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "cd ../.. && bun run build:server && bun scripts/release/pack-server.ts --version ${nextRelease.version} --channel ${nextRelease.channel ? 'beta' : 'stable'}"
+      }
+    ],
+    [
       "@semantic-release/git",
       {
         "assets": ["package.json", "CHANGELOG.md"],
@@ -42,6 +48,11 @@
     [
       "@semantic-release/github",
       {
+        "assets": [
+          "../../out/server-release/server-*.zip",
+          "../../out/server-release/component.json",
+          "../../out/server-release/component.json.sig"
+        ],
         "successComment": false,
         "failComment": false,
         "releasedLabels": false

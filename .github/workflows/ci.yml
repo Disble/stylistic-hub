@@ -82,6 +82,8 @@ jobs:
       - run: bun run release:server
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signs component.json of the server artifact (docs/signed-releases.md).
+          STYLISTIC_COMPONENT_KEY: ${{ secrets.STYLISTIC_COMPONENT_KEY }}
 
   release-hub:
     if: github.event_name == 'push' && (github.ref_name == 'dev' || github.ref_name == 'main')

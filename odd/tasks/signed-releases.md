@@ -28,7 +28,7 @@ Exit criteria quoted from the roadmap: "CI publishes a signed server artifact an
 
 | ID | Specs | Route | Status | Evidence |
 |---|---|---|---|---|
-| T1 | S1, S7 | delegated (context backstop) | open | |
+| T1 | S1, S7 | delegated (context backstop) | done | d58c8b4 |
 | T2 | S2, S3 | delegated, after T1 | open | |
 | T3 | S4, S5, S6 | delegated, after T1 | open | |
 | T4 | all | independent verifier (high-risk item 2: signatures) | open | |
@@ -40,3 +40,7 @@ Exit criteria quoted from the roadmap: "CI publishes a signed server artifact an
 - **L3** T1 choices: verification functions take documents already parsed with the zod schemas and return `'ok'` or the rejection string; a document with extra fields fails as `bad_signature` because zod strips them before the canonical JSON is checked. Signing stays in `scripts/keys/key-list.ts`; `src/shared/signing` only verifies.
 - **L4** T1: `tsconfig.web.json` includes `src/shared/**` without Node types and is outside the allowed edit surface, so each signing file starts with `/// <reference types="node" />`; the cleaner fix is excluding `src/shared/signing/**` from `tsconfig.web.json` (left to the parent).
 - **L5** T1: `rawPublicKey` now also refuses non-ed25519 keys (an EC key's JWK has an `x` too) and reads the raw key from the SPKI DER; `canonicalJson`'s comparator drops its unreachable equal case so the core tier reaches 100% branches.
+- **L6** T2 choices: `yazl` 3.3.1 (2024-11-23) as a dev dependency, since only the release scripts zip; no `@types/yazl`, because `scripts/` is not in any tsconfig. The component key always comes from `STYLISTIC_COMPONENT_KEY` (the add-in's secret has the same name). The zip is `<id>-<version>.zip`; `requires` is `{}` for the server until M4.
+- **L7** T2: `schemaVersion` is the `user_version` of an in-memory database opened with the backend's own `openDatabase` (one `fallow-ignore` for scripts → adapters, like `src/shared/versions.ts`), because `MIGRATIONS` is not exported and `database.ts` is outside the edit surface; `minReaderSchema` equals it until M4.
+- **L8** T2: `build:server` = vite SSR build of `src/backend/entry.ts` into `out/server/entry.js` (everything bundled except `@earendil-works/*` and builtins), then a generated `package.json` with the root's exact `@earendil-works/*` versions and `bun install --production` (no lockfile is kept there, so transitive versions resolve at release time; 2 blocked postinstalls, protobufjs's version notice among them). Assets go to `out/server-release/`, which `@semantic-release/github` reads as `../../out/server-release/*` (tinyglobby resolves `../`). The exec step runs after `@semantic-release/npm`, so the bundle carries the bumped version.
+- **L9** H3 measured (2026-10-18, bun 1.4.1, Windows): `out/server` 117,117,810 bytes uncompressed, zip 33,104,930 bytes (33.1 MB) < 100 MB, so H3 holds; schema version 3.
