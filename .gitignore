@@ -8,6 +8,7 @@ dist/
 resources/addin/
 # Where `bun run addin:bundle` builds the next copy before swapping it in
 resources/.addin-staging/
+resources/.addin-previous/
 /release/
 
 # Test and coverage

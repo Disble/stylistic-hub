@@ -98,6 +98,13 @@ describe('pointManifestAt', () => {
     expect(pointManifestAt(hub)).toBe(hub)
   })
 
+  it('fails instead of leaving the manifest on an origin it could not replace', () => {
+    const upper = CONTOSO_MANIFEST.replaceAll('https://www.contoso.com/', 'https://WWW.Contoso.com/')
+    expect(() => pointManifestAt(upper)).toThrow(
+      'The add-in manifest names its task pane at https://WWW.Contoso.com/taskpane.html, whose origin the hub could not replace with https://localhost:3000'
+    )
+  })
+
   it('fails when the manifest has no task pane source location', () => {
     expect(() => pointManifestAt('<OfficeApp><Id>x</Id></OfficeApp>')).toThrow(
       'The add-in manifest has no task pane <SourceLocation DefaultValue="…"> in <DefaultSettings>'

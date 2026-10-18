@@ -37,7 +37,16 @@ export function pointManifestAt(manifest: string, origin = HUB_ORIGIN): string {
   if (!current) throw new Error(`The add-in manifest ${NO_TASKPANE_SOURCE}`)
   if (current === origin) return manifest
   const escaped = current.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return manifest.replace(new RegExp(`${escaped}(?![\\w.:-])`, 'g'), origin)
+  const pointed = manifest.replace(new RegExp(`${escaped}(?![\\w.:-])`, 'g'), origin)
+  // The origin is matched as URL normalizes it, so a source spelled otherwise (upper case, a default
+  // port) would come back unchanged and Word would load the task pane from the add-in's own host.
+  if (taskpaneOrigin(pointed) !== origin) {
+    const source = TASKPANE_SOURCE.exec(manifest)?.[1] ?? ''
+    throw new Error(
+      `The add-in manifest names its task pane at ${source}, whose origin the hub could not replace with ${origin}`
+    )
+  }
+  return pointed
 }
 
 /** What the build in `dist` lacks for the hub to serve it; empty when it meets the contract. */

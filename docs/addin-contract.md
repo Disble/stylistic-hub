@@ -6,7 +6,7 @@ What an add-in build must give the hub, and what the hub does to it before Word 
 
 - A `package.json` with a `build:hub` script, or else a `build` script. The hub runs `bun run build:hub` when it exists and `bun run build` otherwise. Either may write any origin into the manifest.
 - A `dist/` folder after the build, holding:
-  - `manifest.xml` with the task pane page in `<DefaultSettings><SourceLocation DefaultValue="…"/>`;
+  - `manifest.xml` with the task pane page in `<DefaultSettings><SourceLocation DefaultValue="…"/>`, its origin spelled as a browser would (lower-case host, no default port), and the `<Id>` and `<Version>` every Office manifest has, which `Stylistic.docx` is made from;
   - `taskpane.html` with a `</head>`, where the hub puts the token.
 - A task pane that reads the hub token from `<meta name="stylistic-hub-token">` and speaks [API v1](api.md). There is no sign-in.
 
@@ -23,11 +23,11 @@ When bundling (`resources/addin/`, gitignored):
 When serving (`src/backend/adapters/http/addin-routes.ts`):
 
 - Puts the hub token into `taskpane.html` as `<meta name="stylistic-hub-token">`.
-- Adds each local script and stylesheet's modification time to its URL in `taskpane.html` (`taskpane.js?v=…`) and sends every add-in file with `Cache-Control: no-cache`, so Word never runs a stale copy of a rebuilt add-in and nobody has to clear Office's cache.
+- Adds each local file's modification time to every `src` and `href` in `taskpane.html` that names one without a query (`taskpane.js?v=…`), serves `taskpane.html` itself with `Cache-Control: no-store` and every other add-in file with `no-cache`, so Word never runs a stale copy of a rebuilt add-in and nobody has to clear Office's cache.
 
 ## Development override
 
-The backend serves the folder its `--addin <dir>` flag names (`src/backend/entry.ts`); without the flag it serves only the API. The Electron hub always passes `resources/addin/` (in an installed hub, the `addin` folder of its resources). Starting the backend yourself with `--addin <dir>` serves another build, for example the add-in's own `dist/` while working on it. That folder gets the serving steps above but not the bundling ones, so its manifest must already name `https://localhost:3000`.
+The backend serves the folder its `--addin <dir>` flag names (`src/backend/entry.ts`); without the flag it serves only the API. The Electron hub passes `resources/addin/` whenever that folder exists (in an installed hub, the `addin` folder of its resources). Starting the backend yourself with `--addin <dir>` serves another build, for example the add-in's own `dist/` while working on it. That folder gets the serving steps above but not the bundling ones, so its manifest must already name `https://localhost:3000`.
 
 ## Installer staging
 
