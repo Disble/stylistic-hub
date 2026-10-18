@@ -1,4 +1,6 @@
 // The signed documents of component delivery (ADR 0001 D2–D4) as zod schemas (docs/signed-releases.md).
+// Signed documents are loose objects: fields a later version adds survive parsing, so the signature, which
+// covers every received field, still verifies. Formats evolve only by adding optional fields.
 import { z } from 'zod'
 
 /** Component ids, kinds, publishers and key scopes. */
@@ -18,11 +20,11 @@ const channel = z.enum(['stable', 'beta'])
 const keyRoleSchema = z.enum(['root', 'catalog', 'component'])
 
 /** `keys.json`: the online keys, versioned and expiring so an old list cannot be replayed. */
-export const keyListSchema = z.object({
+export const keyListSchema = z.looseObject({
   version: z.number().int().positive(),
   expires: z.iso.datetime(),
   keys: z.array(
-    z.object({
+    z.looseObject({
       id: keyIdPattern,
       role: keyRoleSchema,
       /** For component keys: the repository whose release streams the key signs. */
@@ -37,7 +39,7 @@ export const keyListSchema = z.object({
 export const envelopeSchema = z.object({ keyId: keyIdPattern, signature: z.base64() })
 
 /** `component.json`: what one release artifact is, pinned by its sha256 (D2). */
-export const componentSchema = z.object({
+export const componentSchema = z.looseObject({
   id: name,
   kind: name,
   version,
@@ -51,9 +53,9 @@ export const componentSchema = z.object({
 })
 
 /** `catalog/catalog.source.json`: the components the hub offers, changed by reviewed pull request. */
-const catalogSourceSchema = z.object({
+const catalogSourceSchema = z.looseObject({
   components: z.array(
-    z.object({
+    z.looseObject({
       id: name,
       kind: name,
       publisher: name,

@@ -20,6 +20,8 @@ The envelope names its signer, so a verifier can tell an unknown key from a know
 
 For the server, `provides` is `{ "api": ["v1"], "schemaVersion": <n>, "minReaderSchema": <n> }`; both numbers are the database schema version the server migrates to (M4 gives `minReaderSchema` its own value), and `requires` is `{}`.
 
+Formats evolve only by adding optional fields. The schemas keep fields they do not know, so the signature, which covers every received field, still verifies on hubs released before the field existed. A new value in an existing enum (a new key role or channel) fails parsing on those hubs, so it needs a hub release first.
+
 ## Verification
 
 `src/shared/signing/verify.ts` holds pure functions over parsed documents (`node:crypto` and zod only, coverage tier `core`). Each returns `'ok'` or the reason:

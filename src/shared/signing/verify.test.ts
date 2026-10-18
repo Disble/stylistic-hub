@@ -243,3 +243,46 @@ describe('documents', () => {
     expect(envelopeSchema.safeParse({ keyId: 'xyz', signature: 'AA==' }).success).toBe(false)
   })
 })
+
+describe('forward compatibility', () => {
+  /** Raw documents carrying an optional field a later version adds, at the top level and nested. */
+  const futureCatalog = {
+    ...CATALOG,
+    mirrors: ['https://mirror.example.com'],
+    components: CATALOG.components.map((component) => ({ ...component, minHub: '0.3.0' }))
+  }
+  const futureComponent = { ...COMPONENT, signedAt: '2026-10-18T12:00:00.000Z' }
+
+  it('verifies a catalog with added fields when signed over its full content', () => {
+    const { catalogKey, list } = world()
+    const catalog = catalogSchema.parse(futureCatalog)
+    const envelope = { keyId: catalogKey.id, signature: signature(futureCatalog, catalogKey.privateKey) }
+
+    expect(verifyCatalog(catalog, envelope, list, 0, NOW)).toBe('ok')
+    expect(verifyCatalog({ ...catalog, mirrors: [] }, envelope, list, 0, NOW)).toBe('bad_signature')
+  })
+
+  it('verifies a component.json with an added field when signed over its full content', () => {
+    const { componentKey, list } = world()
+    const component = componentSchema.parse(futureComponent)
+    const envelope = {
+      keyId: componentKey.id,
+      signature: signature(futureComponent, componentKey.privateKey)
+    }
+
+    expect(verifyComponent(component, envelope, list, 'stylistic-hub')).toBe('ok')
+    expect(verifyComponent({ ...component, signedAt: 'x' }, envelope, list, 'stylistic-hub')).toBe(
+      'bad_signature'
+    )
+  })
+
+  it('verifies a key list with added fields when signed over its full content', () => {
+    const { root, list, roots } = world()
+    const future = { ...list, issuer: 'disble', keys: list.keys.map((key) => ({ ...key, notAfter: '2028' })) }
+    const parsed = keyListSchema.parse(future)
+    const sig = signature(future, root.privateKey)
+
+    expect(verifyKeyList(parsed, sig, roots, 0, NOW)).toBe('ok')
+    expect(verifyKeyList({ ...parsed, issuer: 'mallory' }, sig, roots, 0, NOW)).toBe('bad_signature')
+  })
+})
