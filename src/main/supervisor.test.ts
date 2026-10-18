@@ -261,6 +261,26 @@ describe('createSupervisor', () => {
     expect(children).toHaveLength(2)
   })
 
+  it('halts after a requested restart: waits for the detached child and never launches its replacement', async () => {
+    const supervisor = createSupervisor({ spawn, backoffMs: [1000] })
+    supervisor.start()
+    const old = children[0]
+    if (old) old.exitsOnKill = false
+    supervisor.restart()
+
+    let halted = false
+    const halting = supervisor.halt().then(() => (halted = true))
+    await Promise.resolve()
+    expect(halted).toBe(false)
+    old?.exit(0)
+    await halting
+    vi.advanceTimersByTime(10_000)
+
+    expect(children).toHaveLength(1)
+    supervisor.start()
+    expect(children).toHaveLength(2)
+  })
+
   it('halts at once when no child runs, cancelling a pending restart', async () => {
     const supervisor = createSupervisor({ spawn, backoffMs: [1000] })
     supervisor.start()

@@ -27,7 +27,10 @@ export interface Supervisor {
   restart(): void
   /** Stops for good: cancels a pending restart and kills the running child. */
   stop(): void
-  /** Stops until the next `start`: cancels a pending restart, kills the child and resolves once it exited. */
+  /**
+   * Stops until the next `start`: cancels a pending restart, kills the child and resolves once it exited, as well
+   * as a child a requested restart detached, whose replacement is cancelled.
+   */
   halt(): Promise<void>
 }
 
@@ -48,6 +51,10 @@ export function createSupervisor({
   /** Exits in a row of runs that never became stable. */
   let unstableExits = 0
   let stopped = false
+  /** The child a requested restart killed, until it exited. */
+  let detached: SupervisedChild | undefined
+  /** Bumped by `halt`, so a restart requested before it launches nothing. */
+  let epoch = 0
 
   const launch = () => {
     restartTimer = undefined
@@ -93,8 +100,11 @@ export function createSupervisor({
       }
       // Detached first, so its exit is not a crash; the new child must not race it for the port.
       child = undefined
+      detached = previous
+      const requestedIn = epoch
       previous.on('exit', () => {
-        if (!stopped && !child && !restartTimer) launch()
+        if (detached === previous) detached = undefined
+        if (!stopped && !child && !restartTimer && requestedIn === epoch) launch()
       })
       previous.kill()
     },
@@ -110,13 +120,14 @@ export function createSupervisor({
       restartTimer = undefined
       attempt = 0
       unstableExits = 0
+      epoch += 1
       const previous = child
       child = undefined
-      if (!previous) return Promise.resolve()
-      return new Promise<void>((resolve) => {
-        previous.on('exit', () => resolve())
-        previous.kill()
-      })
+      const exited = (target: SupervisedChild | undefined) =>
+        target ? new Promise<void>((resolve) => target.on('exit', () => resolve())) : undefined
+      const waits = [exited(previous), exited(detached)]
+      previous?.kill()
+      return Promise.all(waits).then(() => undefined)
     }
   }
 }
