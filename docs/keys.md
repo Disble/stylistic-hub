@@ -16,7 +16,7 @@ All keys are ed25519. A key's id is the first 16 hex characters of the sha256 of
 
 ## The ceremony
 
-`powershell -ExecutionPolicy Bypass -File scripts\keys\ceremony.ps1` asks for the root passphrase twice without echoing it, then `scripts/keys/ceremony.ts`:
+`powershell -ExecutionPolicy Bypass -File scripts\keys\ceremony.ps1` asks for the root passphrase (shown as typed in that window only and confirmed with y/n, so a typo is caught; an empty line generates one), logs each step without secrets to `%TEMP%stylistic-ceremony.log`, then `scripts/keys/ceremony.ts`:
 
 1. generates the root, next-root, catalog and two component keys;
 2. sets the three online private keys as GitHub secrets through `gh secret set`'s standard input (they never touch a file);
@@ -24,6 +24,10 @@ All keys are ed25519. A key's id is the first 16 hex characters of the sha256 of
 4. writes `keys/keys.json`, its signature and the two root public keys, which are committed.
 
 It refuses to run again when `keys/keys.json` or the root key already exists. `-DryRun` rehearses it without GitHub, writing everything to the output folder.
+
+## Current keys
+
+Created on 2026-10-18 (UTC): root `a49bd78323e2340c`, next root `d31edbcad900d12a`, catalog `77d3ce267f29ad27`, component `827aac48598c9373` (`stylistic-hub`), component `a1baaad201312a0f` (`stylistic-addon`). `keys/keys.json` is version 1 and expires on 2027-11-18; re-sign it by October 2027.
 
 ## Later
 

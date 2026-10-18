@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "expires": "2027-11-18T04:53:46.474Z",
+  "keys": [
+    {
+      "id": "77d3ce267f29ad27",
+      "role": "catalog",
+      "publicKey": "DDuyZUILeLOsnvdiep7fVwCgaOW/8714IkdynfZxzNo="
+    },
+    {
+      "id": "827aac48598c9373",
+      "role": "component",
+      "scope": "stylistic-hub",
+      "publicKey": "NuYanl418yFhHEnEfLNu7vShSk0JNTO29MaluhJ8mX0="
+    },
+    {
+      "id": "a1baaad201312a0f",
+      "role": "component",
+      "scope": "stylistic-addon",
+      "publicKey": "u474Q/BHDrHzuOkb+7LrOlc9vHX91ZpBzWQuJRkgE8k="
+    }
+  ]
+}

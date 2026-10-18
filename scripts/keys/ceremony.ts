@@ -1,5 +1,5 @@
 // The one-time signing key ceremony (docs/keys.md). Run it through ceremony.ps1, which asks for the root
-// passphrase without echoing it. Private keys are never printed: the root keys are written encrypted to --out,
+// passphrase and keeps it out of its log. Private keys are never printed: the root keys are written encrypted to --out,
 // and the online keys go straight to GitHub secrets through gh's stdin, never to a file.
 // Usage: bun scripts/keys/ceremony.ts [--out <dir>] [--dry-run]
 import { execFileSync } from 'node:child_process'
