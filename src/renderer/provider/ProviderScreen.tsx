@@ -1,4 +1,4 @@
-import { makeStyles, MessageBar, MessageBarBody } from '@fluentui/react-components'
+import { makeStyles, MessageBar, MessageBarBody, Text, tokens } from '@fluentui/react-components'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { LocalModel, ModelSummary, ProviderSummary } from '../../shared/bridge'
 import type { LoginAuthType } from '../../shared/login/login'
@@ -15,7 +15,8 @@ const useStyles = makeStyles({
     gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
     gap: '12px',
     alignItems: 'stretch'
-  }
+  },
+  privacy: { margin: 0, color: tokens.colorNeutralForeground2 }
 })
 
 /** True when the provider offers this sign-in method. */
@@ -107,6 +108,11 @@ export function ProviderScreen() {
         />
       }
     >
+      {/* The privacy notice (odd/tasks/readiness.md S1): shown here, where the provider is chosen, and nowhere else. */}
+      <Text as="p" className={styles.privacy}>
+        The text you analyze and the document’s style profile go only to the provider you choose here; the hub
+        sends nothing else anywhere (no telemetry).
+      </Text>
       {error && (
         <MessageBar intent="error">
           <MessageBarBody>{error}</MessageBarBody>

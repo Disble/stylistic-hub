@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs'
+import { arch, release, type } from 'node:os'
 import { join } from 'node:path'
 import { app, BrowserWindow, Menu, nativeImage, shell, Tray } from 'electron'
 import { safeExternalUrl } from '../shared/login/external-link'
@@ -14,6 +15,7 @@ import { registerScreenIpc } from './ipc-screens'
 import { createPiProvider } from './pi-provider'
 import { createServerStatus } from './server-status'
 import { createServerSwitch, serverDirFlag } from './server-switch'
+import { channelControls } from './updates/channels'
 import { startUpdateChecks } from './updates/schedule'
 import { startSelfUpdate } from './updates/self-update-electron'
 import { createWordIntegration } from './word-integration'
@@ -127,8 +129,9 @@ if (!isSingleInstance) {
     const selfUpdate = startSelfUpdate({ userData, currentVersion: app.getVersion() })
     const updates = startUpdateChecks({
       userData,
+      database: paths.database,
       fetch,
-      onChecked: () => void serverSwitch.refresh(),
+      onChecked: (report) => void serverSwitch.refresh(report),
       onReport: selfUpdate.onReport
     })
     const serverSwitch = createServerSwitch({
@@ -185,6 +188,16 @@ if (!isSingleInstance) {
           await word.disconnect()
           keepInWord(false)
         }
+      },
+      channelControls(updates.engine, updates.check),
+      {
+        logsDir: app.getPath('logs'),
+        componentsRoot: join(userData, 'components'),
+        hubVersion: app.getVersion(),
+        os: `${type()} ${release()} ${arch()}`,
+        versions: { electron: process.versions.electron, node: process.versions.node },
+        serverStatus: status.get,
+        wordStatus: word.status
       },
       serverSwitch.restartAllowed
     )

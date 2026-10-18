@@ -22,13 +22,17 @@ const historyEntrySchema = z.object({
   reason: z.string().nullable()
 })
 
+/** The release stream a component follows (odd/tasks/channels.md S1); absent means `stable`. */
+export const channelSchema = z.enum(['stable', 'beta'])
+
 /** One component's installed versions: `current` runs, `previous` is the rollback target, `bad` never retried. */
 const componentStateSchema = z.object({
   current: z.string().nullable(),
   previous: z.string().nullable(),
   bad: z.array(z.string()),
   /** The key that signed `current`'s component.json. */
-  keyId: z.string().nullable()
+  keyId: z.string().nullable(),
+  channel: channelSchema.optional()
 })
 
 /** The whole `state.json`. */
@@ -36,13 +40,19 @@ const stateSchema = z.object({
   serial: z.number(),
   keysVersion: z.number(),
   components: z.record(z.string(), componentStateSchema),
-  history: z.array(historyEntrySchema)
+  history: z.array(historyEntrySchema),
+  /** A random UUID created once, for staged rollouts (odd/tasks/channels.md S3). */
+  installId: z.string().optional(),
+  /** The hub's own channel; the hub is not a component of `components`. */
+  hub: z.object({ channel: channelSchema }).optional()
 })
 
 /** A parsed `state.json`. */
 export type UpdateState = z.infer<typeof stateSchema>
 /** One component's entry in `state.json`. */
 export type ComponentState = z.infer<typeof componentStateSchema>
+/** A release stream. */
+export type Channel = z.infer<typeof channelSchema>
 /** One history line. */
 export type HistoryEntry = z.infer<typeof historyEntrySchema>
 

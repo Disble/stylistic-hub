@@ -51,6 +51,15 @@ export interface ServerStatus {
   reason?: string
 }
 
+/** A release stream: `stable`, or `beta` prereleases. */
+export type Channel = 'stable' | 'beta'
+
+/** The channels the Server screen chooses: the server's and the hub's own. */
+export interface Channels {
+  server: Channel
+  hub: Channel
+}
+
 /** The API the preload script exposes to the renderer as `window.hub`. */
 export interface HubBridge {
   versions: {
@@ -81,8 +90,13 @@ export interface HubBridge {
     restart(): Promise<void>
     /** Opens the hub's logs folder in Explorer. */
     openLogs(): Promise<void>
+    /** Asks where to save the diagnostics zip and writes it; resolves to its path, or undefined when canceled. */
+    exportDiagnostics(): Promise<string | undefined>
     /** Subscribes to status changes; returns the unsubscribe function. */
     onStatus(listener: (status: ServerStatus) => void): () => void
+    channels(): Promise<Channels>
+    /** Sets the channel of the server or the hub, then runs a catalog check. */
+    setChannel(target: keyof Channels, channel: Channel): Promise<void>
   }
   word: {
     status(): Promise<WordStatus>
