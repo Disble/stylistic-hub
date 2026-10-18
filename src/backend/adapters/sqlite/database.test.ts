@@ -95,7 +95,7 @@ describe('openDatabase', () => {
     })
     expect(db.prepare('SELECT count(*) AS n FROM analysis').get()).toEqual({ n: 0 })
     db.close()
-    expect(userVersion(file)).toBe(3)
+    expect(userVersion(file)).toBe(4)
   })
 
   it('refuses a database written by a newer hub', () => {
@@ -130,14 +130,14 @@ describe('openDatabase', () => {
     expect(() => openDatabase(file)).toThrow(`this hub reads schema ${SCHEMA_VERSION}`)
   })
 
-  it('records minReaderSchema in a new database: every shipped migration is a contract', () => {
+  it('records minReaderSchema in a new database: the 0.0.1 schemas are contracts, analysis_part an expand', () => {
     const file = join(dir, 'stylistic.db')
 
     openDatabase(file).close()
 
-    expect(SCHEMA_VERSION).toBe(3)
-    expect(MIGRATIONS.map((m) => m.kind)).toEqual(['contract', 'contract', 'contract'])
-    expect(readSchemaState(file)).toEqual({ userVersion: 3, minReaderSchema: 3 })
+    expect(SCHEMA_VERSION).toBe(4)
+    expect(MIGRATIONS.map((m) => m.kind)).toEqual(['contract', 'contract', 'contract', 'expand'])
+    expect(readSchemaState(file)).toEqual({ userVersion: 4, minReaderSchema: 3 })
   })
 
   it('takes no backup of a brand-new database or of one with no migration pending', () => {
@@ -170,13 +170,13 @@ describe('openDatabase', () => {
     ])
     expect(backup.prepare('PRAGMA user_version').get()).toEqual({ user_version: 2 })
     backup.close()
-    expect(readSchemaState(file)).toEqual({ userVersion: 3, minReaderSchema: 3 })
+    expect(readSchemaState(file)).toEqual({ userVersion: 4, minReaderSchema: 3 })
   })
 
-  it('opens a 0.0.1 database, keeps every row and reports minReaderSchema 3', () => {
+  it('opens a 0.0.1 database, backs it up, keeps every row and reports minReaderSchema 3', () => {
     const file = join(dir, 'stylistic.db')
     const raw = new DatabaseSync(file)
-    for (const migration of MIGRATIONS) raw.exec(migration.sql)
+    for (const migration of MIGRATIONS.slice(0, 3)) raw.exec(migration.sql)
     raw.exec(`INSERT INTO document VALUES ('doc', 'Sofía', 'general', '{}', '# Perfil', '2026-01-01');
     INSERT INTO preferences VALUES (1, 'Respeta el voseo');
     INSERT INTO analysis VALUES ('a1', 'doc', 'completed', 'updated', 'run', '2026-01-01', '2026-01-02');
@@ -193,8 +193,8 @@ describe('openDatabase', () => {
     db.close()
 
     expect(counts).toEqual([1, 1, 1, 1, 1, 1])
-    expect(readSchemaState(file)).toEqual({ userVersion: 3, minReaderSchema: 3 })
-    expect(existsSync(join(dir, 'backups'))).toBe(false)
+    expect(readSchemaState(file)).toEqual({ userVersion: 4, minReaderSchema: 3 })
+    expect(existsSync(join(dir, 'backups'))).toBe(true)
   })
 
   it('uses WAL', () => {

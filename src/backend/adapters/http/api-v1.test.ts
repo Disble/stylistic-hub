@@ -237,6 +237,12 @@ describe('API v1', { timeout: 30_000 }, () => {
     ['an unknown genre', `/documents/${DOC}/analyses`, { genre: 'poesia', chunks: [CHUNK] }],
     ['no chunks', `/documents/${DOC}/analyses`, { genre: 'general', chunks: [] }],
     ['repeated chunk ids', `/documents/${DOC}/analyses`, { genre: 'general', chunks: [CHUNK, CHUNK] }],
+    ['an unknown field', `/documents/${DOC}/analyses`, { genre: 'general', chunks: [CHUNK], title: 'x' }],
+    [
+      'an unknown chunk field',
+      `/documents/${DOC}/analyses`,
+      { genre: 'general', chunks: [{ ...CHUNK, index: 0 }] }
+    ],
     [
       'the old Mastra body',
       `/documents/${DOC}/analyses`,

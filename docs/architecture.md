@@ -212,6 +212,7 @@ Hono (HTTP) and Electron are the outer driving side and get no port: they are en
 - One adapter per adopted tool; keep it thin (glue, not engines).
 - Any new port records its reason in the table above.
 - A workflow body never catches what a step throws: OpenWorkflow retries a failed step by replaying the run and pauses a run by throwing. Work whose final failure must be recorded (a part, the profile update, processing feedback) runs as a child workflow, whose failure is final and comes back as a `ChildResult`.
+- A step that writes must be safe to run again: OpenWorkflow reruns a step whose result it did not record, even when its write committed (a part's save is recorded once in `analysis_part`).
 - The profile is written once per analysis and once per feedback, through `profile-updater.ts`, which serializes writes per document so no update is lost.
 - Tests that run workflows and services over the real SQLite adapters are named `*.integration.test.ts` and live in their own fallow zone, which may import adapters; rules such as how an analysis settles live in the repository's SQL, and a fake would duplicate them.
 

@@ -47,7 +47,9 @@ export class SqliteFeedbackRepository implements FeedbackRepository {
 
   complete(id: string, outcome: FeedbackOutcome, summary?: string): void {
     this.db
-      .prepare(`UPDATE feedback SET status = 'completed', outcome = ?, summary = ? WHERE id = ?`)
+      .prepare(
+        `UPDATE feedback SET status = 'completed', outcome = ?, summary = ?, error = NULL WHERE id = ?`
+      )
       .run(outcome, summary ?? null, id)
   }
 
