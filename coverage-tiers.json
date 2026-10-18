@@ -3,7 +3,8 @@
   "enforcedPrefixes": [
     "src/backend/",
     "src/main/",
-    "src/renderer/"
+    "src/renderer/",
+    "src/shared/signing/"
   ],
   "features": [
     {
@@ -89,6 +90,12 @@
           "reason": "Test double of window.hub, imported only by renderer tests"
         }
       ]
+    },
+    {
+      "id": "signing",
+      "path": "src/shared/signing/",
+      "defaultTier": "core",
+      "reason": "Signature and integrity checks of the key list, catalog and components: a miss installs untrusted code"
     }
   ]
 }

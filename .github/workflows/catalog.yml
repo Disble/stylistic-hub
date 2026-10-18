@@ -1,0 +1,44 @@
+# Signs catalog/catalog.source.json with the catalog key and publishes catalog.json, its signature and the
+# current key list (keys/keys.json and its root signature) on the `catalog` GitHub Release, so the hub reads
+# both from one stable URL (docs/signed-releases.md). Runs daily, so the catalog never expires unattended
+# (+14 days), on every catalog change merged to main, and by hand.
+name: Catalog
+
+on:
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['catalog/**']
+
+permissions:
+  contents: write
+
+concurrency: catalog
+
+env:
+  # The lefthook hooks call the local-only dharness binary; nothing here commits.
+  LEFTHOOK: '0'
+  BUN_VERSION: 1.4.1
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - run: bun scripts/catalog/sign-catalog.ts --out out/catalog
+        env:
+          STYLISTIC_CATALOG_KEY: ${{ secrets.STYLISTIC_CATALOG_KEY }}
+      - name: Upload to the catalog release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view catalog >/dev/null 2>&1 || gh release create catalog --prerelease --latest=false \
+            --title Catalog --notes 'The signed catalog and key list the hub reads (docs/signed-releases.md).'
+          gh release upload catalog out/catalog/catalog.json out/catalog/catalog.json.sig \
+            keys/keys.json keys/keys.json.sig --clobber
