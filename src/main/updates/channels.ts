@@ -2,6 +2,7 @@
 // entries this install is offered, for the engine's installs and the hub's self-update alike.
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
+import { componentSchema } from '../../shared/signing/documents'
 import type { UpdateEngine } from './engine'
 import { HUB_ID, type CatalogEntry } from './install'
 import { channelSchema, type Channel, type UpdateState } from './state'
@@ -29,8 +30,19 @@ export function offered(entry: CatalogEntry, channel: Channel, installId: string
 /** The two channels the Server screen chooses. */
 const targetSchema = z.enum(['server', 'hub'])
 
-/** The Server screen's channel choices: read both, set one and then run a catalog check (S5). */
+/**
+ * The channel choices of the Server screen (server and hub) and the Library screen (also installed modules): read
+ * the first two, set one and then run a catalog check (S5).
+ */
 export function channelControls(engine: Pick<UpdateEngine, 'readState' | 'setChannel'>, check: () => void) {
+  /** The component `target` names: `hub`, `server`, or a module in the state (else setting it would request it). */
+  const componentOf = async (target: string): Promise<string> => {
+    const known = targetSchema.safeParse(target)
+    if (known.success) return known.data === 'hub' ? HUB_ID : 'server'
+    const id = componentSchema.shape.id.parse(target)
+    if (!(await engine.readState()).components[id]) throw new Error(`${id} is not installed`)
+    return id
+  }
   return {
     async get(): Promise<Record<z.infer<typeof targetSchema>, Channel>> {
       const state = await engine.readState()
@@ -38,8 +50,8 @@ export function channelControls(engine: Pick<UpdateEngine, 'readState' | 'setCha
     },
     /** Validates both values (they come from the renderer) before anything is written; the check runs on its own. */
     async set(target: string, channel: string): Promise<void> {
-      const id = targetSchema.parse(target) === 'hub' ? HUB_ID : 'server'
-      await engine.setChannel(id, channelSchema.parse(channel))
+      const value = channelSchema.parse(channel)
+      await engine.setChannel(await componentOf(target), value)
       check()
     }
   }

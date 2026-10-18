@@ -5,6 +5,8 @@ import {
   DocumentText24Regular,
   Home24Filled,
   Home24Regular,
+  Library24Filled,
+  Library24Regular,
   Server24Filled,
   Server24Regular,
   Sparkle24Filled,
@@ -15,6 +17,7 @@ import { useState } from 'react'
 import logo from './assets/logo.png'
 import { HomeScreen } from './home/HomeScreen'
 import type { Screen } from './hub-state'
+import { LibraryScreen } from './library/LibraryScreen'
 import { ProviderScreen } from './provider/ProviderScreen'
 import { ServerScreen } from './server/ServerScreen'
 import { stylisticTheme } from './theme'
@@ -25,7 +28,8 @@ const SCREENS: { value: Screen; label: string; icon: FluentIcon }[] = [
   { value: 'home', label: 'Home', icon: bundleIcon(Home24Filled, Home24Regular) },
   { value: 'word', label: 'Word', icon: bundleIcon(DocumentText24Filled, DocumentText24Regular) },
   { value: 'server', label: 'Server', icon: bundleIcon(Server24Filled, Server24Regular) },
-  { value: 'provider', label: 'Provider', icon: bundleIcon(Sparkle24Filled, Sparkle24Regular) }
+  { value: 'provider', label: 'Provider', icon: bundleIcon(Sparkle24Filled, Sparkle24Regular) },
+  { value: 'library', label: 'Library', icon: bundleIcon(Library24Filled, Library24Regular) }
 ]
 
 /** Griffel classes from the Stylistic theme tokens. */
@@ -100,6 +104,7 @@ export function App() {
           {screen === 'word' && <WordScreen />}
           {screen === 'server' && <ServerScreen onOpen={setScreen} />}
           {screen === 'provider' && <ProviderScreen />}
+          {screen === 'library' && <LibraryScreen />}
         </div>
       </main>
     </FluentProvider>

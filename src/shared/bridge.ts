@@ -60,6 +60,40 @@ export interface Channels {
   hub: Channel
 }
 
+/** One line of a component's update history, as the Library screen shows it. */
+export interface HistoryLine {
+  time: string
+  from: string | null
+  to: string | null
+  outcome: 'installed' | 'failed' | 'disabled' | 'marked_bad' | 'switched'
+  reason: string | null
+}
+
+/** One card of the Library screen (odd/tasks/module-library.md S5). */
+export interface LibraryComponent {
+  id: string
+  kind: 'server' | 'hub' | 'module'
+  /** The running version; null when none is installed. */
+  installed: string | null
+  /** A module the user asked for, which the next catalog check installs. */
+  requested: boolean
+  channel: Channel
+  /** The version the last verified catalog offers this install on the component's channel. */
+  available: string | null
+  /** The newest history lines first. */
+  history: HistoryLine[]
+}
+
+/** What the Library screen shows. */
+export interface Library {
+  /** No server component is installed yet: the hub downloads it at each catalog check. */
+  firstRun: boolean
+  /** A catalog check succeeded since the hub opened, so `available` is known. */
+  catalog: boolean
+  /** The server, the hub, then the modules by id. */
+  components: LibraryComponent[]
+}
+
 /** The API the preload script exposes to the renderer as `window.hub`. */
 export interface HubBridge {
   versions: {
@@ -95,8 +129,18 @@ export interface HubBridge {
     /** Subscribes to status changes; returns the unsubscribe function. */
     onStatus(listener: (status: ServerStatus) => void): () => void
     channels(): Promise<Channels>
-    /** Sets the channel of the server or the hub, then runs a catalog check. */
-    setChannel(target: keyof Channels, channel: Channel): Promise<void>
+    /** Sets the channel of the server, the hub (`hub`) or an installed module (its id), then runs a catalog check. */
+    setChannel(target: string, channel: Channel): Promise<void>
+  }
+  library: {
+    list(): Promise<Library>
+    /** Asks for module `id`, then runs a catalog check, which installs it. */
+    install(id: string): Promise<void>
+    uninstall(id: string): Promise<void>
+    /** Runs a catalog check now. */
+    check(): Promise<void>
+    /** Subscribes to the end of each catalog check; returns the unsubscribe function. */
+    onChecked(listener: () => void): () => void
   }
   word: {
     status(): Promise<WordStatus>

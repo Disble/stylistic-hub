@@ -2,6 +2,7 @@ import { mkdir } from 'node:fs/promises'
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { exportDiagnostics, type DiagnosticsSources } from './diagnostics'
 import type { createServerStatus } from './server-status'
+import type { createLibrary } from './library'
 import type { Supervisor } from './supervisor'
 import type { channelControls } from './updates/channels'
 import type { createWordIntegration } from './word-integration'
@@ -10,7 +11,10 @@ import type { createWordIntegration } from './word-integration'
 const DIAGNOSTICS_TITLE =
   "Export diagnostics (includes the hub's logs, which may hold excerpts of analyzed text)"
 
-/** Serves the Server screen (status, restart, logs, channels, diagnostics) and the Word screen (status, connect, disconnect). */
+/**
+ * Serves the Server screen (status, restart, logs, channels, diagnostics), the Word screen (status, connect,
+ * disconnect) and the Library screen (list, install, uninstall, check; its channels use the Server screen's call).
+ */
 export function registerScreenIpc(
   server: ReturnType<typeof createServerStatus>,
   backend: Supervisor,
@@ -18,6 +22,7 @@ export function registerScreenIpc(
   word: ReturnType<typeof createWordIntegration>,
   channels: ReturnType<typeof channelControls>,
   diagnostics: DiagnosticsSources,
+  library: ReturnType<typeof createLibrary>,
   restartAllowed: () => boolean = () => true
 ): void {
   ipcMain.handle('hub:server:status', () => server.get())
@@ -52,6 +57,10 @@ export function registerScreenIpc(
       }
     })
   )
+  ipcMain.handle('hub:library:list', () => library.list())
+  ipcMain.handle('hub:library:install', (_event, id: string) => library.install(id))
+  ipcMain.handle('hub:library:uninstall', (_event, id: string) => library.uninstall(id))
+  ipcMain.handle('hub:library:check', () => library.check())
   ipcMain.handle('hub:word:status', () => word.status())
   ipcMain.handle('hub:word:connect', () => word.connect())
   ipcMain.handle('hub:word:disconnect', () => word.disconnect())
