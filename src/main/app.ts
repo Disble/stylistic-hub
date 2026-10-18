@@ -183,6 +183,7 @@ if (!isSingleInstance) {
           }
         }),
       serverHealthy: () => waitUntilHealthy({ request: hubRequest('/api/v1/status') }),
+      servesModules: async () => (await hubRequest('/api/v1/modules')().catch(() => 0)) !== 404,
       onChange: () =>
         void word
           .sync()

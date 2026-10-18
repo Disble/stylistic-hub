@@ -94,6 +94,7 @@ export function createModuleSwitch({
   restartAllowed,
   healthy,
   serverHealthy,
+  servesModules,
   onChange,
   report,
   log = console.warn
@@ -109,6 +110,8 @@ export function createModuleSwitch({
   healthy: (id: string) => Promise<boolean>
   /** Waits for the server's own health check; a module gets no verdict while the server is down. */
   serverHealthy: () => Promise<boolean>
+  /** Whether the running server serves modules (`GET /api/v1/modules` is not 404): an older one ignores them. */
+  servesModules: () => Promise<boolean>
   /** Told when the served modules Word should register changed: a module passed its check or left the set. */
   onChange: () => void
   /** Why a module version was rolled back, for the Server screen. */
@@ -159,6 +162,13 @@ export function createModuleSwitch({
   const check = async (id: string, version: string, run: number): Promise<void> => {
     if (!(await serverHealthy())) {
       log(`module ${id} ${version}: the server is not healthy, so its health check gives no verdict`)
+      return
+    }
+    // A server older than module serving would fail every module's check and wrongly mark it bad.
+    if (!(await servesModules())) {
+      report(
+        `The running server does not serve modules yet, so ${id} ${version} waits for a server that does.`
+      )
       return
     }
     const ok = await healthy(id)

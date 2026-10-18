@@ -64,11 +64,13 @@ function stableManifest(): string {
 function makeSwitch({
   healthy = async () => true,
   serverHealthy = async () => true,
+  servesModules = async () => true,
   devModules = {},
   restartAllowed = () => true
 }: {
   healthy?: (id: string) => Promise<boolean>
   serverHealthy?: () => Promise<boolean>
+  servesModules?: () => Promise<boolean>
   devModules?: Record<string, string>
   restartAllowed?: () => boolean
 } = {}) {
@@ -85,6 +87,7 @@ function makeSwitch({
     restartAllowed,
     healthy: healthCheck,
     serverHealthy,
+    servesModules,
     onChange,
     report,
     log
@@ -339,6 +342,21 @@ describe('createModuleSwitch', () => {
     expect(healthCheck).not.toHaveBeenCalled()
     expect(onChange).not.toHaveBeenCalled()
     expect((await world.engine.readState()).components[ID]?.bad).toEqual([])
+  })
+
+  it('gives no verdict on a module while the running server serves no modules yet', async () => {
+    await install('1.0.0')
+    const { moduleSwitch, healthCheck, onChange, report } = makeSwitch({ servesModules: async () => false })
+
+    await moduleSwitch.start()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(healthCheck).not.toHaveBeenCalled()
+    expect(onChange).not.toHaveBeenCalled()
+    expect((await world.engine.readState()).components[ID]?.bad).toEqual([])
+    expect(report).toHaveBeenCalledWith(
+      `The running server does not serve modules yet, so ${ID} 1.0.0 waits for a server that does.`
+    )
   })
 
   it('reports a rollback that fails instead of throwing', async () => {
