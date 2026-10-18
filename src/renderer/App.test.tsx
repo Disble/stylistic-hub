@@ -18,8 +18,8 @@ describe('App', () => {
     const navigation = screen.getByRole('navigation', { name: 'Main' })
     expect(within(navigation).getByRole('img', { name: 'Stylistic' })).toBeTruthy()
     const tabs = within(navigation).getAllByRole('tab')
-    expect(tabs).toHaveLength(4)
-    for (const [index, name] of ['Home', 'Word', 'Server', 'Provider'].entries())
+    expect(tabs).toHaveLength(5)
+    for (const [index, name] of ['Home', 'Word', 'Server', 'Provider', 'Library'].entries())
       expect(within(navigation).getByRole('tab', { name })).toBe(tabs[index])
     expect(screen.getByRole('tab', { name: 'Home', selected: true })).toBeTruthy()
   })
@@ -27,7 +27,8 @@ describe('App', () => {
   it.each([
     ['Word', 'Stylistic for Word'],
     ['Server', 'Local server'],
-    ['Provider', 'AI provider']
+    ['Provider', 'AI provider'],
+    ['Library', 'Library']
   ])('opens the %s screen from the navigation', async (tab, heading) => {
     render(<App />)
 
