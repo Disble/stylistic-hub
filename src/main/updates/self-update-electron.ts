@@ -8,10 +8,14 @@
 //   startUpdateChecks({ userData, fetch, onReport: selfUpdate.onReport })   // and selfUpdate.stop() on quit
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { autoUpdater } from 'electron-updater'
+// electron-updater is CommonJS: Node's ESM loader exposes only its default export (a named import fails at load).
+import electronUpdater from 'electron-updater'
 import type { CheckReport, UpdateEngine } from './engine'
 import { HUB_ID } from './install'
 import { createSelfUpdate } from './self-update'
+
+/** electron-updater's singleton for this platform (NsisUpdater on Windows). */
+const { autoUpdater } = electronUpdater
 
 /** Starts the self-update of a hub running `currentVersion`; returns the report handler and a stop function. */
 export function startSelfUpdate({
