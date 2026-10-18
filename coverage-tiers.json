@@ -88,6 +88,11 @@
           "reason": "Wiring of the engine to the real clock, the embedded keys and a timer; exercised by launching the app"
         },
         {
+          "path": "src/main/updates/self-update-electron.ts",
+          "tier": "infrastructure",
+          "reason": "Wiring of the hub's self-update to electron-updater's autoUpdater; exercised by a packaged hub updating itself"
+        },
+        {
           "path": "src/main/updates/test-fixtures.ts",
           "tier": "infrastructure",
           "reason": "Signed test fixtures and the fake fetch, imported only by the update engine's tests"

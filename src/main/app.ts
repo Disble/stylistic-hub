@@ -15,6 +15,7 @@ import { createPiProvider } from './pi-provider'
 import { createServerStatus } from './server-status'
 import { createServerSwitch, serverDirFlag } from './server-switch'
 import { startUpdateChecks } from './updates/schedule'
+import { startSelfUpdate } from './updates/self-update-electron'
 import { createWordIntegration } from './word-integration'
 import { createWordSession } from './word-session'
 
@@ -122,7 +123,14 @@ if (!isSingleInstance) {
     })
     // Node's global fetch, as for the local model: the catalog and components are public HTTPS files whose
     // signatures the engine verifies, and it is the fetch type the engine is written and tested against.
-    const updates = startUpdateChecks({ userData, fetch, onChecked: () => void serverSwitch.refresh() })
+    // The hub's own update (D10): after each check, a newer verified installer is handed to electron-updater.
+    const selfUpdate = startSelfUpdate({ userData, currentVersion: app.getVersion() })
+    const updates = startUpdateChecks({
+      userData,
+      fetch,
+      onChecked: () => void serverSwitch.refresh(),
+      onReport: selfUpdate.onReport
+    })
     const serverSwitch = createServerSwitch({
       engine: updates.engine,
       componentsRoot: join(userData, 'components'),
@@ -138,6 +146,7 @@ if (!isSingleInstance) {
     void serverSwitch.start()
     app.on('will-quit', () => {
       updates.stop()
+      selfUpdate.stop()
       backend.stop()
     })
     registerProviderIpc(
