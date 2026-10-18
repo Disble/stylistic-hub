@@ -1,21 +1,28 @@
 import { readFileSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
+import { API_SCOPES, type ApiScope } from './adapters/http/module-tokens'
 
-/** A module the backend serves at `/m/<id>/`, and the version its manifest names. */
+/** A module the backend serves at `/m/<id>/`, the version its manifest names and the API scopes it declared. */
 export interface ServedModule {
   id: string
   dir: string
   version: string
+  scopes: ApiScope[]
 }
 
 /**
- * `STYLISTIC_MODULES`: `{ "<id>": "<absolute dir>" }`. Ids follow the component id pattern of the
- * signed documents (`src/shared/signing/documents.ts`), which also keeps them safe in a URL path.
+ * `STYLISTIC_MODULES`: `{ "<id>": { "dir": "<absolute dir>", "scopes": ["<scope>", ...] } }`. Ids follow
+ * the component id pattern of the signed documents (`src/shared/signing/documents.ts`), which also keeps
+ * them safe in a URL path; scopes are the API route groups the module's `component.json` declares in
+ * `requires.scopes`.
  */
 const modulesSchema = z.record(
   z.string().regex(/^[a-z][a-z0-9-]{1,40}$/, 'a component id'),
-  z.string().refine(isAbsolute, 'an absolute directory')
+  z.object({
+    dir: z.string().refine(isAbsolute, 'an absolute directory'),
+    scopes: z.array(z.enum(API_SCOPES))
+  })
 )
 
 /** The `<Version>` of an Office manifest; the add-in contract requires one. */
@@ -37,10 +44,10 @@ export function loadModules(value: string | undefined): ServedModule[] {
   const parsed = modulesSchema.safeParse(json)
   if (!parsed.success) {
     throw new Error(
-      `STYLISTIC_MODULES must be { "<id>": "<absolute dir>" }: ${z.prettifyError(parsed.error)}`
+      `STYLISTIC_MODULES must be { "<id>": { "dir": "<absolute dir>", "scopes": [...] } }: ${z.prettifyError(parsed.error)}`
     )
   }
-  return Object.entries(parsed.data).map(([id, dir]) => {
+  return Object.entries(parsed.data).map(([id, { dir, scopes }]) => {
     const manifest = join(dir, 'manifest.xml')
     let xml = ''
     try {
@@ -50,6 +57,6 @@ export function loadModules(value: string | undefined): ServedModule[] {
     }
     const version = MANIFEST_VERSION.exec(xml)?.[1]
     if (!version) throw new Error(`STYLISTIC_MODULES: module ${id} has no <Version> in ${manifest}`)
-    return { id, dir, version }
+    return { id, dir, version, scopes }
   })
 }
