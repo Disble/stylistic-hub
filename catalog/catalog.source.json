@@ -1,3 +1,30 @@
 {
-  "components": []
+  "components": [
+    {
+      "id": "stylistic-hub",
+      "kind": "hub",
+      "publisher": "stylistic-hub",
+      "channel": "stable",
+      "version": "1.0.0",
+      "sha256": "2bbc7715c83deb099c54cb89165b28e8432d4845a37342c98dbcc8f6c39fcb00",
+      "size": 128994476,
+      "artifactUrl": "https://github.com/Disble/stylistic-hub/releases/download/hub-v1.0.0/StylisticHub-Setup-1.0.0.exe",
+      "componentUrl": "https://github.com/Disble/stylistic-hub/releases/download/hub-v1.0.0/component.json",
+      "rolloutPercent": 100,
+      "blocked": []
+    },
+    {
+      "id": "server",
+      "kind": "server",
+      "publisher": "stylistic-hub",
+      "channel": "stable",
+      "version": "1.0.0",
+      "sha256": "6e585d10221bee1d841d2147da3343553aab366c417b76e9a44cffb94eb582c4",
+      "size": 38465725,
+      "artifactUrl": "https://github.com/Disble/stylistic-hub/releases/download/server-v1.0.0/server-1.0.0.zip",
+      "componentUrl": "https://github.com/Disble/stylistic-hub/releases/download/server-v1.0.0/component.json",
+      "rolloutPercent": 100,
+      "blocked": []
+    }
+  ]
 }
