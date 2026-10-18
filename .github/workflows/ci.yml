@@ -130,3 +130,5 @@ jobs:
         run: bun run release:hub
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signs the installer's component.json (scope stylistic-hub), like the server's.
+          STYLISTIC_COMPONENT_KEY: ${{ secrets.STYLISTIC_COMPONENT_KEY }}

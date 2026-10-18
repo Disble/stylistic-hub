@@ -1,9 +1,9 @@
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { MIGRATIONS, SCHEMA_VERSION, openDatabase, readSchemaState, restoreBackup } from './database'
+import { MIGRATIONS, SCHEMA_VERSION, openDatabase } from './database'
 
 /** Fresh folder for each test's database file. */
 let dir: string
@@ -22,6 +22,16 @@ function userVersion(file: string): number {
   const { user_version } = raw.prepare('PRAGMA user_version').get() as { user_version: number }
   raw.close()
   return user_version
+}
+
+/** The schema version and recorded minReaderSchema of a migrated database (src/shared/schema-state.ts reads them for the hub). */
+function readSchemaState(file: string): { userVersion: number; minReaderSchema: number } {
+  const raw = new DatabaseSync(file, { readOnly: true })
+  const { value } = raw.prepare('SELECT min_reader_schema AS value FROM schema_meta').get() as {
+    value: number
+  }
+  raw.close()
+  return { userVersion: userVersion(file), minReaderSchema: value }
 }
 
 /** Writes a database as a newer hub would: a higher user_version and its own minReaderSchema. */
@@ -195,8 +205,11 @@ describe('openDatabase', () => {
   })
 })
 
-/** Statements an expand migration must not contain: they break what the previous release reads. */
-const CONTRACT_ONLY = /\b(DROP\s+COLUMN|DROP\s+TABLE|RENAME|ALTER\s+COLUMN)\b/i
+/**
+ * Statements an expand migration must not contain: they break what the previous release reads. Any DROP counts,
+ * since SQLite accepts `ALTER TABLE t DROP b` without the COLUMN keyword.
+ */
+const CONTRACT_ONLY = /\bDROP\b|\bRENAME\b|\bALTER\s+COLUMN\b/i
 
 describe('expand/contract rule', () => {
   it('flags the statements that break the previous release, case-insensitively', () => {
@@ -204,6 +217,7 @@ describe('expand/contract rule', () => {
     expect(CONTRACT_ONLY.test('drop table preferences')).toBe(true)
     expect(CONTRACT_ONLY.test('ALTER TABLE document Rename TO doc')).toBe(true)
     expect(CONTRACT_ONLY.test('ALTER TABLE document alter column title')).toBe(true)
+    expect(CONTRACT_ONLY.test('ALTER TABLE t DROP b')).toBe(true)
     expect(CONTRACT_ONLY.test('ALTER TABLE document ADD COLUMN x TEXT; CREATE TABLE y (id TEXT)')).toBe(false)
   })
 
@@ -211,54 +225,5 @@ describe('expand/contract rule', () => {
     const offending = MIGRATIONS.filter((m) => m.kind === 'expand' && CONTRACT_ONLY.test(m.sql))
 
     expect(offending).toEqual([])
-  })
-})
-
-describe('readSchemaState', () => {
-  it('reads minReaderSchema as the database records it', () => {
-    const file = join(dir, 'stylistic.db')
-    writeNewerDatabase(file, SCHEMA_VERSION + 1, 1)
-
-    expect(readSchemaState(file)).toEqual({ userVersion: SCHEMA_VERSION + 1, minReaderSchema: 1 })
-  })
-
-  it('reads a 0.0.1 database as minReaderSchema = user_version, without changing the file', () => {
-    const file = join(dir, 'stylistic.db')
-    const raw = new DatabaseSync(file)
-    raw.exec(`${MIGRATIONS[0]!.sql}; PRAGMA user_version = 1;`)
-    raw.close()
-    const before = readFileSync(file)
-
-    expect(readSchemaState(file)).toEqual({ userVersion: 1, minReaderSchema: 1 })
-    expect(readFileSync(file).equals(before)).toBe(true)
-  })
-
-  it('does not create a missing database', () => {
-    const file = join(dir, 'missing.db')
-
-    expect(() => readSchemaState(file)).toThrow()
-    expect(existsSync(file)).toBe(false)
-  })
-})
-
-describe('restoreBackup', () => {
-  it('copies the backup over the database and removes the stale -wal and -shm files', () => {
-    const file = join(dir, 'stylistic.db')
-    const backupFile = join(dir, 'backup.db')
-    const raw = new DatabaseSync(file)
-    raw.exec(`CREATE TABLE t (v TEXT); INSERT INTO t VALUES ('before')`)
-    raw.exec(`VACUUM INTO '${backupFile.replaceAll("'", "''")}'`)
-    raw.exec(`INSERT INTO t VALUES ('after')`)
-    raw.close()
-    writeFileSync(`${file}-wal`, 'stale')
-    writeFileSync(`${file}-shm`, 'stale')
-
-    restoreBackup(file, backupFile)
-
-    expect(existsSync(`${file}-wal`)).toBe(false)
-    expect(existsSync(`${file}-shm`)).toBe(false)
-    const restored = new DatabaseSync(file)
-    expect(restored.prepare('SELECT v FROM t').all()).toEqual([{ v: 'before' }])
-    restored.close()
   })
 })

@@ -162,4 +162,133 @@ describe('createSupervisor', () => {
 
     expect(children).toHaveLength(1)
   })
+  it('hands a crash loop over after 3 exits of runs that never became stable, without restarting', () => {
+    const onCrashLoop = vi.fn(() => true)
+    const onExit = vi.fn()
+    createSupervisor({ spawn, backoffMs: [1000], onExit, crashLoop: { exits: 3, onCrashLoop } }).start()
+
+    children[0]?.crash()
+    vi.advanceTimersByTime(1000)
+    children[1]?.crash()
+    vi.advanceTimersByTime(1000)
+    expect(onCrashLoop).not.toHaveBeenCalled()
+    children[2]?.crash()
+    vi.advanceTimersByTime(10_000)
+
+    expect(onCrashLoop).toHaveBeenCalledTimes(1)
+    expect(onExit).toHaveBeenCalledTimes(2)
+    expect(children).toHaveLength(3)
+  })
+
+  it('does not count the exit of a run that became stable towards a crash loop', () => {
+    const onCrashLoop = vi.fn(() => true)
+    createSupervisor({
+      spawn,
+      backoffMs: [1000],
+      stableAfterMs: 60_000,
+      crashLoop: { exits: 3, onCrashLoop }
+    }).start()
+
+    children[0]?.crash()
+    vi.advanceTimersByTime(1000)
+    children[1]?.crash()
+    vi.advanceTimersByTime(1000)
+    vi.advanceTimersByTime(60_000)
+    children[2]?.crash()
+    vi.advanceTimersByTime(1000)
+    children[3]?.crash()
+    vi.advanceTimersByTime(1000)
+    children[4]?.crash()
+    vi.advanceTimersByTime(1000)
+
+    expect(onCrashLoop).not.toHaveBeenCalled()
+    expect(children).toHaveLength(6)
+  })
+
+  it('keeps restarting at the backoff when the crash loop handler declines it', () => {
+    const onCrashLoop = vi.fn(() => false)
+    createSupervisor({ spawn, backoffMs: [1000, 5000], crashLoop: { exits: 3, onCrashLoop } }).start()
+
+    children[0]?.crash()
+    vi.advanceTimersByTime(1000)
+    children[1]?.crash()
+    vi.advanceTimersByTime(5000)
+    children[2]?.crash()
+    vi.advanceTimersByTime(5000)
+    children[3]?.crash()
+    vi.advanceTimersByTime(5000)
+
+    expect(onCrashLoop).toHaveBeenCalledTimes(2)
+    expect(children).toHaveLength(5)
+  })
+
+  it('starts a new streak after a handed-over crash loop', () => {
+    const onCrashLoop = vi.fn(() => true)
+    const supervisor = createSupervisor({ spawn, backoffMs: [1000], crashLoop: { exits: 2, onCrashLoop } })
+    supervisor.start()
+    children[0]?.crash()
+    vi.advanceTimersByTime(1000)
+    children[1]?.crash()
+
+    supervisor.start()
+    children[2]?.crash()
+    vi.advanceTimersByTime(1000)
+
+    expect(onCrashLoop).toHaveBeenCalledTimes(1)
+    expect(children).toHaveLength(4)
+  })
+
+  it('halts: kills the child, resolves once it exited, restarts nothing until started again', async () => {
+    const onExit = vi.fn()
+    const supervisor = createSupervisor({ spawn, backoffMs: [1000], onExit })
+    supervisor.start()
+    const old = children[0]
+    if (old) old.exitsOnKill = false
+
+    let halted = false
+    const halting = supervisor.halt().then(() => (halted = true))
+    await Promise.resolve()
+    expect(old?.killed).toBe(true)
+    expect(halted).toBe(false)
+    old?.exit(0)
+    await halting
+    vi.advanceTimersByTime(10_000)
+
+    expect(halted).toBe(true)
+    expect(children).toHaveLength(1)
+    expect(onExit).not.toHaveBeenCalled()
+    supervisor.start()
+    expect(children).toHaveLength(2)
+  })
+
+  it('halts after a requested restart: waits for the detached child and never launches its replacement', async () => {
+    const supervisor = createSupervisor({ spawn, backoffMs: [1000] })
+    supervisor.start()
+    const old = children[0]
+    if (old) old.exitsOnKill = false
+    supervisor.restart()
+
+    let halted = false
+    const halting = supervisor.halt().then(() => (halted = true))
+    await Promise.resolve()
+    expect(halted).toBe(false)
+    old?.exit(0)
+    await halting
+    vi.advanceTimersByTime(10_000)
+
+    expect(children).toHaveLength(1)
+    supervisor.start()
+    expect(children).toHaveLength(2)
+  })
+
+  it('halts at once when no child runs, cancelling a pending restart', async () => {
+    const supervisor = createSupervisor({ spawn, backoffMs: [1000] })
+    supervisor.start()
+    children[0]?.crash()
+
+    await supervisor.halt()
+    vi.advanceTimersByTime(10_000)
+
+    expect(children).toHaveLength(1)
+  })
 })

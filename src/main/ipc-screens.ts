@@ -9,10 +9,12 @@ export function registerScreenIpc(
   server: ReturnType<typeof createServerStatus>,
   backend: Supervisor,
   logsDir: string,
-  word: ReturnType<typeof createWordIntegration>
+  word: ReturnType<typeof createWordIntegration>,
+  restartAllowed: () => boolean = () => true
 ): void {
   ipcMain.handle('hub:server:status', () => server.get())
   ipcMain.handle('hub:server:restart', () => {
+    if (!restartAllowed()) return
     server.restartRequested()
     backend.restart()
   })
