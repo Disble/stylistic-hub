@@ -32,6 +32,8 @@ export function fakeHub(overrides: { [K in keyof HubBridge]?: Partial<HubBridge[
       restart: async () => undefined,
       openLogs: async () => undefined,
       onStatus: () => () => undefined,
+      channels: async () => ({ server: 'stable', hub: 'stable' }),
+      setChannel: async () => undefined,
       ...overrides.server
     },
     word: {

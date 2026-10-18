@@ -1,16 +1,18 @@
 import {
   Badge,
   Button,
+  Field,
   makeStyles,
   MessageBar,
   MessageBarBody,
+  Select,
   Text,
   tokens,
   type BadgeProps
 } from '@fluentui/react-components'
 import { ArrowClockwise20Regular, FolderOpen20Regular } from '@fluentui/react-icons'
-import { useState } from 'react'
-import type { ServerStatus } from '../../shared/bridge'
+import { useCallback, useEffect, useState } from 'react'
+import type { Channel, Channels, ServerStatus } from '../../shared/bridge'
 import { errorMessage, useProviderState, useServerStatus, type Screen } from '../hub-state'
 import { Details, Page, Section, Surface } from '../ui/layout'
 
@@ -89,6 +91,44 @@ function Service({
   )
 }
 
+/** The release channel of the server and of the hub (odd/tasks/channels.md S5); a change checks for updates. */
+function UpdateChannels({ run }: { run: (action: () => Promise<void>) => void }) {
+  const [channels, setChannels] = useState<Channels | undefined>()
+  useEffect(() => {
+    run(async () => setChannels(await window.hub.server.channels()))
+  }, [run])
+
+  const choose = (target: keyof Channels, channel: Channel) => {
+    setChannels((current) => current && { ...current, [target]: channel })
+    run(() => window.hub.server.setChannel(target, channel))
+  }
+
+  const fields = [
+    ['server', 'Server channel'],
+    ['hub', 'Hub channel']
+  ] as const
+  return (
+    <Section
+      title="Updates"
+      caption="Beta gets prereleases first; going back to stable installs its latest version"
+    >
+      <Surface>
+        {fields.map(([target, label]) => (
+          <Field key={target} label={label}>
+            <Select
+              value={channels?.[target] ?? 'stable'}
+              onChange={(_event, data) => choose(target, data.value as Channel)}
+            >
+              <option value="stable">Stable</option>
+              <option value="beta">Beta</option>
+            </Select>
+          </Field>
+        ))}
+      </Surface>
+    </Section>
+  )
+}
+
 /** The local server: its services, the AI provider it calls, and what to do when something is wrong. */
 export function ServerScreen({ onOpen }: { onOpen: (screen: Screen) => void }) {
   const styles = useStyles()
@@ -97,16 +137,16 @@ export function ServerScreen({ onOpen }: { onOpen: (screen: Screen) => void }) {
   const [error, setError] = useState<string | undefined>()
   const { electron, node } = window.hub.versions
 
+  /** Runs one action, showing why it failed. */
+  const run = useCallback((action: () => Promise<void>) => {
+    setError(undefined)
+    action().catch((reason: unknown) => setError(errorMessage(reason)))
+  }, [])
+
   if (!status) return null
   const { label, color } = SERVER_STATE[status.state]
   const connected = provider?.connected ?? []
   const chosen = connected.find((p) => p.id === provider?.model?.provider)
-
-  /** Runs one action, showing why it failed. */
-  const run = (action: () => Promise<void>) => {
-    setError(undefined)
-    action().catch((reason: unknown) => setError(errorMessage(reason)))
-  }
 
   return (
     <Page
@@ -203,6 +243,8 @@ export function ServerScreen({ onOpen }: { onOpen: (screen: Screen) => void }) {
             />
           </Surface>
         </Section>
+
+        <UpdateChannels run={run} />
       </div>
     </Page>
   )
