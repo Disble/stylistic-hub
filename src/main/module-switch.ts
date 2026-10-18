@@ -13,7 +13,7 @@ import { readInstalled } from './updates/install'
 /**
  * The API scopes the backend accepts in `STYLISTIC_MODULES` (`API_SCOPES` in
  * src/backend/adapters/http/module-tokens.ts; the shell may not import the backend, and a test compares the two).
- * An unknown scope would stop the backend at startup, so a module's other declared scopes are left out.
+ * The backend drops an unknown scope with a log line, so a module's other declared scopes are left out here.
  */
 export const MODULE_SCOPES = [
   'status',
@@ -33,7 +33,7 @@ type ModuleSet = Record<string, { dir: string; scopes: string[] }>
 /** The `<Version>` the backend requires in a module's manifest.xml (src/backend/modules.ts). */
 const MANIFEST_VERSION = /<Version>\s*([^<\s]+)\s*<\/Version>/
 
-/** Whether the backend would serve `dir`: a missing manifest or version stops it at startup. */
+/** Whether the backend would serve `dir`: it skips a module with no manifest or version. */
 function servable(dir: string): boolean {
   const manifest = join(dir, 'manifest.xml')
   return existsSync(manifest) && MANIFEST_VERSION.test(readFileSync(manifest, 'utf8'))

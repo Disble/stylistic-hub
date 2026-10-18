@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadModules } from './modules'
 
 /** Temp folder holding the module directories. */
@@ -48,18 +48,42 @@ describe('loadModules', () => {
     ['a relative directory', { 'stylistic-addon': { dir: 'm/addin', scopes: [] } }],
     ['a value that is not an object', ['C:\\m']],
     ['a module given as a bare directory', { 'stylistic-addon': 'C:\\m' }],
-    ['a module without scopes', { 'stylistic-addon': { dir: 'C:\\m' } }],
-    ['a scope that is not an API route group', { 'stylistic-addon': { dir: 'C:\\m', scopes: ['admin'] } }]
+    ['a module without scopes', { 'stylistic-addon': { dir: 'C:\\m' } }]
   ])('refuses %s', (_case, value) => {
     expect(() => loadModules(JSON.stringify(value))).toThrow(/^STYLISTIC_MODULES must be/)
   })
 
-  it('refuses a module whose manifest names no version', () => {
-    const dir = join(root, 'empty')
-    mkdirSync(dir)
+  it('drops a scope that is not an API route group and says why, so the backend still starts', () => {
+    const dir = moduleDir('addin', '1.0.0.0')
+    const log = vi.fn<(message: string) => void>()
 
-    expect(() => loadModules(JSON.stringify({ 'stylistic-addon': { dir, scopes: [] } }))).toThrow(
-      /^STYLISTIC_MODULES: module stylistic-addon has no <Version> in .*manifest\.xml/
+    expect(
+      loadModules(JSON.stringify({ 'stylistic-addon': { dir, scopes: ['admin', 'status'] } }), log)
+    ).toEqual([{ id: 'stylistic-addon', dir, version: '1.0.0.0', scopes: ['status'] }])
+    expect(log).toHaveBeenCalledExactlyOnceWith(
+      'STYLISTIC_MODULES: module stylistic-addon declares an unknown scope admin, so its token does not get it'
+    )
+  })
+
+  it('drops a module whose manifest names no version and says why, serving the others', () => {
+    const empty = join(root, 'empty')
+    mkdirSync(empty)
+    const dir = moduleDir('addin', '1.0.0.0')
+    const log = vi.fn<(message: string) => void>()
+
+    expect(
+      loadModules(
+        JSON.stringify({
+          'broken-addon': { dir: empty, scopes: [] },
+          'stylistic-addon': { dir, scopes: [] }
+        }),
+        log
+      )
+    ).toEqual([{ id: 'stylistic-addon', dir, version: '1.0.0.0', scopes: [] }])
+    expect(log).toHaveBeenCalledExactlyOnceWith(
+      expect.stringMatching(
+        /^STYLISTIC_MODULES: module broken-addon has no <Version> in .*manifest\.xml, so it is not served$/
+      )
     )
   })
 })
