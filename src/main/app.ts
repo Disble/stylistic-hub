@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs'
+import { arch, release, type } from 'node:os'
 import { join } from 'node:path'
 import { app, BrowserWindow, Menu, nativeImage, shell, Tray } from 'electron'
 import { safeExternalUrl } from '../shared/login/external-link'
@@ -189,6 +190,15 @@ if (!isSingleInstance) {
         }
       },
       channelControls(updates.engine, updates.check),
+      {
+        logsDir: app.getPath('logs'),
+        componentsRoot: join(userData, 'components'),
+        hubVersion: app.getVersion(),
+        os: `${type()} ${release()} ${arch()}`,
+        versions: { electron: process.versions.electron, node: process.versions.node },
+        serverStatus: status.get,
+        wordStatus: word.status
+      },
       serverSwitch.restartAllowed
     )
 

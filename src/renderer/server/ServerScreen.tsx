@@ -10,7 +10,7 @@ import {
   tokens,
   type BadgeProps
 } from '@fluentui/react-components'
-import { ArrowClockwise20Regular, FolderOpen20Regular } from '@fluentui/react-icons'
+import { ArrowClockwise20Regular, ArrowDownload20Regular, FolderOpen20Regular } from '@fluentui/react-icons'
 import { useCallback, useEffect, useState } from 'react'
 import type { Channel, Channels, ServerStatus } from '../../shared/bridge'
 import { errorMessage, useProviderState, useServerStatus, type Screen } from '../hub-state'
@@ -129,12 +129,56 @@ function UpdateChannels({ run }: { run: (action: () => Promise<void>) => void })
   )
 }
 
+/** The AI provider the server calls, with the way to connect or change it. */
+function ProviderSection({
+  styles,
+  onOpen
+}: {
+  styles: ReturnType<typeof useStyles>
+  onOpen: (screen: Screen) => void
+}) {
+  const provider = useProviderState()
+  const connected = provider?.connected ?? []
+  const chosen = connected.find((p) => p.id === provider?.model?.provider)
+  return (
+    <Section title="AI provider" caption="Managed by Pi · credentials stay on this computer">
+      <Surface className={styles.provider}>
+        {provider?.model && chosen ? (
+          <>
+            <span className={styles.providerText}>
+              <Text weight="semibold">{chosen.name}</Text>
+              <Text size={200} font="monospace">
+                {provider.model.name}
+              </Text>
+            </span>
+            <Badge appearance="tint" color="success">
+              Connected
+            </Badge>
+            <Button onClick={() => onOpen('provider')}>Change provider</Button>
+          </>
+        ) : (
+          <>
+            <span className={styles.providerText}>
+              <Text weight="semibold">{connected.length ? 'No model chosen' : 'No provider connected'}</Text>
+              <Text size={200}>Corrections need a signed-in provider and a model.</Text>
+            </span>
+            <Button appearance="primary" onClick={() => onOpen('provider')}>
+              Connect a provider
+            </Button>
+          </>
+        )}
+      </Surface>
+    </Section>
+  )
+}
+
 /** The local server: its services, the AI provider it calls, and what to do when something is wrong. */
 export function ServerScreen({ onOpen }: { onOpen: (screen: Screen) => void }) {
   const styles = useStyles()
   const status = useServerStatus()
-  const provider = useProviderState()
   const [error, setError] = useState<string | undefined>()
+  /** Where the last diagnostics bundle was saved. */
+  const [saved, setSaved] = useState<string | undefined>()
   const { electron, node } = window.hub.versions
 
   /** Runs one action, showing why it failed. */
@@ -145,8 +189,6 @@ export function ServerScreen({ onOpen }: { onOpen: (screen: Screen) => void }) {
 
   if (!status) return null
   const { label, color } = SERVER_STATE[status.state]
-  const connected = provider?.connected ?? []
-  const chosen = connected.find((p) => p.id === provider?.model?.provider)
 
   return (
     <Page
@@ -157,6 +199,17 @@ export function ServerScreen({ onOpen }: { onOpen: (screen: Screen) => void }) {
         <>
           <Button icon={<FolderOpen20Regular />} onClick={() => run(window.hub.server.openLogs)}>
             Open logs folder
+          </Button>
+          <Button
+            icon={<ArrowDownload20Regular />}
+            onClick={() =>
+              run(async () => {
+                setSaved(undefined)
+                setSaved(await window.hub.server.exportDiagnostics())
+              })
+            }
+          >
+            Export diagnostics
           </Button>
           <Button
             icon={<ArrowClockwise20Regular />}
@@ -172,6 +225,14 @@ export function ServerScreen({ onOpen }: { onOpen: (screen: Screen) => void }) {
       {error && (
         <MessageBar intent="error">
           <MessageBarBody>{error}</MessageBarBody>
+        </MessageBar>
+      )}
+      {saved && (
+        <MessageBar intent="success">
+          <MessageBarBody>
+            Diagnostics saved to {saved}. It includes the logs, which may hold excerpts of analyzed text;
+            check it before attaching it to a report.
+          </MessageBarBody>
         </MessageBar>
       )}
 
@@ -202,36 +263,7 @@ export function ServerScreen({ onOpen }: { onOpen: (screen: Screen) => void }) {
       </Section>
 
       <div className={styles.columns}>
-        <Section title="AI provider" caption="Managed by Pi · credentials stay on this computer">
-          <Surface className={styles.provider}>
-            {provider?.model && chosen ? (
-              <>
-                <span className={styles.providerText}>
-                  <Text weight="semibold">{chosen.name}</Text>
-                  <Text size={200} font="monospace">
-                    {provider.model.name}
-                  </Text>
-                </span>
-                <Badge appearance="tint" color="success">
-                  Connected
-                </Badge>
-                <Button onClick={() => onOpen('provider')}>Change provider</Button>
-              </>
-            ) : (
-              <>
-                <span className={styles.providerText}>
-                  <Text weight="semibold">
-                    {connected.length ? 'No model chosen' : 'No provider connected'}
-                  </Text>
-                  <Text size={200}>Corrections need a signed-in provider and a model.</Text>
-                </span>
-                <Button appearance="primary" onClick={() => onOpen('provider')}>
-                  Connect a provider
-                </Button>
-              </>
-            )}
-          </Surface>
-        </Section>
+        <ProviderSection styles={styles} onOpen={onOpen} />
 
         <Section title="This computer">
           <Surface>

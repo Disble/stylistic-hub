@@ -33,6 +33,7 @@ const bridge: HubBridge = {
     openLogs: () => ipcRenderer.invoke('hub:server:open-logs'),
     channels: () => ipcRenderer.invoke('hub:server:channels'),
     setChannel: (target, channel) => ipcRenderer.invoke('hub:server:set-channel', target, channel),
+    exportDiagnostics: () => ipcRenderer.invoke('hub:server:export-diagnostics'),
     onStatus: (listener) => {
       const handler = (_event: unknown, status: ServerStatus) => listener(status)
       ipcRenderer.on('hub:server-status', handler)

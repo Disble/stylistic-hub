@@ -68,16 +68,17 @@ const AnalysisSchema = z
   })
   .openapi('Analysis')
 
-/** A request to analyze a document. */
+/** A request to analyze a document; unknown fields are refused, as `PUT /preferences` does. */
 const AnalysisRequestSchema = z
   .object({
     genre: GenreSchema,
     chunks: z
-      .array(z.object({ id: z.string().min(1).max(64), text: z.string().min(1) }))
+      .array(z.object({ id: z.string().min(1).max(64), text: z.string().min(1) }).strict())
       .min(1)
       .max(1000)
       .refine((chunks) => new Set(chunks.map((c) => c.id)).size === chunks.length, 'Chunk ids must be unique')
   })
+  .strict()
   .openapi('AnalysisRequest')
 
 /** Feedback as the hub records it. */
