@@ -1,5 +1,6 @@
 // The update engine's state file, `<userData>/components/state.json` (odd/tasks/update-engine.md S2):
 // last seen catalog serial and key list version, the installed versions per component, and the history.
+import { randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -57,9 +58,12 @@ export async function readState(root: string): Promise<UpdateState> {
   return stateSchema.parse(JSON.parse(await readFile(file, 'utf8')))
 }
 
-/** Writes `data` to `file` through a temporary file in the same directory and a rename, so it is never partial. */
+/**
+ * Writes `data` to `file` through a temporary file in the same directory and a rename, so it is never partial.
+ * The temporary name is unique per write, so two writers never write into the same temporary file.
+ */
 export async function writeAtomic(file: string, data: string): Promise<void> {
-  const temp = `${file}.tmp`
+  const temp = `${file}.${process.pid}-${randomBytes(6).toString('hex')}.tmp`
   try {
     await writeFile(temp, data)
     await rename(temp, file)
@@ -69,13 +73,27 @@ export async function writeAtomic(file: string, data: string): Promise<void> {
   }
 }
 
-/** Reads the state, lets `change` edit it, and writes it back atomically. */
-export async function updateState(root: string, change: (state: UpdateState) => void): Promise<UpdateState> {
-  const state = await readState(root)
-  change(state)
-  await mkdir(root, { recursive: true })
-  await writeAtomic(stateFile(root), `${JSON.stringify(state, null, 2)}\n`)
-  return state
+/** The tail of each root's chain of pending `updateState` calls. */
+const pending = new Map<string, Promise<unknown>>()
+
+/**
+ * Reads the state, lets `change` edit it, and writes it back atomically. Calls on the same root run one after
+ * another (the update check and a rollback can edit it at the same time), so no edit is lost.
+ */
+export function updateState(root: string, change: (state: UpdateState) => void): Promise<UpdateState> {
+  const run = async (): Promise<UpdateState> => {
+    const state = await readState(root)
+    change(state)
+    await mkdir(root, { recursive: true })
+    await writeAtomic(stateFile(root), `${JSON.stringify(state, null, 2)}\n`)
+    return state
+  }
+  const next = (pending.get(root) ?? Promise.resolve()).then(run)
+  pending.set(
+    root,
+    next.catch(() => undefined)
+  )
+  return next
 }
 
 /** A component's entry, created empty when the component was never installed. */

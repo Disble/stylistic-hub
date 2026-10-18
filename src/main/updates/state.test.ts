@@ -1,8 +1,25 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { addHistory, HISTORY_LIMIT, readState, updateState } from './state'
+
+/** When set, the next rename fails, as a full disk or a lock would. */
+const failRename = vi.hoisted(() => ({ next: false }))
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...actual,
+    rename: async (...args: Parameters<typeof actual.rename>) => {
+      if (failRename.next) {
+        failRename.next = false
+        throw new Error('EBUSY: rename failed')
+      }
+      return actual.rename(...args)
+    }
+  }
+})
 
 /** The components directory of the current test. */
 let root: string
@@ -40,23 +57,55 @@ describe('state.json', () => {
     expect(history.at(-1)?.time).toBe('204')
   })
 
+  it('lands every edit of concurrent updates and always leaves a parseable file', async () => {
+    // The update check and a rollback can edit the state at the same time; none may lose the other's edit.
+    for (let round = 0; round < 5; round++) {
+      await rm(root, { recursive: true, force: true })
+      await Promise.all([
+        updateState(root, (state) => {
+          state.components.server = { current: '1.0.0', previous: null, bad: ['0.9.0'], keyId: null }
+        }),
+        updateState(root, (state) => {
+          state.serial = 2
+        }),
+        updateState(root, (state) => {
+          state.keysVersion = 3
+        })
+      ])
+
+      const raw = await readFile(join(root, 'state.json'), 'utf8')
+      const state = JSON.parse(raw) as {
+        serial: number
+        keysVersion: number
+        components: Record<string, unknown>
+      }
+      expect(state.serial).toBe(2)
+      expect(state.keysVersion).toBe(3)
+      expect(state.components.server).toMatchObject({ bad: ['0.9.0'] })
+      expect(await readdir(root)).toEqual(['state.json'])
+    }
+  })
+
   it('leaves the previous file whole and no temporary file when a write fails', async () => {
     await updateState(root, (state) => {
       state.serial = 7
     })
     const before = await readFile(join(root, 'state.json'), 'utf8')
-    // A directory where the temporary file goes makes the write fail, as a full disk or a lock would.
-    await mkdir(join(root, 'state.json.tmp', 'blocker'), { recursive: true })
-    await writeFile(join(root, 'state.json.tmp', 'blocker', 'file'), 'x')
+    failRename.next = true
 
     await expect(
       updateState(root, (state) => {
         state.serial = 8
       })
-    ).rejects.toThrow()
+    ).rejects.toThrow('EBUSY')
 
     expect(await readFile(join(root, 'state.json'), 'utf8')).toBe(before)
     expect((await readState(root)).serial).toBe(7)
     expect(await readdir(root)).toEqual(['state.json'])
+    // A failed write does not block the next one queued behind it.
+    await updateState(root, (state) => {
+      state.serial = 9
+    })
+    expect((await readState(root)).serial).toBe(9)
   })
 })
