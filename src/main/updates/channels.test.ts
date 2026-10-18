@@ -249,4 +249,26 @@ describe('channel controls', () => {
     expect(check).not.toHaveBeenCalled()
     expect(await world.engine.readState()).toEqual({ serial: 0, keysVersion: 0, components: {}, history: [] })
   })
+
+  it('sets the channel of a module in the state (the Library screen), then runs a catalog check', async () => {
+    const check = vi.fn()
+    const controls = channelControls(world.engine, check)
+    await world.engine.requestInstall('word-addin')
+
+    await controls.set('word-addin', 'beta')
+
+    expect((await world.engine.readState()).components['word-addin']?.channel).toBe('beta')
+    expect(check).toHaveBeenCalledOnce()
+  })
+
+  it('refuses the channel of a module not in the state, which would request its install', async () => {
+    const check = vi.fn()
+    const controls = channelControls(world.engine, check)
+
+    await expect(controls.set('word-addin', 'beta')).rejects.toThrow('word-addin is not installed')
+    await expect(controls.set('../escape', 'beta')).rejects.toThrow()
+
+    expect(check).not.toHaveBeenCalled()
+    expect((await world.engine.readState()).components).toEqual({})
+  })
 })

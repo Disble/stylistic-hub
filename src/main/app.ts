@@ -10,6 +10,7 @@ import { hubStatusRequest } from './health-request'
 import { hubPaths } from './hub-paths'
 import { createLocalModel } from './local-model'
 import { loadOrCreateHubToken } from './hub-token'
+import { createLibrary } from './library'
 import { registerProviderIpc } from './ipc-provider'
 import { registerScreenIpc } from './ipc-screens'
 import { createPiProvider } from './pi-provider'
@@ -131,8 +132,17 @@ if (!isSingleInstance) {
       userData,
       database: paths.database,
       fetch,
-      onChecked: (report) => void serverSwitch.refresh(report),
+      onChecked: (report) => {
+        library.observe(report)
+        mainWindow?.webContents.send('hub:library-checked')
+        void serverSwitch.refresh(report)
+      },
       onReport: selfUpdate.onReport
+    })
+    const library = createLibrary({
+      engine: updates.engine,
+      check: updates.check,
+      hubVersion: app.getVersion()
     })
     const serverSwitch = createServerSwitch({
       engine: updates.engine,
@@ -199,6 +209,7 @@ if (!isSingleInstance) {
         serverStatus: status.get,
         wordStatus: word.status
       },
+      library,
       serverSwitch.restartAllowed
     )
 
