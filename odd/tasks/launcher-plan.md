@@ -31,7 +31,8 @@ Objective: write down, as the product's direction, a world-class plan in which t
 |---|---|---|---|---|
 | T1 | S1–S4 | delegated writer (user asked for delegation; context backstop) | done | `87f2248` |
 | T2 | S1–S4, R1–R9 | delegated writer (Judgment Day correction, round 1) | done | `633ea02` |
-| T3 | S1–S4, R10–R13 | fix actor (Judgment Day correction, round 2, final) | done | this commit |
+| T3 | S1–S4, R10–R13 | fix actor (Judgment Day correction, round 2, final) | done | `78b8b5e` |
+| T4 | S1–S4 | inline (follow-up of the final re-judgment, outside the Judgment Day rounds) | done | this commit |
 
 ## Log
 
@@ -62,3 +63,4 @@ Objective: write down, as the product's direction, a world-class plan in which t
   - **R11** (`minReaderSchema` defined once): ADR D7 row and migration-rollback risk; architecture D7 and current-vs-target (database); roadmap M3 artifact and M4 data safety.
   - **R12** (cutover in two steps): ADR D8 row; architecture D8 and current-vs-target (Word registration); roadmap M4 feature and exit criterion (0.0.1 upgraded by hand keeps documents, profiles and history), M5 feature and exit criterion (an M4 hub self-updates to M5 and the add-in loads from `/m/<id>/`).
   - **R13** (installing the verified hub bytes): ADR D10 row and the update-engine adoption note; architecture diagram (updater node), current-vs-target (updating the hub) and D10; roadmap M4 hub self-update and the Superseded entry.
+- **L11** (2026-10-17): Final scoped re-judgment (delta `377faae..78b8b5e`): no CRITICAL in any of the three judgments, so the Judgment Day verdict is **APPROVED** with its round budget exhausted (two corrections, two scoped re-judgments). Both final judges: D2 omitted `minReaderSchema` (and the size cap) from `component.json`; an expired `keys.json` had no stated effect on installed components, and a one-year expiry re-signed "at least yearly" left no margin. Judge B only: the loopback feed sat on "the hub's own HTTPS server", which is the backend, the very component that can be missing or rolled back; the M3 exit criterion disabling an installed version needs the M4 engine. Fixed inline as an ordinary follow-up (not a Judgment Day round): D2 lists the size cap, `schemaVersion` and `minReaderSchema`; `keys.json` expires at 13 months with a yearly ceremony and a 30-day warning, and an expired list only blocks updates; the feed is served by the Electron main process; M3 tests rejection of artifacts signed by a revoked key, and M4 tests disabling installed versions and running on an expired `keys.json`.
