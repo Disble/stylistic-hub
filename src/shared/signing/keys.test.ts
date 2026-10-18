@@ -1,4 +1,3 @@
-/// <reference types="node" />
 import { generateKeyPairSync } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { canonicalJson, keyId, rawPublicKey } from './keys'

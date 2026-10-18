@@ -1,4 +1,3 @@
-/// <reference types="node" />
 // Verification of the key list, the catalog, component.json and the artifact it pins (ADR 0001 D3–D4).
 // Pure functions over parsed documents: the caller parses with the schemas in ./documents first, and stores
 // the last seen key list `version` and catalog `serial`.

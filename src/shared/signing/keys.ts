@@ -1,4 +1,3 @@
-/// <reference types="node" />
 // Key ids, canonical JSON and the ed25519 check every signed document shares (docs/signed-releases.md).
 import { createHash, createPublicKey, verify, type KeyObject } from 'node:crypto'
 
