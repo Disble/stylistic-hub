@@ -18,6 +18,8 @@ export interface HttpAppOptions extends ApiV1Options {
   port: number
   /** stylistic-addon's build, served at the root when given. */
   addinDir?: string | undefined
+  /** Modules, each served at `/m/<id>/` like the add-in at the root. */
+  modules: readonly { id: string; dir: string; version: string }[]
 }
 
 /** Loopback peers, including the IPv4-mapped form Node reports on dual-stack sockets. */
@@ -28,7 +30,7 @@ const LOOPBACK = ['127.0.0.1', '::1', '::ffff:127.0.0.1']
  * names; the API also requires the task pane's origin for CORS and the hub token, and answers
  * every error it can as `application/problem+json`.
  */
-export function createHttpApp({ token, port, addinDir, ...api }: HttpAppOptions): Hono {
+export function createHttpApp({ token, port, addinDir, modules, ...api }: HttpAppOptions): Hono {
   const app = new Hono()
 
   app.use(hostAllowlist([`localhost:${port}`, `127.0.0.1:${port}`]))
@@ -38,9 +40,9 @@ export function createHttpApp({ token, port, addinDir, ...api }: HttpAppOptions)
   app.use('/api/*', cors({ origin: `https://localhost:${port}` }))
   app.use('/api/*', bearerAuth({ token }))
 
-  app.route('/api/v1', apiV1(api))
+  app.route('/api/v1', apiV1({ ...api, modules }))
   app.notFound((c) =>
-    c.req.path.startsWith('/api/')
+    c.req.path.startsWith('/api/') || c.req.path.startsWith('/m/')
       ? problem(c, 404, 'not_found', `No route ${c.req.method} ${c.req.path}.`)
       : c.text('Not found', 404)
   )
@@ -61,6 +63,7 @@ export function createHttpApp({ token, port, addinDir, ...api }: HttpAppOptions)
     return problem(c, 500, 'internal_error', error.message)
   })
   // Registered last: the API paths above never fall through to the add-in's files.
+  for (const { id, dir } of modules) app.route(`/m/${id}`, addinRoutes({ dir, token, mount: `/m/${id}` }))
   if (addinDir) app.route('/', addinRoutes({ dir: addinDir, token }))
 
   return app

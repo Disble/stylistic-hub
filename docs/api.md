@@ -29,6 +29,10 @@ The HTTP contract the add-in's `HubAnalysisAdapter` is written against. The mach
 
 `GET /preferences` and `PUT /preferences` with `{ correctionInstructions }` read and save the user's standing correction instructions (at most `correctionInstructionsMaxLength` characters); `null` or blank text clears them.
 
+## Modules
+
+`GET /modules` answers `{ modules: [{ id, version }] }`: each module the hub serves at `/m/<id>/` and the `<Version>` of its `manifest.xml`, read when the server started. A task pane can compare it with its own version and offer a reload when a newer one is served.
+
 ## Errors
 
 Every error is `application/problem+json` (RFC 9457): `{ type, title, status, detail, code }`. Branch on `code`; show `detail`.

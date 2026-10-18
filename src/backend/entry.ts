@@ -29,6 +29,7 @@ import {
   PROCESS_FEEDBACK_WORKFLOW,
   processFeedbackWorkflow
 } from './feedback/feedback-workflow'
+import { loadModules, type ServedModule } from './modules'
 import { createProfileUpdater } from './profile/profile-updater'
 
 /** Arguments the main process passes when it forks this utility process. */
@@ -51,6 +52,15 @@ delete process.env['STYLISTIC_HUB_TOKEN']
 
 if (!values.certs || !values.db || !values.pi || !values.port || !token) {
   console.error('backend: missing --certs, --db, --pi, --port or STYLISTIC_HUB_TOKEN')
+  process.exit(2)
+}
+
+/** Modules to serve at `/m/<id>/`, from the environment: older servers would exit on a new flag. */
+let modules: ServedModule[]
+try {
+  modules = loadModules(process.env['STYLISTIC_MODULES'])
+} catch (error) {
+  console.error(`backend: ${(error as Error).message}`)
   process.exit(2)
 }
 
@@ -113,7 +123,8 @@ const app = createHttpApp({
   feedback: createFeedbackService({ analyses, feedback, engine }),
   documents,
   preferences,
-  addinDir: values.addin
+  addinDir: values.addin,
+  modules
 })
 
 // Listen on both loopback addresses and nothing else: `localhost` may resolve to either.

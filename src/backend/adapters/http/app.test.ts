@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -36,7 +36,8 @@ function services() {
     }),
     feedback: createFeedbackService({ analyses, feedback: new SqliteFeedbackRepository(db), engine }),
     documents,
-    preferences: new SqlitePreferencesRepository(db)
+    preferences: new SqlitePreferencesRepository(db),
+    modules: []
   }
 }
 
@@ -256,5 +257,45 @@ describe('createHttpApp', () => {
     expect(foreign.status).toBe(403)
     expect(api.status).toBe(401)
     rmSync(addinDir, { recursive: true, force: true })
+  })
+
+  it('serves each module under /m/<id>/ beside the add-in at the root, and lists the modules on the API', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'hub-app-modules-'))
+    const addinDir = join(root, 'addin')
+    const moduleDir = join(root, 'module')
+    mkdirSync(addinDir)
+    mkdirSync(moduleDir)
+    writeFileSync(join(addinDir, 'taskpane.html'), '<html><head><title>root</title></head></html>')
+    writeFileSync(join(moduleDir, 'taskpane.html'), '<html><head><title>module</title></head></html>')
+    const withModules = createHttpApp({
+      token,
+      port,
+      ...services(),
+      addinDir,
+      modules: [{ id: 'stylistic-addon', dir: moduleDir, version: '1.2.3.0' }]
+    })
+    const get = (path: string, headers: Record<string, string> = {}) =>
+      withModules.request(path, { headers: { host: `localhost:${port}`, ...headers } }, fromPeer('127.0.0.1'))
+
+    const modulePage = await get('/m/stylistic-addon/taskpane.html')
+    const rootPage = await get('/taskpane.html')
+    const unknown = await get('/m/other/taskpane.html')
+    const listed = await get('/api/v1/modules', { authorization: `Bearer ${token}` })
+    const refused = await get('/api/v1/modules')
+
+    expect(modulePage.status).toBe(200)
+    expect(await modulePage.text()).toContain(
+      `<title>module</title><meta name="stylistic-hub-token" content="${token}">`
+    )
+    expect(await rootPage.text()).toContain('<title>root</title>')
+    expect(unknown.status).toBe(404)
+    expect(unknown.headers.get('content-type')).toBe('application/problem+json')
+    expect(await unknown.json()).toMatchObject({
+      code: 'not_found',
+      detail: 'No route GET /m/other/taskpane.html.'
+    })
+    expect(await listed.json()).toEqual({ modules: [{ id: 'stylistic-addon', version: '1.2.3.0' }] })
+    expect(refused.status).toBe(401)
+    rmSync(root, { recursive: true, force: true })
   })
 })

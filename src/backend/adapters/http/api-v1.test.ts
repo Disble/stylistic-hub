@@ -111,7 +111,8 @@ async function setup({ model = FLASH, fail }: { model?: ChosenModel | null; fail
     analyses: createAnalysisService({ documents, analyses, engine, model: async () => model ?? undefined }),
     feedback: createFeedbackService({ analyses, feedback, engine }),
     documents,
-    preferences: new SqlitePreferencesRepository(db)
+    preferences: new SqlitePreferencesRepository(db),
+    modules: [{ id: 'stylistic-addon', version: '1.2.3.0' }]
   })
   /** Sends a request with a JSON body. */
   const send = (method: string, path: string, body?: unknown) =>
@@ -144,6 +145,15 @@ describe('API v1', { timeout: 30_000 }, () => {
 
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ version: '0.0.1', analysis: { ready: true, model: FLASH } })
+  })
+
+  it('lists the modules it serves with their versions', async () => {
+    const { send } = await setup()
+
+    const response = await send('GET', '/modules')
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ modules: [{ id: 'stylistic-addon', version: '1.2.3.0' }] })
   })
 
   it('says why the hub cannot analyze without a model', async () => {
@@ -385,6 +395,7 @@ describe('API v1', { timeout: 30_000 }, () => {
       '/documents/{documentId}/analyses',
       '/feedback',
       '/feedback/{feedbackId}',
+      '/modules',
       '/preferences',
       '/status'
     ])
