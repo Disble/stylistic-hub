@@ -50,7 +50,8 @@ jobs:
       - name: API v1 of the last server release and of this commit
         shell: bash
         run: |
-          base_tag=$(git tag --list 'server-v*' --sort=-creatordate | head -n 1)
+          # The nearest server release this commit descends from (a hotfix from main is not compared with a dev beta).
+          base_tag=$(git describe --tags --abbrev=0 --match 'server-v*' HEAD)
           echo "Comparing against $base_tag"
           base=node_modules/.cache/openapi-base
           mkdir -p "$base"
@@ -75,6 +76,9 @@ jobs:
         with:
           ref: ${{ github.ref_name }}
           fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -87,7 +91,8 @@ jobs:
     if: github.event_name == 'push' && (github.ref_name == 'dev' || github.ref_name == 'main')
     needs: release-server
     runs-on: windows-latest
-    concurrency: release-${{ github.ref_name }}-hub
+    # One group for both release jobs, so a later push's server release never races this hub release.
+    concurrency: release-${{ github.ref_name }}
     permissions:
       contents: write
     steps:
@@ -100,6 +105,9 @@ jobs:
         with:
           repository: Disble/stylistic-addon
           path: addin-src
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
