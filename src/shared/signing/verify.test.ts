@@ -118,6 +118,38 @@ describe('verifyKeyList', () => {
     expect(verifyKeyList(list, signature(list, root.privateKey), roots, 0, later)).toBe('expired')
   })
 
+  it('rejects a root-signed list with duplicate key ids as invalid_list', () => {
+    const { root, list, roots } = world()
+    const duplicated = { ...list, keys: [...list.keys, ...list.keys.slice(0, 1)] }
+
+    expect(verifyKeyList(duplicated, signature(duplicated, root.privateKey), roots, 0, NOW)).toBe(
+      'invalid_list'
+    )
+  })
+
+  it('rejects a root-signed list whose key id does not match its public key as invalid_list', () => {
+    const { root, list, roots } = world()
+    const [first, second] = list.keys
+    const mismatched = { ...list, keys: [{ ...first!, id: second!.id }] }
+
+    expect(verifyKeyList(mismatched, signature(mismatched, root.privateKey), roots, 0, NOW)).toBe(
+      'invalid_list'
+    )
+  })
+
+  it('rejects a root-signed list with a public key that is not 32 bytes as invalid_list', () => {
+    const { root, list, roots } = world()
+    const short = Buffer.alloc(31, 7)
+    const truncated = {
+      ...list,
+      keys: [{ id: keyId(short), role: 'catalog' as const, publicKey: short.toString('base64') }]
+    }
+
+    expect(verifyKeyList(truncated, signature(truncated, root.privateKey), roots, 0, NOW)).toBe(
+      'invalid_list'
+    )
+  })
+
   it('still verifies the committed keys/keys.json with the committed root public key', () => {
     const list = keyListSchema.parse(JSON.parse(readFileSync('keys/keys.json', 'utf8')))
     const root = JSON.parse(readFileSync('keys/root.pub', 'utf8')) as { id: string; publicKey: string }

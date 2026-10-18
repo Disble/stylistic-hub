@@ -28,7 +28,7 @@ Formats evolve only by adding optional fields. The schemas keep fields they do n
 
 | Function | Inputs | Rejections, in the order checked |
 |---|---|---|
-| `verifyKeyList` | list, `keys.json.sig`, root and next-root public keys, last seen `version`, now | `bad_signature`, `replayed` (lower `version`), `expired` |
+| `verifyKeyList` | list, `keys.json.sig`, root and next-root public keys, last seen `version`, now | `bad_signature`, `invalid_list` (duplicate ids, an id that is not its public key's, a public key that is not 32 bytes), `replayed` (lower `version`), `expired` |
 | `verifyCatalog` | catalog, envelope, verified key list, last seen `serial`, now | `unknown_key`, `wrong_role`, `bad_signature`, `rollback` (lower `serial`; equal is accepted), `expired` |
 | `verifyComponent` | component.json, envelope, key list, expected publisher | `unknown_key`, `wrong_role`, `wrong_scope`, `bad_signature` |
 | `verifyArtifact` | component.json, measured `sha256` and `size` of the zip | `size_mismatch`, `sha256_mismatch` |

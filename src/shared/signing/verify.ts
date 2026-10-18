@@ -3,10 +3,10 @@
 // Pure functions over parsed documents: the caller parses with the schemas in ./documents first, and stores
 // the last seen key list `version` and catalog `serial`.
 import type { Catalog, Component, Envelope, KeyList, KeyRole } from './documents'
-import { signedBy } from './keys'
+import { keyId, signedBy } from './keys'
 
 /** Why a key list is rejected. */
-export type KeyListRejection = 'bad_signature' | 'replayed' | 'expired'
+export type KeyListRejection = 'bad_signature' | 'invalid_list' | 'replayed' | 'expired'
 /** Why a catalog is rejected. */
 export type CatalogRejection = 'unknown_key' | 'wrong_role' | 'bad_signature' | 'rollback' | 'expired'
 /** Why a component.json is rejected. */
@@ -16,7 +16,8 @@ export type ArtifactRejection = 'size_mismatch' | 'sha256_mismatch'
 
 /**
  * Checks `keys.json` against its root signature (`keys.json.sig`, base64): signed by one of the embedded
- * root keys (root and next root), not older than the last seen `version`, not expired at `now`.
+ * root keys (root and next root), well formed (unique ids, each the id of its raw 32-byte public key), not
+ * older than the last seen `version`, not expired at `now`.
  */
 export function verifyKeyList(
   list: KeyList,
@@ -26,9 +27,22 @@ export function verifyKeyList(
   now: Date
 ): 'ok' | KeyListRejection {
   if (!rootKeys.some((key) => signedBy(list, signature, key))) return 'bad_signature'
+  if (!wellFormed(list)) return 'invalid_list'
   if (list.version < lastSeenVersion) return 'replayed'
   if (new Date(list.expires) <= now) return 'expired'
   return 'ok'
+}
+
+/** Whether every key id is unique and is the id of its entry's raw 32-byte public key. */
+function wellFormed(list: KeyList): boolean {
+  const ids = new Set(list.keys.map((entry) => entry.id))
+  return (
+    ids.size === list.keys.length &&
+    list.keys.every((entry) => {
+      const raw = Buffer.from(entry.publicKey, 'base64')
+      return raw.length === 32 && keyId(raw) === entry.id
+    })
+  )
 }
 
 /** The envelope's signer if the key list names it with `role` and it signed `document`, else why not. */
