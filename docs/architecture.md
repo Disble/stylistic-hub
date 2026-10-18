@@ -61,6 +61,114 @@ flowchart LR
 
 The request and response shapes live in [API v1](api.md); what an add-in build must provide lives in the [add-in contract](addin-contract.md).
 
+## Target architecture: component delivery
+
+> **Target, not today's behaviour.** This section describes where delivery is going; the System overview above is what runs today. The decision and its alternatives: [ADR 0001](adr/0001-component-delivery.md). The milestones that build it: [roadmap](roadmap.md).
+
+The hub becomes a launcher: installed once, it installs and updates its components independently, like HoYoPlay does with its games. The hub, the server and every module are versioned, released and updated on their own.
+
+```mermaid
+flowchart LR
+  subgraph Repos["Component repos + GitHub Actions"]
+    HubRepo["stylistic-hub<br/>hub-v* and server-v*"]
+    AddinRepo["stylistic-addon<br/>module office-addin"]
+  end
+  subgraph Releases["GitHub Releases"]
+    Artifacts["zip + component.json<br/>+ ed25519 signature"]
+    Catalog["catalog.json, signed<br/>serial, expires, rollout"]
+    HubSetup["hub installer<br/>for electron-updater"]
+  end
+  subgraph Hub["Stylistic Hub main process"]
+    Engine["Update engine<br/>verify, resolve, install"]
+    Updater["electron-updater<br/>hub shell only"]
+    Super["supervisor.ts<br/>health + crash loop"]
+  end
+  Dir[("%LOCALAPPDATA%/stylistic-hub/components/<br/>id/version + current")]
+  Server["server<br/>utilityProcess, /api/v1"]
+  Modules["modules<br/>served at /m/id/"]
+
+  HubRepo -->|"check, build, pack, sign"| Artifacts
+  AddinRepo -->|"check, build, pack, sign"| Artifacts
+  HubRepo -->|"reviewed PR"| Catalog
+  HubRepo --> HubSetup
+  Catalog --> Engine
+  Artifacts --> Engine
+  HubSetup --> Updater
+  Engine -->|"atomic install"| Dir
+  Dir --> Server
+  Dir --> Modules
+  Super -->|"health / rollback"| Engine
+```
+
+### Current vs target
+
+| Aspect | Today | Target |
+|---|---|---|
+| What the installer carries | Hub, backend and one add-in build (`bun run dist`) | The hub only (S1) |
+| Where the add-in comes from | A sibling checkout built by `bun run addin:bundle` into `resources/addin/` | A signed release of the module's own repo, downloaded by the hub (D2, D5) |
+| Where the server comes from | Built into the hub (`src/backend/entry.ts`, forked by `backend-host.ts`) | A signed `server-v*` release under `components/server/<version>/`, forked the same way (D1, D5) |
+| Updating the add-in or the server | Rebuild and reinstall the hub | Per component, from the catalog, without touching the hub (D5) |
+| Updating the hub | Manual reinstall | electron-updater, channels `stable`/`beta` (D10) |
+| Integrity | None beyond the installer itself | ed25519 signatures over `component.json`, signed catalog with `serial` and `expires` (D3, D4) |
+| Compatibility | Implicit: whatever was bundled together | `requires`/`provides` ranges resolved before install (D2, D5) |
+| Failure of a new version | The supervisor restarts the same backend with backoff | Health check or crash loop rolls back to the previous version (D6) |
+| Database across versions | `user_version` migrations; a newer schema makes an older backend refuse to start (`database.ts`) | Expand/contract migrations, copy before a higher `schemaVersion`, restore on rollback (D7) |
+| Add-in URL | `https://localhost:3000/` root | `https://localhost:3000/m/<id>/` per module (D8) |
+| Word registration | Manifest registered once by `word-integration.ts` | Re-registered only when a module's manifest identity changes (D8) |
+| API token | One hub token written into `taskpane.html` | Module-scoped tokens limited to the API scopes the module declares (quality bar) |
+
+### Install, update and rollback
+
+```mermaid
+sequenceDiagram
+  participant E as Update engine
+  participant C as catalog.json
+  participant R as GitHub Release
+  participant D as components dir
+  participant S as Supervisor
+  participant X as New version
+
+  E->>C: fetch, verify signature, serial, expires
+  C-->>E: version per component and channel
+  E->>E: resolve requires vs provides, skip blocked or rolled-back versions
+  E->>R: download zip + component.json to staging, resumable
+  E->>E: verify size, sha256, signature, revoked key ids
+  E->>D: extract to id/version, zip-slip guard
+  opt server with higher schemaVersion
+    E->>D: copy the SQLite file
+  end
+  E->>D: switch current pointer, keep previous
+  E->>S: restart the component
+  S->>X: start
+  alt healthy: status answers, or manifest and task pane served
+    X-->>E: ok, record in update history
+  else unhealthy or crash loop
+    E->>D: switch current back, restore the SQLite copy if taken
+    E->>E: record why, never retry this version
+  end
+```
+
+A failure at any step before the pointer switch leaves the installed version untouched; the staging area is discarded or resumed on the next check.
+
+### Design decisions
+
+- **D1 Components.** Three kinds, each its own repo and tags: `hub` (Electron shell, `hub-v*`), `server` (the backend bundle, `server-v*`, run by the hub in its `utilityProcess`), `module` (an `id` and a `kind`; the first kind is `office-addin`, the Word add-in; the kind leaves room for others without designing them now).
+- **D2 Release artifact.** Every server and module release publishes a zip plus a `component.json`: `id`, `kind`, `version`, `channel`, `sha256`, `size`, `requires` (a `hub` range and, for modules, the server `api` range such as `^1`), `provides` (for the server: the API versions it serves and its SQLite `schemaVersion`), and a release notes URL. They are GitHub Release assets of the component's own repo.
+- **D3 Own signing, no CA.** ed25519 detached signatures over `component.json`, which pins the zip's sha256. The private key lives only in CI secrets; the hub embeds a keyring of public keys with key ids, so keys can rotate; a list of revoked key ids ships in the catalog.
+- **D4 Signed catalog (TUF-lite).** The hub repo publishes a signed `catalog.json` listing, per component and channel, the current version and its artifact URLs. A monotonically increasing `serial` and an `expires` date let the hub reject rollback (an older serial) and freeze (an expired catalog) attacks. It has fields for staged rollout (`rolloutPercent`) and for blocking a bad version.
+- **D5 Update engine.** In the hub's main process: checks on start and periodically; downloads into staging with resume; verifies size, sha256 and signature; resolves compatibility (the hub range, the server API against each module's required range) and refuses an update set that would break another component; installs atomically into `%LOCALAPPDATA%/stylistic-hub/components/<id>/<version>/` with a `current` pointer; keeps the previous version; never extracts outside its target (zip-slip guard).
+- **D6 Health checks and automatic rollback.** After switching a server version the hub waits for `/api/v1/status`; after switching a module it checks that its manifest and task pane are served. A failure, or a crash loop detected by `supervisor.ts`, rolls back to the previous version and records why; the bad version is not retried until a newer one appears.
+- **D7 Server data safety.** Migrations are forward-only and expand/contract: a release never drops what the previous release reads. The hub copies the SQLite file before a server version with a higher `schemaVersion` starts; a rollback restores that copy. A downgrade below the database's `schemaVersion` is refused unless a backup exists.
+- **D8 Module serving and Word.** Each module is served at `/m/<id>/` on the hub origin, with the versioned asset URLs and `Cache-Control` the hub already applies (`bef61c1`). Word re-registration happens only when a module's manifest identity changes; a new version takes effect on the next task pane open, and the task pane can ask the hub (`/api/v1/modules`) whether a newer version is installed and offer a reload.
+- **D9 Channels and rollout.** `stable` (from `main`) and `beta` (from `dev`, prereleases) per component, chosen in the hub UI; staged rollout by hashing a random install id against `rolloutPercent`; a version can be pulled from the catalog.
+- **D10 Hub self-update.** electron-updater from the hub's GitHub Releases, unsigned (non-goal S2 a accepted), with the same channels.
+- **D11 Library UI.** A HoYoPlay-like library screen: one card per component with installed and available version, channel, progress and release notes, and the actions install, update, repair, uninstall and roll back; the update history is visible; the first run downloads the server and the modules the user picks.
+- **D12 Pipeline and contracts.** Each repo's GitHub Actions run `check`, build, pack, sign and publish release assets; the hub repo's catalog changes through a reviewed PR. CI enforces the contracts: the module contract (today's [add-in contract](addin-contract.md), generalized) runs in the module's CI; the API's OpenAPI document is diffed against the last release, and a breaking change fails unless the API major version changes (v1 is additive only; v2 is served alongside). Developer overrides: `--server <dir>`, `--module <id>=<dir>`, a local catalog file, and a dev signing key.
+
+Cross-cutting: fault-injection tests for the update engine, local structured logs with update history and an exportable diagnostics bundle, and module-scoped tokens; see the [world-class bar](roadmap.md#world-class-bar).
+
+Notes (implementation, not decisions): the `current` pointer can be a small file naming the version rather than a directory junction, so switching is one atomic rename; `--module <id>=<dir>` generalizes today's `--addin <dir>` backend flag; the zip library is an existing one (the hub already depends on `adm-zip`), see the ADR's notes on adoption.
+
 ## Backend
 
 The Stylistic Hub backend uses **hexagonal architecture (ports and adapters)** with a **feature-first (screaming) folder layout**. It is not full Clean Architecture: the domain is small, so extra layers would add ceremony without benefit.
