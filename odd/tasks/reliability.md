@@ -19,7 +19,7 @@ Exit criteria (roadmap, proposal): "each item above fixed with a regression test
 | ID | Specs | Route | Status | Evidence |
 |---|---|---|---|---|
 | T1 | S1–S5 | delegated writer (context backstop) | done | S1 40e82b1, S2 20cf597, S3 7311666; S4, S5 closed with evidence (L2–L8) |
-| T2 | all | verifier only if a Risk line names a high-risk item | open | |
+| T2 | all | verifier only if a Risk line names a high-risk item | done (L10) | |
 
 ## Log
 
@@ -32,3 +32,5 @@ Exit criteria (roadmap, proposal): "each item above fixed with a regression test
 - **L7** (2026-10-18, T1, S5): the null-tag guard is on the bundled branch: `474f8c2 fix(word): ignore content controls with a null tag` (2026-10-17 18:14 -0500) is an ancestor of 88a3102 (approval) and c904ad9; e.g. `CommentCleanup.ts:58`, `WordTrackChangesAdapter.ts:44`, `WordAppliedSuggestionInspector.ts:17` use `(cc.tag ?? "")`, and the bundled `resources/addin/taskpane.js` (built 20:55) carries the transpiled guards. One site remains unguarded: `ApplySuggestionCommand.ts:263` (see L6, H4c), handed to the add-in team.
 - **L8** (2026-10-18, T1): `docs/api.md` (outside T1's edit surface) still says nothing of a feedback answered `failed` or of unknown request fields being refused; follow-up for the parent.
 - **L9** (parent) Merging dev (M4's expand/contract migrations) put migration 4 back as a bare string; it is now `{ kind: 'expand' }`: a new table schema-3 servers never read, so minReaderSchema stays 3 and a rollback to a schema-3 server restores nothing. The database tests now expect schema 4 with minReaderSchema 3, and the 0.0.1 fixture is built from its own three migrations, so opening it migrates and takes a backup. `bunx vitest run src/backend src/main`: 352 passed.
+- **L10** (parent) Independent verifier over dev...feature/reliability: no blockers; S1–S3 met by test, S4/S5 closed with evidence; migration 4 proven an expand by running the dev server on a schema-4 file (opens, writes parts). Advisories: (A1, fixed) `complete` left the error of a feedback marked failed whose run still finished — it now clears `error` (RED 4/5, GREEN 5/5); (A2, accepted) the failed 202 is tested at service level, the route passes it through; (backfill, accepted) a part saved by a schema-3 server and replayed by the schema-4 server right at upgrade still double counts, exactly as before this branch — no full backfill is possible (parts without suggestions leave no trace), and the window is a crash of milliseconds at upgrade time.
+- **L11** Close: S1–S3 done, S4/S5 handed over; the add-in team committed `7c00432` (document-order apply) and `4d39160` (parent tag guard), not pushed yet. Pending the maintainer: "an analysis of a real document shows zero unplaced suggestions". Risk: item 1 (additive table, rollback proven) and item 3 (strict request, oasdiff non-breaking, no client affected).

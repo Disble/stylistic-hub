@@ -82,6 +82,18 @@ describe('SqliteFeedbackRepository', () => {
     db.close()
   })
 
+  it('clears the error of a feedback marked failed whose run still completes', () => {
+    const { db, suggestionId, feedback } = open()
+    feedback.create({ id: 'f1', suggestionId, action: 'accept' })
+    feedback.fail('f1', 'timeout')
+
+    feedback.complete('f1', 'acknowledged')
+
+    expect(feedback.get('f1')).toMatchObject({ status: 'completed', outcome: 'acknowledged' })
+    expect(feedback.get('f1')).not.toHaveProperty('error')
+    db.close()
+  })
+
   it('fails feedback with the reason', () => {
     const { db, suggestionId, feedback } = open()
     feedback.create({ id: 'f1', suggestionId, action: 'accept' })
