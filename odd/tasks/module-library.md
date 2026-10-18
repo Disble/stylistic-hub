@@ -21,7 +21,7 @@ Exit criteria quoted from the roadmap: "a fresh install from a hub-only installe
 
 | ID | Specs | Route | Status | Evidence |
 |---|---|---|---|---|
-| T1 | S1 | delegated writer, unit A (backend only; parallel with M6/M8) | open | |
+| T1 | S1 | delegated writer, unit A (backend only; parallel with M6/M8) | done | 7632476; RED 3 failing (mounted assets 404, /modules 404), GREEN 504 tests, oasdiff: endpoint-added only |
 | T2 | S2 | delegated writer, unit C (after M6 merges) | open | |
 | T3 | S3, S4, S7 | delegated writer, units E+F (after T1, T2) | open | |
 | T4 | S5 | delegated writer, unit I (after T2) | open | |
@@ -32,3 +32,5 @@ Exit criteria quoted from the roadmap: "a fresh install from a hub-only installe
 
 - **L1** (2026-10-18) User: "desde ahora tendrás que continuar con el resto por tu cuenta … cuidado con la sobreingeniería … las decisiones delicadas se las toma midiendo, y probando hipótesis falsables …".
 - **L2** Map (explorer, dev 614f548): the add-in is served by the backend at `/` from `--addin`; the backend's `parseArgs` is strict and every server entry gets the same flags (`backend-host.ts:38-39`), so a new flag would break older or rolled-back servers — hence S1's environment variable. Word registration writes only `HKCU\…\Wef\Developer`, keyed by add-in id, no hash. One static hub token guards `/api/*`. The engine never installs a module the first time (`engine.ts:69-73`).
+- **L3** (2026-10-18) T1 done in `7632476`. `addinRoutes` gains a `mount` option: `serveStatic` reads the whole request path, so under `/m/<id>` it looked for `<dir>/m/<id>/taskpane.js` (RED: the task pane served, its assets 404); `rewriteRequestPath` strips the mount. Relative asset URLs need no change in `versionAssets`. Anything under `/m/` that no module serves is a `not_found` problem. `app.ts` takes modules as a structural type: the fallow zones forbid `adapters` importing `src/backend/*.ts`.
+- **L4** Assumptions (smallest behavior): a module whose `manifest.xml` is missing or has no `<Version>` is a startup error like an invalid `STYLISTIC_MODULES`, not a module served without a version; the id regex is copied from `src/shared/signing/documents.ts` (`name` is not exported and that file is outside T1); the version is read with a regex, as the bundle contract reads the manifest, no XML library. Checks: `bunx vitest run src/backend` 203 passed; `bun run check` exit 0; `oasdiff breaking` "No breaking changes to report", changelog 1 info `endpoint-added GET /modules`.
