@@ -22,6 +22,7 @@
   // - shared: message and bridge contracts shared by type across processes.
   // - shell: Electron main process (window, tray, backend supervisor); never imports backend code.
   // - preload / renderer: the UI side sees only the shared contracts.
+  // - scripts: build and packaging tools run by package.json (add-in bundle, installer staging); import no app code.
   "boundaries": {
     "zones": [
       { "name": "integration", "patterns": ["src/backend/**/*.integration.test.ts"] },
@@ -32,7 +33,8 @@
       { "name": "shared", "patterns": ["src/shared/**"] },
       { "name": "shell", "patterns": ["src/main/**"] },
       { "name": "preload", "patterns": ["src/preload/**"] },
-      { "name": "renderer", "patterns": ["src/renderer/**"] }
+      { "name": "renderer", "patterns": ["src/renderer/**"] },
+      { "name": "scripts", "patterns": ["scripts/**"] }
     ],
     "rules": [
       { "from": "integration", "allow": ["domain", "ports", "adapters"] },
@@ -43,7 +45,8 @@
       { "from": "shared", "allow": [] },
       { "from": "shell", "allow": ["shared"] },
       { "from": "preload", "allow": [], "allowTypeOnly": ["shared"] },
-      { "from": "renderer", "allow": [], "allowTypeOnly": ["shared"] }
+      { "from": "renderer", "allow": [], "allowTypeOnly": ["shared"] },
+      { "from": "scripts", "allow": [] }
     ],
     "coverage": {
       "requireAllFiles": true,

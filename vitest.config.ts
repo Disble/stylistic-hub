@@ -10,7 +10,7 @@ export default withCoverageTiers(
 defineConfig({
   test: {
     environment: 'node',
-    include: ['src/**/*.test.{ts,tsx}']
+    include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.ts']
   }
 })
 // dharness:coverage-tiers-input end
