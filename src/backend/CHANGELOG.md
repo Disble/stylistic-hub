@@ -1,5 +1,11 @@
 # Local server changelog
 
+## [server-v0.1.0-beta.2](https://github.com/Disble/stylistic-hub/compare/server-v0.1.0-beta.1...server-v0.1.0-beta.2) (2026-10-18)
+
+### Features
+
+* **server:** record the minimum reader schema and back up before migrating ([53969f4](https://github.com/Disble/stylistic-hub/commit/53969f43c5a1825f05404acf5309ddee3d415c7d))
+
 ## [server-v0.1.0-beta.1](https://github.com/Disble/stylistic-hub/compare/server-v0.0.1...server-v0.1.0-beta.1) (2026-10-18)
 
 ### Features
