@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ModelSummary, ProviderSummary } from '../../shared/bridge'
+import type { LibraryComponent, ModelSummary, ProviderSummary } from '../../shared/bridge'
+import { WORD_MODULE_ID } from '../hub-state'
 import { fakeHub, RUNNING } from '../fake-hub'
 import { HomeScreen } from './HomeScreen'
 
@@ -13,6 +14,27 @@ const CHATGPT: ProviderSummary = { id: 'openai-codex', name: 'ChatGPT', configur
 const SOL: ModelSummary = { provider: 'openai-codex', id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol' }
 /** Word with the certificate trusted and the add-in registered. */
 const WORD_READY = { available: true, caTrusted: true, addinRegistered: true, version: '1.0.0.0' }
+
+/** The Word module as the Library lists it: the id always comes from WORD_MODULE_ID, which the
+ * catalog-fixture pin in word-integration.test.ts ties to catalog/catalog.source.json, so a wrong id
+ * cannot hide behind a repeated literal. */
+function wordModule(extra: Partial<LibraryComponent> = {}): LibraryComponent {
+  return {
+    id: WORD_MODULE_ID,
+    kind: 'module',
+    installed: null,
+    requested: false,
+    channel: 'stable',
+    available: '2.0.0',
+    history: [],
+    ...extra
+  }
+}
+
+/** A library whose catalog check succeeded and lists the Word module. */
+function libraryWith(module: LibraryComponent) {
+  return { firstRun: false, catalog: true, components: [module] }
+}
 
 describe('HomeScreen', () => {
   it('lists the setup steps with what is already done', async () => {
@@ -121,5 +143,106 @@ describe('HomeScreen', () => {
     expect(within(next).getByRole('heading', { name: title })).toBeTruthy()
     expect(next.textContent).toContain(body)
     expect(within(next).getByRole('button', { name: 'Open Server' })).toBeTruthy()
+  })
+
+  it('installs Stylistic for Word from the Home card through the Library, never automatically', async () => {
+    const install = vi.fn(async () => undefined)
+    window.hub = fakeHub({ library: { list: async () => libraryWith(wordModule()), install } })
+    render(<HomeScreen onOpen={() => undefined} />)
+
+    const card = await screen.findByRole('article', { name: 'Word add-in' })
+    expect(card.textContent).toContain('2.0.0')
+    expect(install).not.toHaveBeenCalled()
+    fireEvent.click(within(card).getByRole('button', { name: 'Install Stylistic for Word' }))
+
+    await waitFor(() => expect(install).toHaveBeenCalledWith(WORD_MODULE_ID))
+  })
+
+  it('shows the pending download once the Word module is requested', async () => {
+    const install = vi.fn(async () => undefined)
+    window.hub = fakeHub({
+      library: { list: async () => libraryWith(wordModule({ requested: true })), install }
+    })
+    render(<HomeScreen onOpen={() => undefined} />)
+
+    const card = await screen.findByRole('article', { name: 'Word add-in' })
+    expect(card.textContent).toContain('Install requested')
+    expect(within(card).queryByRole('button', { name: 'Install Stylistic for Word' })).toBeNull()
+    expect(install).not.toHaveBeenCalled()
+  })
+
+  it('shows the installed download version on the Home card', async () => {
+    window.hub = fakeHub({ library: { list: async () => libraryWith(wordModule({ installed: '2.0.0' })) } })
+    render(<HomeScreen onOpen={() => undefined} />)
+
+    const card = await screen.findByRole('article', { name: 'Word add-in' })
+    expect(card.textContent).toContain('2.0.0')
+    expect(within(card).getByRole('button', { name: 'Add to Word' })).toBeTruthy()
+  })
+
+  it('shows why the Word download failed', async () => {
+    window.hub = fakeHub({
+      library: {
+        list: async () => libraryWith(wordModule()),
+        install: async () => Promise.reject(new Error(`${WORD_MODULE_ID} was refused`))
+      }
+    })
+    render(<HomeScreen onOpen={() => undefined} />)
+
+    const card = await screen.findByRole('article', { name: 'Word add-in' })
+    fireEvent.click(within(card).getByRole('button', { name: 'Install Stylistic for Word' }))
+
+    expect(await within(card).findByText(`${WORD_MODULE_ID} was refused`)).toBeTruthy()
+  })
+
+  it('omits Install when the catalog lists no Word module', async () => {
+    const install = vi.fn(async () => undefined)
+    window.hub = fakeHub({
+      library: { list: async () => ({ firstRun: false, catalog: true, components: [] }), install }
+    })
+    render(<HomeScreen onOpen={() => undefined} />)
+
+    const card = await screen.findByRole('article', { name: 'Word add-in' })
+    expect(card.textContent).toContain('Not offered')
+    expect(within(card).queryByRole('button', { name: 'Install Stylistic for Word' })).toBeNull()
+    expect(install).not.toHaveBeenCalled()
+  })
+
+  it('omits Install when the Word module has no offer', async () => {
+    const install = vi.fn(async () => undefined)
+    window.hub = fakeHub({
+      library: { list: async () => libraryWith(wordModule({ available: null })), install }
+    })
+    render(<HomeScreen onOpen={() => undefined} />)
+
+    const card = await screen.findByRole('article', { name: 'Word add-in' })
+    expect(card.textContent).toContain('Not offered')
+    expect(within(card).queryByRole('button', { name: 'Install Stylistic for Word' })).toBeNull()
+    expect(install).not.toHaveBeenCalled()
+  })
+
+  it('shows Stylistic ready once a catalog check completes while mounted', async () => {
+    const listeners: (() => void)[] = []
+    const wordCurrent = { value: { available: true, caTrusted: false, addinRegistered: false } }
+    window.hub = fakeHub({
+      provider: { list: async () => [CHATGPT], getModel: async () => SOL },
+      word: { status: async () => wordCurrent.value },
+      library: {
+        list: async () => libraryWith(wordModule({ installed: '2.0.0' })),
+        onChecked: (listener: () => void) => {
+          listeners.push(listener)
+          return () => undefined
+        }
+      }
+    })
+    render(<HomeScreen onOpen={() => undefined} />)
+
+    expect(await screen.findByText('2 of 3 done')).toBeTruthy()
+    wordCurrent.value = { ...WORD_READY }
+    act(() => {
+      for (const listener of listeners) listener()
+    })
+
+    expect(await screen.findByText('3 of 3 done')).toBeTruthy()
   })
 })

@@ -11,6 +11,7 @@ describe('hubPaths', () => {
       database: join(userData, 'stylistic.db'),
       certificates: join(userData, 'certs'),
       caCert: join(userData, 'certs', 'ca.pem'),
+      leafCert: join(userData, 'certs', 'localhost.pem'),
       token: join(userData, 'hub-token')
     })
   })

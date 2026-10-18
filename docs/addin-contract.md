@@ -35,6 +35,13 @@ A module release is a signed component (`kind: office-addin`, publisher `stylist
 
 The backend serves the folder its `--addin <dir>` flag names (`src/backend/entry.ts`); without the flag it serves only the API. The Electron hub passes `resources/addin/` whenever that folder exists (in an installed hub, the `addin` folder of its resources). Starting the backend yourself with `--addin <dir>` serves another build, for example the add-in's own `dist/` while working on it. That folder gets the serving steps above but not the bundling ones, so its manifest must already name `https://localhost:3000`.
 
-## Installer staging
+## Word trigger
 
-`bun run dist` refuses to package without `resources/addin/manifest.xml` (`scripts/require-addin.ts`). `scripts/stage-prod-addin.ts` then copies `resources/addin/` to `out/addin/`, which electron-builder packs, rewrites the manifest `<Id>` to the production add-in id so the installed hub never shares Word's sideload entry with development, stamps the shipped names from `resources/addin-shell/manifest.json`, and writes `Stylistic.docx` again for that id.
+The installer ships no add-in. `bun run dist` stages the Word directory with `bun scripts/stage-word.ts`
+(default `out/word/`, gitignored): the session loader plus its trigger document, outside any content bundle.
+The trigger carries the production add-in id below, which module releases kept, so the same trigger loads
+them. `scripts/require-addin.ts` and `scripts/stage-prod-addin.ts` stay for the retired bundle staging and are
+no longer part of `bun run dist`.
+
+The production add-in id is `5d0c6b1e-7f2a-4c3e-9b8d-1a2f3e4c5d6e`
+(`PRODUCTION_ADDIN_ID` in `scripts/addin-document.ts`).

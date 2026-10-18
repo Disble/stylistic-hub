@@ -6,6 +6,17 @@ import { createHash, webcrypto, X509Certificate } from 'node:crypto'
 import * as x509 from '@peculiar/x509'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createWordIntegration, execute, type RunCommand } from './word-integration'
+import { WORD_MODULE_ID } from '../shared/bridge'
+
+/** The Word module id the signed catalog actually offers: the request id cannot hide behind a literal. */
+function catalogWordId(): string {
+  const source = JSON.parse(readFileSync('catalog/catalog.source.json', 'utf8')) as {
+    components: { id: string; kind: string }[]
+  }
+  const id = source.components.find((component) => component.kind === 'office-addin')?.id
+  if (!id) throw new Error('The catalog offers no office-addin module')
+  return id
+}
 
 /** The add-in's manifest id. */
 const addinId = 'b821964a-4f1e-4939-83c8-0ddba48f3dff'
@@ -67,7 +78,7 @@ describe('createWordIntegration', () => {
         stdout: `\r\n${developerKey}\r\n    ${addinId}    REG_SZ    ${manifestFile}\r\n`
       }
     })
-    const word = createWordIntegration({ run, caFile, manifestFile })
+    const word = createWordIntegration({ run, caFile, manifestFile, moduleManifests: () => [manifestFile] })
 
     expect(await word.status()).toEqual({
       available: true,
@@ -82,7 +93,14 @@ describe('createWordIntegration', () => {
   it('reports what is missing', async () => {
     const run = commands({ certutil: { code: 1 }, 'reg query': { code: 1 } })
 
-    expect(await createWordIntegration({ run, caFile, manifestFile }).status()).toEqual({
+    expect(
+      await createWordIntegration({
+        run,
+        caFile,
+        manifestFile,
+        moduleManifests: () => [manifestFile]
+      }).status()
+    ).toEqual({
       available: true,
       caTrusted: false,
       addinRegistered: false,
@@ -95,26 +113,69 @@ describe('createWordIntegration', () => {
       'reg query': { code: 0, stdout: `    ${addinId}    REG_SZ    C:\\old\\manifest.xml\r\n` }
     })
 
-    expect((await createWordIntegration({ run, caFile, manifestFile }).status()).addinRegistered).toBe(false)
+    expect(
+      (
+        await createWordIntegration({
+          run,
+          caFile,
+          manifestFile,
+          moduleManifests: () => [manifestFile]
+        }).status()
+      ).addinRegistered
+    ).toBe(false)
   })
 
-  it('is unavailable until the add-in is bundled and the CA exists', async () => {
+  it('is unavailable until a downloaded module is served and the CA exists', async () => {
     const run = commands({})
 
     const word = createWordIntegration({ run, caFile, manifestFile: join(dir, 'missing.xml') })
 
     expect(await word.status()).toEqual({ available: false, caTrusted: false, addinRegistered: false })
-    await expect(word.connect()).rejects.toThrow(/not bundled/)
+    await expect(word.connect()).rejects.toThrow(
+      `not downloaded yet. Install "${WORD_MODULE_ID}" from the Library`
+    )
     expect(run).not.toHaveBeenCalled()
   })
 
+  it('says the server has not started yet when a module is served but the CA is missing', async () => {
+    const run = commands({})
+    const missingCa = join(dir, 'missing-ca.pem')
+
+    await expect(
+      createWordIntegration({
+        run,
+        caFile: missingCa,
+        manifestFile,
+        moduleManifests: () => [manifestFile]
+      }).connect()
+    ).rejects.toThrow(/server has not started yet/)
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  it('names the Word module under its real catalog id', () => {
+    expect(WORD_MODULE_ID).toBe(catalogWordId())
+  })
+
+  it(`tells a hub without a downloaded module to install ${WORD_MODULE_ID} from the Library`, async () => {
+    const run = commands({})
+
+    await expect(createWordIntegration({ run, caFile, manifestFile }).connect()).rejects.toThrow(
+      `Install "${WORD_MODULE_ID}" from the Library`
+    )
+    expect(run).not.toHaveBeenCalled()
+  })
   it('connects by trusting the CA for this user and registering the manifest with Office', async () => {
     const run = commands({ certutil: { code: 1 } })
     const trusting = vi.fn<RunCommand>(async (command, args) =>
       command === 'certutil' && args[1] === '-store' ? { code: 1, stdout: '' } : { code: 0, stdout: '' }
     )
 
-    await createWordIntegration({ run: trusting, caFile, manifestFile }).connect()
+    await createWordIntegration({
+      run: trusting,
+      caFile,
+      manifestFile,
+      moduleManifests: () => [manifestFile]
+    }).connect()
 
     expect(trusting).toHaveBeenCalledWith('certutil', ['-user', '-addstore', 'Root', caFile])
     expect(trusting).toHaveBeenCalledWith('reg', [
@@ -145,7 +206,12 @@ describe('createWordIntegration', () => {
       }
     })
 
-    await createWordIntegration({ run, caFile, manifestFile }).connect()
+    await createWordIntegration({
+      run,
+      caFile,
+      manifestFile,
+      moduleManifests: () => [manifestFile]
+    }).connect()
 
     expect(run).toHaveBeenCalledWith('reg', ['delete', developerKey, '/v', 'old-dev-id', '/f'])
     expect(run).not.toHaveBeenCalledWith('reg', ['delete', developerKey, '/v', addinId, '/f'])
@@ -155,7 +221,12 @@ describe('createWordIntegration', () => {
   it('does not ask Windows to trust a CA it already trusts', async () => {
     const run = commands({ 'certutil -user': { code: 0 } })
 
-    await createWordIntegration({ run, caFile, manifestFile }).connect()
+    await createWordIntegration({
+      run,
+      caFile,
+      manifestFile,
+      moduleManifests: () => [manifestFile]
+    }).connect()
 
     expect(run).not.toHaveBeenCalledWith('certutil', expect.arrayContaining(['-addstore']))
   })
@@ -163,9 +234,9 @@ describe('createWordIntegration', () => {
   it('stops when the user declines the Windows trust prompt', async () => {
     const run = vi.fn<RunCommand>(async () => ({ code: 1, stdout: '' }))
 
-    await expect(createWordIntegration({ run, caFile, manifestFile }).connect()).rejects.toThrow(
-      /Windows did not trust/
-    )
+    await expect(
+      createWordIntegration({ run, caFile, manifestFile, moduleManifests: () => [manifestFile] }).connect()
+    ).rejects.toThrow(/Windows did not trust/)
     expect(run).not.toHaveBeenCalledWith('reg', expect.anything())
   })
 
@@ -180,16 +251,18 @@ describe('createWordIntegration', () => {
   it('fails when Office refuses the registration', async () => {
     const run = commands({ 'reg add': { code: 5 } })
 
-    await expect(createWordIntegration({ run, caFile, manifestFile }).connect()).rejects.toThrow(
-      /Could not add Stylistic to Word/
-    )
+    await expect(
+      createWordIntegration({ run, caFile, manifestFile, moduleManifests: () => [manifestFile] }).connect()
+    ).rejects.toThrow(/Could not add Stylistic to Word/)
   })
 
   it('refuses a manifest without an add-in id instead of registering an empty name', async () => {
     writeFileSync(manifestFile, '<OfficeApp></OfficeApp>')
     const run = commands({})
 
-    await expect(createWordIntegration({ run, caFile, manifestFile }).connect()).rejects.toThrow(/no <Id>/)
+    await expect(
+      createWordIntegration({ run, caFile, manifestFile, moduleManifests: () => [manifestFile] }).connect()
+    ).rejects.toThrow(/no <Id>/)
     expect(run).not.toHaveBeenCalledWith('reg', expect.arrayContaining(['add']))
   })
 })
@@ -314,22 +387,65 @@ describe('module manifests', () => {
     expect(existsSync(hashFile)).toBe(false)
   })
 
-  it('goes back to the bundled add-in when no module is served any more', async () => {
+  it('removes the module entry when no module is served any more, without registering the bundled manifest', async () => {
+    // The module was uninstalled: its directory is gone, so its manifest file is gone too.
+    rmSync(moduleManifest)
     const run = commands({ 'reg query': listing([moduleId, moduleManifest]) })
 
     await word(run, () => []).sync()
 
-    expect(run).toHaveBeenCalledWith('reg', added(addinId, manifestFile))
     expect(run).toHaveBeenCalledWith('reg', ['delete', developerKey, '/v', moduleId, '/f'])
+    expect(run).not.toHaveBeenCalledWith('reg', expect.arrayContaining(['add']))
   })
 
-  it('keeps the bundled registration as it is when no module is installed', async () => {
-    const run = commands({ 'reg query': listing([addinId, manifestFile]) })
+  it('keeps a live module registration while its files are still there, even with no module served', async () => {
+    const run = commands({ 'reg query': listing([moduleId, moduleManifest]) })
 
     await word(run, () => []).sync()
 
     expect(run).not.toHaveBeenCalledWith('reg', expect.arrayContaining(['add']))
     expect(run).not.toHaveBeenCalledWith('reg', expect.arrayContaining(['delete']))
+  })
+
+  it('removes a stale bundled registration whose file is gone while no module is served', async () => {
+    // An earlier hub installed the bundled add-in; the catalog-only update removed its files.
+    rmSync(manifestFile)
+    const run = commands({ 'reg query': listing([addinId, manifestFile]) })
+
+    await word(run, () => []).sync()
+
+    expect(run).toHaveBeenCalledWith('reg', ['delete', developerKey, '/v', addinId, '/f'])
+    expect(run).not.toHaveBeenCalledWith('reg', expect.arrayContaining(['add']))
+  })
+
+  it('ignores a stale bundled registration whose file is gone', async () => {
+    rmSync(manifestFile)
+    const run = commands({ certutil: { code: 0 }, 'reg query': listing([addinId, manifestFile]) })
+
+    expect(await word(run, () => []).status()).toEqual({
+      available: false,
+      caTrusted: false,
+      addinRegistered: false
+    })
+  })
+
+  it('disconnect removes a stale bundled registration whose file is gone', async () => {
+    rmSync(manifestFile)
+    let listed = true
+    const run = vi.fn<RunCommand>(async (command, args) => {
+      if (command === 'reg' && args[0] === 'query') {
+        return {
+          code: 0,
+          stdout: listed ? [developerKey, `    ${addinId}    REG_SZ    ${manifestFile}`, ''].join('\r\n') : ''
+        }
+      }
+      if (command === 'reg' && args[0] === 'delete') listed = false
+      return { code: 0, stdout: '' }
+    })
+
+    await word(run, () => []).disconnect()
+
+    expect(run).toHaveBeenCalledWith('reg', ['delete', developerKey, '/v', addinId, '/f'])
   })
 
   it('connects with the module manifest instead of the bundled one', async () => {

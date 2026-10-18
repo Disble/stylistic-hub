@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs'
 import { arch, release, type } from 'node:os'
 import { join } from 'node:path'
 import { app, BrowserWindow, Menu, nativeImage, shell, Tray } from 'electron'
@@ -24,17 +23,19 @@ import { createWordIntegration } from './word-integration'
 import { createWordSession } from './word-session'
 
 /**
- * stylistic-addon's build. It ships outside the asar archive because Word reads the manifest from a
- * real file path; in development `bun run addin:bundle` copies it into `resources/addin`.
+ * The Word directory: the session loader plus its trigger document, staged by `bun scripts/stage-word.ts`
+ * (run it once for development). Both stay outside the asar archive because PowerShell and Word read them
+ * from real file paths. The installer carries no add-in: Word loads the downloaded module (S1).
  */
-const ADDIN_DIR = app.isPackaged
-  ? join(process.resourcesPath, 'addin')
-  : join(app.getAppPath(), 'resources', 'addin')
+const WORD_DIR = app.isPackaged ? join(process.resourcesPath, 'word') : join(app.getAppPath(), 'out', 'word')
 
-/** `word-session.ps1`, also outside the asar archive because PowerShell runs it from a real path. */
-const WORD_DIR = app.isPackaged
-  ? join(process.resourcesPath, 'word')
-  : join(app.getAppPath(), 'resources', 'word')
+/**
+ * Where earlier hubs kept their bundled manifest. No file is shipped there any more, but the path is still
+ * passed to the Word integration so a registration an earlier hub left behind is removed, not kept (S1).
+ */
+const LEGACY_ADDIN_MANIFEST = app.isPackaged
+  ? join(process.resourcesPath, 'addin', 'manifest.xml')
+  : join(app.getAppPath(), 'resources', 'addin', 'manifest.xml')
 
 /** Windows starts the hub with this flag at sign-in; it then runs in the tray without opening a window. */
 const BACKGROUND_FLAG = '--background'
@@ -119,7 +120,6 @@ if (!isSingleInstance) {
       database: paths.database,
       piDir: paths.piDir,
       port: HUB_PORT,
-      addinDir: existsSync(ADDIN_DIR) ? ADDIN_DIR : undefined,
       token,
       logFile: join(app.getPath('logs'), 'server.log'),
       // Both callbacks run only after the switch below exists: the first spawn and the first check end later.
@@ -155,18 +155,20 @@ if (!isSingleInstance) {
       devServerDir: serverDirFlag(process.argv, app.isPackaged),
       backend,
       healthy: () =>
-        waitUntilHealthy({ request: hubStatusRequest({ port: HUB_PORT, token, caFile: paths.caCert }) }),
+        waitUntilHealthy({
+          request: hubStatusRequest({ port: HUB_PORT, token, caFile: paths.caCert, leafFile: paths.leafCert })
+        }),
       status
     })
-    // Word gets the served modules' stable manifests, else the bundled add-in (odd/tasks/module-library.md S4).
+    // Word gets the stable manifests of the downloaded modules only; the installer ships no add-in (S1).
     const word = createWordIntegration({
       caFile: paths.caCert,
-      manifestFile: join(ADDIN_DIR, 'manifest.xml'),
+      manifestFile: LEGACY_ADDIN_MANIFEST,
       moduleManifests: () => moduleSwitch.manifests(),
       componentsRoot: join(userData, 'components')
     })
     const hubRequest = (path: string) =>
-      hubStatusRequest({ port: HUB_PORT, token, caFile: paths.caCert, path })
+      hubStatusRequest({ port: HUB_PORT, token, caFile: paths.caCert, leafFile: paths.leafCert, path })
     const moduleSwitch = createModuleSwitch({
       engine: updates.engine,
       componentsRoot: join(userData, 'components'),
@@ -184,16 +186,25 @@ if (!isSingleInstance) {
         }),
       serverHealthy: () => waitUntilHealthy({ request: hubRequest('/api/v1/status') }),
       servesModules: async () => (await hubRequest('/api/v1/modules')().catch(() => 0)) !== 404,
+      // The catalog notification precedes async resolution/health. Notify again only after Word's
+      // registration sync settles, so mounted screens see the module that actually became ready (B2).
       onChange: () =>
         void word
           .sync()
-          .catch((error: unknown) => console.error('Could not update Stylistic in Word:', error)),
+          .catch((error: unknown) => console.error('Could not update Stylistic in Word:', error))
+          .then(() => mainWindow?.webContents.send('hub:library-checked')),
       report: status.setReason
     })
-    // The backend's first start already serves the installed modules.
+    // The backend's first start already serves the installed modules. Word is tidied only after the served
+    // modules resolved: tidying first would delete an upgrade's legacy registration before knowing the module
+    // that replaces it, and a later sync adds nothing while Word holds no entry. A failing tidy still starts
+    // the server.
     void moduleSwitch
       .start()
       .catch((error: unknown) => console.error('Could not resolve the modules:', error))
+      .then(() =>
+        word.sync().catch((error: unknown) => console.error('Could not tidy Stylistic in Word:', error))
+      )
       .then(() => serverSwitch.start())
     app.on('will-quit', () => {
       updates.stop()
@@ -207,7 +218,7 @@ if (!isSingleInstance) {
     )
     const wordSession = createWordSession({
       script: join(WORD_DIR, 'word-session.ps1'),
-      document: join(ADDIN_DIR, 'Stylistic.docx'),
+      document: join(WORD_DIR, 'Stylistic.docx'),
       parentPid: process.pid,
       logFile: join(app.getPath('logs'), 'word-session.log')
     })

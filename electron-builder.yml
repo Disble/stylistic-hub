@@ -6,17 +6,18 @@ directories:
   output: release
 files:
   - out/**
+  # Stale add-in staging is never packed: the installer carries no add-in (odd/tasks/catalog-only-word.md S1).
   - '!out/addin/**'
+  # The staged Word directory is packed as real files below, not inside the asar archive.
+  - '!out/word/**'
   - resources/**
-  # Word reads the add-in manifest from a real path, so the add-in stays outside the asar archive.
   - '!resources/addin/**'
+  # Word reads the loader from a real path, so it stays outside the asar archive.
   - '!resources/word/**'
   - package.json
 extraResources:
-  # The production copy from scripts/stage-prod-addin.ts, under its own add-in id.
-  - from: out/addin
-    to: addin
-  - from: resources/word
+  # The staged Word directory from scripts/stage-word.ts: the loader plus its trigger document.
+  - from: out/word
     to: word
 win:
   target:
