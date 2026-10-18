@@ -25,6 +25,19 @@
       "componentUrl": "https://github.com/Disble/stylistic-hub/releases/download/server-v1.0.0/component.json",
       "rolloutPercent": 100,
       "blocked": []
+    },
+    {
+      "id": "stylistic-word-addin",
+      "kind": "office-addin",
+      "publisher": "stylistic-addon",
+      "channel": "stable",
+      "version": "1.0.0",
+      "sha256": "d7238c60c1b52303046d15ba05bf225e3aab8f22cb0ace5d0fe06bbe6f07213e",
+      "size": 1161482,
+      "artifactUrl": "https://github.com/Disble/stylistic-addon/releases/download/v1.0.0/stylistic-word-addin-1.0.0.zip",
+      "componentUrl": "https://github.com/Disble/stylistic-addon/releases/download/v1.0.0/component.json",
+      "rolloutPercent": 100,
+      "blocked": []
     }
   ]
 }
