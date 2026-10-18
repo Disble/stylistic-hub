@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { readdir, rm } from 'node:fs/promises'
+import { readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { HUB_ID } from './install'
@@ -232,6 +232,18 @@ describe('modules on request', () => {
       keyId: world.addonKey.id
     })
     expect(existsSync(join(world.root, 'word-addin', '1.0.0', 'entry.js'))).toBe(true)
+  })
+
+  it('keeps the stable manifest Word is registered with when a new version installs', async () => {
+    await requestAndCheck([first, await addin('1.0.0')])
+    const stable = join(world.root, 'word-addin', 'manifest.xml')
+    await writeFile(stable, '<OfficeApp/>')
+
+    world.publish({ releases: [first, await addin('1.1.0')], serial: 102 })
+    await world.engine.runCheck()
+
+    expect((await world.engine.readState()).components['word-addin']?.current).toBe('1.1.0')
+    expect(existsSync(stable)).toBe(true)
   })
 
   it('waits for the next check after a request and keeps an installed module as it is', async () => {
