@@ -41,7 +41,7 @@ Exit criteria quoted from the roadmap: "an installed hub moves from one `server-
 | ID | Specs | Route | Status | Evidence |
 |---|---|---|---|---|
 | T1 | S1 | delegated writer (parallel with T2) | done | commit `feat(server): record the minimum reader schema and back up before migrating`; 17 tests in `database.test.ts`, `bun run check` exit 0 |
-| T2 | S2 | delegated writer (parallel with T1) | open | |
+| T2 | S2 | delegated writer (parallel with T1) | done | commits `95731dc` (strict extraction), `ca4b076` (state, root keys), `85e1ac7` (catalog check, install, revocation, compatibility, wiring); 48 tests in `src/main/updates`, core files at 100%, `bun run check` exit 0 |
 | T3 | S3 | delegated writer, after T1+T2 | open | |
 | T4 | S4 | delegated writer, after T2 | open | |
 | T5 | all | independent verifier (high-risk items 1, 2, 4, 5) | open | |
