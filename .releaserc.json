@@ -1,5 +1,6 @@
 {
   "tagFormat": "hub-v${version}",
+  "branches": ["main", { "name": "dev", "prerelease": "beta" }],
   "plugins": [
     [
       "@semantic-release/commit-analyzer",
