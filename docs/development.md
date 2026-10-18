@@ -40,6 +40,14 @@ The project uses [dharness](https://github.com/Disble/dharness) as its developme
 - `commit-msg`: Conventional Commits (`feat:`, `fix:`, `docs:`…).
 - `pre-push`: the test suite.
 
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push to `main`, `dev`, `feature/**`, `release/**` and `hotfix/**`, and on pull requests to `main` and `dev`. The dharness gate is local only (it is not built for CI); CI sets `LEFTHOOK=0` and runs the checks as steps:
+
+- **check** (Windows): the steps of `bun run check` except coverage (`format:check`, `lint`, `typecheck`, `test`, `check:word`), then `bun run build`. The coverage tiers resolve through the dharness binary, so they are enforced by the local gate (the pre-commit coverage job and `bun run check`) and not in CI.
+- **api-contract**: generates the API v1 OpenAPI document of the last `server-v*` tag and of the commit with `scripts/openapi-doc.ts` (no server is started), and runs [oasdiff](https://github.com/oasdiff/oasdiff) `breaking --fail-on ERR` on the pair. Removing a field, a route or a status from v1 fails it; additions pass. A breaking change goes in an `/api/v2` served alongside v1, never in v1. To run it locally, download oasdiff and run the same two commands the job runs.
+- **release-server** and **release-hub**: only on a push to `dev` (beta prereleases) or `main` (stable), after the two checks pass. They run `release:server` and `release:hub`; semantic-release decides from the commits whether there is anything to release, pushes the release commit and tag, and creates the GitHub Release (the hub's with its installer). The hub release builds the add-in from `Disble/stylistic-addon`'s `main` and is skipped with a notice while that branch has no `build:hub`.
+
 ## Layout
 
 ```

@@ -1,6 +1,12 @@
 {
   "tagFormat": "hub-v${version}",
-  "branches": ["main", { "name": "dev", "prerelease": "beta" }],
+  "branches": [
+    "main",
+    {
+      "name": "dev",
+      "prerelease": "beta"
+    }
+  ],
   "plugins": [
     [
       "@semantic-release/commit-analyzer",
@@ -37,6 +43,20 @@
       {
         "assets": ["package.json", "CHANGELOG.md"],
         "message": "chore(release): hub ${nextRelease.version}"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "successComment": false,
+        "failComment": false,
+        "releasedLabels": false,
+        "assets": [
+          {
+            "path": "release/StylisticHub-Setup-*.exe",
+            "label": "Windows installer"
+          }
+        ]
       }
     ]
   ]

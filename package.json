@@ -26,7 +26,7 @@
     "release:hub": "semantic-release",
     "test:coverage": "vitest run --coverage --config .dharness/vitest.coverage.mjs",
     "check": "bun run format:check && bun run lint && bun run typecheck && bun run test:coverage && bun run check:word",
-    "dist": "bun scripts/require-addin.ts && bun run build && bun scripts/stage-prod-addin.ts && electron-builder --win nsis --x64",
+    "dist": "bun scripts/require-addin.ts && bun run build && bun scripts/stage-prod-addin.ts && electron-builder --win nsis --x64 --publish never",
     "dist:dir": "bun scripts/require-addin.ts && bun run build && bun scripts/stage-prod-addin.ts && electron-builder --win dir --x64",
     "prepare": "lefthook install"
   },
@@ -52,6 +52,7 @@
     "@semantic-release/changelog": "7.0.0",
     "@semantic-release/exec": "7.1.0",
     "@semantic-release/git": "11.0.1",
+    "@semantic-release/github": "12.0.10",
     "@testing-library/dom": "10.4.2",
     "@testing-library/react": "16.3.3",
     "@types/adm-zip": "0.6.0",
