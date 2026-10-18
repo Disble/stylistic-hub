@@ -45,9 +45,6 @@ const ChunkSchema = z
     id: z.string(),
     status: z.enum(['queued', 'running', 'completed', 'failed', 'canceled']),
     suggestions: z.array(SuggestionSchema),
-    dropped: z.number().int().openapi({
-      description: 'Suggestions the hub discarded because their anchor is not in their context.'
-    }),
     error: z
       .string()
       .optional()
