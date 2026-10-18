@@ -76,7 +76,8 @@ const useStyles = makeStyles({
 const DOT = {
   starting: tokens.colorPaletteBlueBorderActive,
   running: tokens.colorPaletteGreenBackground3,
-  restarting: tokens.colorPaletteRedBackground3
+  restarting: tokens.colorPaletteRedBackground3,
+  'rolled-back': tokens.colorPaletteYellowBackground3
 } as const satisfies Record<ServerStatus['state'], string>
 
 /** The server step's text while the server is not running yet. */
@@ -85,6 +86,10 @@ const SERVER_STEP = {
   restarting: {
     title: 'The local server stopped',
     body: 'The hub is starting it again. If it keeps stopping, the Server screen says why.'
+  },
+  'rolled-back': {
+    title: 'A server update failed',
+    body: 'The hub rolled it back or stopped the server. The Server screen says why.'
   }
 } as const satisfies Record<Exclude<ServerStatus['state'], 'running'>, { title: string; body: string }>
 

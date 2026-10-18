@@ -180,4 +180,20 @@ describe('rollback primitives', () => {
     world.publish({ releases: [second], serial: 102 })
     expect(await world.engine.runCheck()).toEqual({ catalog: 'ok', installs: [] })
   })
+  it('records why it switched back when a reason is given', async () => {
+    const second = await makeRelease({ version: '1.1.0' }, world.componentKey)
+    world.publish({ releases: [second], serial: 101 })
+    await world.engine.runCheck()
+
+    await world.engine.setCurrent('server', '1.0.0', 'writes_since_upgrade_lost')
+
+    expect((await world.engine.readState()).history.at(-1)).toEqual({
+      time: '2026-10-18T12:00:00.000Z',
+      component: 'server',
+      from: '1.1.0',
+      to: '1.0.0',
+      outcome: 'switched',
+      reason: 'writes_since_upgrade_lost'
+    })
+  })
 })

@@ -20,7 +20,8 @@ export interface UpdateEngine {
   installComponent(entry: CatalogEntry, keys: KeyList): Promise<InstallOutcome>
   readState(): Promise<UpdateState>
   markBad(id: string, version: string, reason: string): Promise<void>
-  setCurrent(id: string, version: string): Promise<void>
+  /** Switches `current` to an installed version; `reason` goes into the history line (null when none). */
+  setCurrent(id: string, version: string, reason?: string | null): Promise<void>
   /** A catalog check, revocation, then the installs the catalog calls for. */
   runCheck(): Promise<CheckReport>
 }
@@ -74,7 +75,7 @@ export function createUpdateEngine(context: EngineContext, rootKeys: readonly Bu
         addHistory(state, { time, component: id, from: version, to: null, outcome: 'marked_bad', reason })
       })
     },
-    async setCurrent(id, version) {
+    async setCurrent(id, version, reason = null) {
       const { envelope } = await readInstalled(context.root, id, version)
       await updateState(context.root, (state) => {
         const component = componentState(state, id)
@@ -85,7 +86,7 @@ export function createUpdateEngine(context: EngineContext, rootKeys: readonly Bu
           from: component.current,
           to: version,
           outcome: 'switched',
-          reason: null
+          reason
         })
         component.previous = component.current
         component.current = version
