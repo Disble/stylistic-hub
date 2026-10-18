@@ -10,9 +10,11 @@ import { hubStatusRequest } from './health-request'
 import { hubPaths } from './hub-paths'
 import { createLocalModel } from './local-model'
 import { loadOrCreateHubToken } from './hub-token'
+import { createLibrary } from './library'
 import { registerProviderIpc } from './ipc-provider'
 import { registerScreenIpc } from './ipc-screens'
 import { createPiProvider } from './pi-provider'
+import { createModuleSwitch, moduleDirFlags } from './module-switch'
 import { createServerStatus } from './server-status'
 import { createServerSwitch, serverDirFlag } from './server-switch'
 import { channelControls } from './updates/channels'
@@ -131,8 +133,18 @@ if (!isSingleInstance) {
       userData,
       database: paths.database,
       fetch,
-      onChecked: (report) => void serverSwitch.refresh(report),
+      // Modules first, so a server the check also switched starts with the new modules already set.
+      onChecked: (report) => {
+        library.observe(report)
+        mainWindow?.webContents.send('hub:library-checked')
+        void moduleSwitch.refresh().then(() => serverSwitch.refresh(report))
+      },
       onReport: selfUpdate.onReport
+    })
+    const library = createLibrary({
+      engine: updates.engine,
+      check: updates.check,
+      hubVersion: app.getVersion()
     })
     const serverSwitch = createServerSwitch({
       engine: updates.engine,
@@ -146,7 +158,43 @@ if (!isSingleInstance) {
         waitUntilHealthy({ request: hubStatusRequest({ port: HUB_PORT, token, caFile: paths.caCert }) }),
       status
     })
-    void serverSwitch.start()
+    // Word gets the served modules' stable manifests, else the bundled add-in (odd/tasks/module-library.md S4).
+    const word = createWordIntegration({
+      caFile: paths.caCert,
+      manifestFile: join(ADDIN_DIR, 'manifest.xml'),
+      moduleManifests: () => moduleSwitch.manifests(),
+      componentsRoot: join(userData, 'components')
+    })
+    const hubRequest = (path: string) =>
+      hubStatusRequest({ port: HUB_PORT, token, caFile: paths.caCert, path })
+    const moduleSwitch = createModuleSwitch({
+      engine: updates.engine,
+      componentsRoot: join(userData, 'components'),
+      // `--module <id>=<dir>` serves a development build of a module (unpackaged hub only).
+      devModules: moduleDirFlags(process.argv, app.isPackaged),
+      backend,
+      restartAllowed: () => serverSwitch.restartAllowed(),
+      // A module is healthy once its manifest and its task pane both answer 200 at `/m/<id>/`.
+      healthy: (id) =>
+        waitUntilHealthy({
+          request: async () => {
+            const manifest = await hubRequest(`/m/${id}/manifest.xml`)()
+            return manifest === 200 ? hubRequest(`/m/${id}/taskpane.html`)() : manifest
+          }
+        }),
+      serverHealthy: () => waitUntilHealthy({ request: hubRequest('/api/v1/status') }),
+      servesModules: async () => (await hubRequest('/api/v1/modules')().catch(() => 0)) !== 404,
+      onChange: () =>
+        void word
+          .sync()
+          .catch((error: unknown) => console.error('Could not update Stylistic in Word:', error)),
+      report: status.setReason
+    })
+    // The backend's first start already serves the installed modules.
+    void moduleSwitch
+      .start()
+      .catch((error: unknown) => console.error('Could not resolve the modules:', error))
+      .then(() => serverSwitch.start())
     app.on('will-quit', () => {
       updates.stop()
       selfUpdate.stop()
@@ -157,10 +205,6 @@ if (!isSingleInstance) {
       createLocalModel({ modelsFile: join(paths.piDir, 'models.json'), fetch }),
       () => mainWindow?.webContents
     )
-    const word = createWordIntegration({
-      caFile: paths.caCert,
-      manifestFile: join(ADDIN_DIR, 'manifest.xml')
-    })
     const wordSession = createWordSession({
       script: join(WORD_DIR, 'word-session.ps1'),
       document: join(ADDIN_DIR, 'Stylistic.docx'),
@@ -199,6 +243,7 @@ if (!isSingleInstance) {
         serverStatus: status.get,
         wordStatus: word.status
       },
+      library,
       serverSwitch.restartAllowed
     )
 

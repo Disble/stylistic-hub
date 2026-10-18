@@ -13,8 +13,15 @@ if (!root || !out) throw new Error('Usage: bun scripts/openapi-doc.ts <tree root
 
 /** The route definitions of that tree; the services are never called to describe them. */
 const { apiV1 } = await import(pathToFileURL(resolve(root, 'src/backend/adapters/http/api-v1.ts')).href)
-/** The API, built with empty services: only its routes and schemas are read. */
-const api = apiV1({ serverVersion: '0.0.0', analyses: {}, feedback: {}, documents: {}, preferences: {} })
+/** The API, built with empty services: only its routes and schemas are read. An older tree ignores `modules`. */
+const api = apiV1({
+  serverVersion: '0.0.0',
+  analyses: {},
+  feedback: {},
+  documents: {},
+  preferences: {},
+  modules: []
+})
 /** The response of `GET /openapi.json`. */
 const response = await api.request('/openapi.json')
 if (!response.ok) throw new Error(`GET /openapi.json answered ${response.status}`)

@@ -6,18 +6,21 @@ import type { StatusRequest } from './health-check'
 const REQUEST_TIMEOUT_MS = 5000
 
 /**
- * `GET https://localhost:<port>/api/v1/status` with the hub token, the loopback Host the API requires and the
+ * `GET https://localhost:<port><path>` (default `/api/v1/status`) with the hub token, the loopback Host the API requires and the
  * hub CA as the only trusted root. node:https, because global fetch takes no CA without a dispatcher package
  * and Electron's net.fetch trusts only Windows' store, which may not hold the hub CA yet.
  */
 export function hubStatusRequest({
   port,
   token,
-  caFile
+  caFile,
+  path = '/api/v1/status'
 }: {
   port: number
   token: string
   caFile: string
+  /** Another path, such as a module's `/m/<id>/taskpane.html`. */
+  path?: string
 }): StatusRequest {
   return () =>
     new Promise((resolve, reject) => {
@@ -25,7 +28,7 @@ export function hubStatusRequest({
         {
           host: 'localhost',
           port,
-          path: '/api/v1/status',
+          path,
           method: 'GET',
           ca: readFileSync(caFile),
           headers: { authorization: `Bearer ${token}`, host: `localhost:${port}` },

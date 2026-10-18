@@ -40,6 +40,17 @@ const bridge: HubBridge = {
       return () => void ipcRenderer.removeListener('hub:server-status', handler)
     }
   },
+  library: {
+    list: () => ipcRenderer.invoke('hub:library:list'),
+    install: (id) => ipcRenderer.invoke('hub:library:install', id),
+    uninstall: (id) => ipcRenderer.invoke('hub:library:uninstall', id),
+    check: () => ipcRenderer.invoke('hub:library:check'),
+    onChecked: (listener) => {
+      const handler = () => listener()
+      ipcRenderer.on('hub:library-checked', handler)
+      return () => void ipcRenderer.removeListener('hub:library-checked', handler)
+    }
+  },
   word: {
     status: () => ipcRenderer.invoke('hub:word:status'),
     connect: () => ipcRenderer.invoke('hub:word:connect'),

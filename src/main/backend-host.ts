@@ -4,6 +4,7 @@ import { utilityProcess } from 'electron'
 // fallow-ignore-next-line boundary-violation -- build-time bundle path for utilityProcess.fork, not a code import
 import backendPath from '../backend/entry?modulePath'
 import type { createServerStatus } from './server-status'
+import type { ModuleBackend } from './module-switch'
 import type { ServerBackend } from './server-switch'
 import { createSupervisor, type Supervisor } from './supervisor'
 
@@ -36,7 +37,8 @@ const CRASH_LOOP_EXITS = 3
 
 /**
  * Runs the backend in its own utility process and restarts it if it crashes. Nothing runs until `startFrom`
- * names the entry to fork; the arguments and environment are the same for every entry, so older servers start.
+ * names the entry to fork; the arguments and environment are the same for every entry, so older servers start
+ * (they ignore `STYLISTIC_MODULES`, the modules to serve, which `setModules` sets for the next start).
  */
 export function createBackend({
   certificatesDir,
@@ -48,10 +50,12 @@ export function createBackend({
   logFile,
   status,
   onCrashLoop
-}: BackendOptions): Supervisor & Pick<ServerBackend, 'startFrom'> {
+}: BackendOptions): Supervisor & Pick<ServerBackend, 'startFrom'> & Pick<ModuleBackend, 'setModules'> {
   mkdirSync(dirname(logFile), { recursive: true })
   const log = createWriteStream(logFile, { flags: 'a' })
   let entry = BUILT_IN_ENTRY
+  /** `STYLISTIC_MODULES` for the next start (module-switch.ts); undefined leaves the variable out. */
+  let modules: string | undefined
   const supervisor = createSupervisor({
     spawn: () => {
       const child = utilityProcess.fork(
@@ -66,7 +70,11 @@ export function createBackend({
         {
           serviceName: 'stylistic-backend',
           stdio: 'pipe',
-          env: { ...process.env, STYLISTIC_HUB_TOKEN: token }
+          env: {
+            ...process.env,
+            STYLISTIC_HUB_TOKEN: token,
+            ...(modules ? { STYLISTIC_MODULES: modules } : {})
+          }
         }
       )
       // Kept on the console too, for development.
@@ -86,6 +94,9 @@ export function createBackend({
   })
   return {
     ...supervisor,
+    setModules(value) {
+      modules = value
+    },
     async startFrom(next) {
       entry = next
       await supervisor.halt()

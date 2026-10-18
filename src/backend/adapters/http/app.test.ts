@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { createHmac } from 'node:crypto'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -14,6 +15,8 @@ import { createHttpApp } from './app'
 
 /** Token the app under test expects. */
 const token = 'a'.repeat(64)
+/** A module's token as the hub derives it: HMAC-SHA256 of "module:<id>" keyed by the hub token. */
+const moduleToken = (id: string) => createHmac('sha256', token).update(`module:${id}`).digest('hex')
 /** Port the app under test serves on. */
 const port = 3000
 /** The API's dependencies over an in-memory database and an engine that runs nothing. */
@@ -36,7 +39,8 @@ function services() {
     }),
     feedback: createFeedbackService({ analyses, feedback: new SqliteFeedbackRepository(db), engine }),
     documents,
-    preferences: new SqlitePreferencesRepository(db)
+    preferences: new SqlitePreferencesRepository(db),
+    modules: []
   }
 }
 
@@ -256,5 +260,134 @@ describe('createHttpApp', () => {
     expect(foreign.status).toBe(403)
     expect(api.status).toBe(401)
     rmSync(addinDir, { recursive: true, force: true })
+  })
+
+  it('serves each module under /m/<id>/ beside the add-in at the root, and lists the modules on the API', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'hub-app-modules-'))
+    const addinDir = join(root, 'addin')
+    const moduleDir = join(root, 'module')
+    mkdirSync(addinDir)
+    mkdirSync(moduleDir)
+    writeFileSync(join(addinDir, 'taskpane.html'), '<html><head><title>root</title></head></html>')
+    writeFileSync(join(moduleDir, 'taskpane.html'), '<html><head><title>module</title></head></html>')
+    const withModules = createHttpApp({
+      token,
+      port,
+      ...services(),
+      addinDir,
+      modules: [{ id: 'stylistic-addon', dir: moduleDir, version: '1.2.3.0', scopes: ['modules'] }]
+    })
+    const get = (path: string, headers: Record<string, string> = {}) =>
+      withModules.request(path, { headers: { host: `localhost:${port}`, ...headers } }, fromPeer('127.0.0.1'))
+
+    const modulePage = await get('/m/stylistic-addon/taskpane.html')
+    const rootPage = await get('/taskpane.html')
+    const unknown = await get('/m/other/taskpane.html')
+    const listed = await get('/api/v1/modules', { authorization: `Bearer ${token}` })
+    const refused = await get('/api/v1/modules')
+
+    expect(modulePage.status).toBe(200)
+    const moduleHtml = await modulePage.text()
+    expect(moduleHtml).toContain(
+      `<title>module</title><meta name="stylistic-hub-token" content="${moduleToken('stylistic-addon')}">`
+    )
+    expect(moduleHtml).not.toContain(token)
+    expect(await rootPage.text()).toContain(
+      `<title>root</title><meta name="stylistic-hub-token" content="${token}">`
+    )
+    expect(unknown.status).toBe(404)
+    expect(unknown.headers.get('content-type')).toBe('application/problem+json')
+    expect(await unknown.json()).toMatchObject({
+      code: 'not_found',
+      detail: 'No route GET /m/other/taskpane.html.'
+    })
+    expect(await listed.json()).toEqual({ modules: [{ id: 'stylistic-addon', version: '1.2.3.0' }] })
+    expect(refused.status).toBe(401)
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  describe('module tokens', () => {
+    /** Two modules: one may read the status and run analyses, the other may only list modules. */
+    const scoped = createHttpApp({
+      token,
+      port,
+      ...services(),
+      modules: [
+        { id: 'module-a', dir: tmpdir(), version: '1.0.0.0', scopes: ['status', 'analyses'] },
+        { id: 'module-b', dir: tmpdir(), version: '1.0.0.0', scopes: ['modules'] }
+      ]
+    })
+    /** A request to the API with `bearer`, from the task pane. */
+    const call = (path: string, bearer: string, init: RequestInit = {}) =>
+      scoped.request(
+        path,
+        {
+          ...init,
+          headers: {
+            host: `localhost:${port}`,
+            origin: `https://localhost:${port}`,
+            authorization: `Bearer ${bearer}`,
+            'content-type': 'application/json'
+          }
+        },
+        fromPeer('127.0.0.1')
+      )
+    const documentId = '3f1c2b8e-4d5a-4e6f-9a7b-1c2d3e4f5a6b'
+
+    it('accepts a module token on a scope the module declared', async () => {
+      const status = await call('/api/v1/status', moduleToken('module-a'))
+      const analysis = await call(`/api/v1/documents/${documentId}/analyses`, moduleToken('module-a'), {
+        method: 'POST',
+        body: JSON.stringify({ genre: 'narrativa-literaria', chunks: [{ id: 'c1', text: 'Hola.' }] })
+      })
+
+      expect(status.status).toBe(200)
+      expect(analysis.status).toBe(202)
+    })
+
+    it.each([
+      ['the documents scope', '/api/v1/documents/3f1c2b8e-4d5a-4e6f-9a7b-1c2d3e4f5a6b'],
+      ['the preferences scope', '/api/v1/preferences'],
+      ['the modules scope', '/api/v1/modules'],
+      ['the feedback scope', '/api/v1/feedback/3f1c2b8e-4d5a-4e6f-9a7b-1c2d3e4f5a6b'],
+      ['the OpenAPI document, which is in no scope', '/api/v1/openapi.json'],
+      ['a path outside API v1', '/api/health']
+    ])(
+      'refuses a module token on %s it did not declare with the unauthorized problem',
+      async (_case, path) => {
+        const response = await call(path, moduleToken('module-a'))
+
+        expect(response.status).toBe(401)
+        expect(response.headers.get('content-type')).toBe('application/problem+json')
+        expect(await response.json()).toEqual({
+          type: 'urn:stylistic:problem:unauthorized',
+          title: 'The hub token is missing or wrong',
+          status: 401,
+          detail: 'Send the hub token as "Authorization: Bearer <token>".',
+          code: 'unauthorized'
+        })
+      }
+    )
+
+    it("does not take one module's token for another's scopes", async () => {
+      expect((await call('/api/v1/modules', moduleToken('module-b'))).status).toBe(200)
+      expect((await call('/api/v1/modules', moduleToken('module-a'))).status).toBe(401)
+      expect((await call('/api/v1/status', moduleToken('module-b'))).status).toBe(401)
+    })
+
+    it('refuses the token of a module the hub does not serve', async () => {
+      expect((await call('/api/v1/status', moduleToken('module-c'))).status).toBe(401)
+    })
+
+    it('lets the hub token through every scope', async () => {
+      for (const path of [
+        '/api/v1/status',
+        '/api/v1/modules',
+        '/api/v1/preferences',
+        '/api/v1/openapi.json'
+      ]) {
+        expect((await call(path, token)).status).toBe(200)
+      }
+    })
   })
 })

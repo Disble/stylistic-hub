@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ModelSummary, ProviderSummary, ServerStatus, WordStatus } from '../shared/bridge'
 
 /** The hub's screens, in navigation order. */
-export type Screen = 'home' | 'word' | 'server' | 'provider'
+export type Screen = 'home' | 'word' | 'server' | 'provider' | 'library'
 
 /** The local server's status, kept current by the main process's notifications. */
 export function useServerStatus(): ServerStatus | undefined {

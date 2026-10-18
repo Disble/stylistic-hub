@@ -54,12 +54,31 @@ async function brokenRequirements(root: string, component: Component): Promise<s
   for (const [id, installed] of Object.entries(state.components)) {
     if (id === component.id || !installed.current) continue
     const { requires } = (await readInstalled(root, id, installed.current)).component
-    const missing = [requires.api]
-      .flat()
-      .filter((api): api is string => typeof api === 'string' && !provided.includes(api))
+    const missing = apis(requires.api).filter((api) => !provided.includes(api))
     if (missing.length > 0) broken.push(`${id} requires api ${missing.join(', ')}`)
   }
   return broken
+}
+
+/** The API names of a `requires.api` or `provides.api` value: one name or a list; anything else names none. */
+function apis(value: unknown): string[] {
+  return [value].flat().filter((api): api is string => typeof api === 'string')
+}
+
+/** The APIs the built-in backend serves (`/api/v1`, src/backend/adapters/http/app.ts), when no server is installed. */
+const BUILT_IN_API = ['v1']
+
+/**
+ * The APIs a module requires that the current server does not provide (odd/tasks/module-library.md S2): the
+ * installed server's `provides.api`, else the built-in backend's. None for a server.
+ */
+async function missingApis(root: string, component: Component): Promise<string[]> {
+  if (component.kind === 'server') return []
+  const server = (await readState(root)).components['server']?.current
+  const provided = server
+    ? apis((await readInstalled(root, 'server', server)).component.provides.api)
+    : BUILT_IN_API
+  return apis(component.requires.api).filter((api) => !provided.includes(api))
 }
 
 /** How a schema-guard refusal ends, so the Server screen can tell it from other failed installs. */
@@ -127,6 +146,8 @@ async function fetchComponent(
   if (signature !== 'ok') return signature
   const broken = await brokenRequirements(context.root, component.data)
   if (broken.length > 0) return `incompatible: ${broken.join('; ')}`
+  const missing = await missingApis(context.root, component.data)
+  if (missing.length > 0) return `requires api ${missing.join(', ')}`
   const hold = await schemaHold(context, component.data)
   if (hold) return hold
   return { component: component.data, envelope: envelope.data }
@@ -203,7 +224,11 @@ export async function stageHubInstaller(
 
 /** Deletes every version folder and record except `keep`, and the staging directory. */
 async function prune(dir: string, keep: (string | null)[]): Promise<void> {
-  const kept = new Set(keep.flatMap((version) => (version ? [version, `${version}.json`] : [])))
+  // manifest.xml is the stable copy Word is registered with (module-switch.ts), not a version.
+  const kept = new Set([
+    'manifest.xml',
+    ...keep.flatMap((version) => (version ? [version, `${version}.json`] : []))
+  ])
   for (const name of await readdir(dir)) {
     if (!kept.has(name)) await rm(join(dir, name), { recursive: true, force: true })
   }
