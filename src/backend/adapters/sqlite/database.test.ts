@@ -77,7 +77,7 @@ describe('openDatabase', () => {
     })
     expect(db.prepare('SELECT count(*) AS n FROM analysis').get()).toEqual({ n: 0 })
     db.close()
-    expect(userVersion(file)).toBe(3)
+    expect(userVersion(file)).toBe(4)
   })
 
   it('refuses a database written by a newer hub', () => {

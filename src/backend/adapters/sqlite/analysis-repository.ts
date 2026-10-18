@@ -117,6 +117,7 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
     return true
   }
 
+  /** A part already recorded is ignored, so a save that OpenWorkflow replays changes nothing. */
   completePart(
     id: string,
     chunkId: string,
@@ -126,6 +127,10 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
   ): void {
     this.transaction(() => {
       if (!this.running(id)) return
+      const { changes } = this.db
+        .prepare('INSERT OR IGNORE INTO analysis_part (analysis_id, chunk_id, part) VALUES (?, ?, ?)')
+        .run(id, chunkId, part)
+      if (changes === 0) return
       const insert = this.db.prepare(
         'INSERT INTO suggestion (id, analysis_id, chunk_id, part, position, body) VALUES (?, ?, ?, ?, ?, ?)'
       )

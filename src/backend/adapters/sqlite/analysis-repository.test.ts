@@ -102,6 +102,25 @@ describe('SqliteAnalysisRepository', () => {
     db.close()
   })
 
+  it.each([
+    ['with suggestions', [FIX, NOTE], 1],
+    ['without suggestions', [], 0]
+  ])('records a part completed twice only once, %s', (_case, suggestions, dropped) => {
+    const { db, analyses } = open()
+    analyses.create({ id: 'a1', documentId: DOC, chunks: [{ id: '0', parts: 2 }] })
+    analyses.completePart('a1', '0', 0, suggestions, dropped)
+    const first = analyses.get('a1')
+
+    analyses.completePart('a1', '0', 0, suggestions, dropped)
+
+    expect(analyses.get('a1')).toEqual(first)
+    expect(first?.chunks[0]).toMatchObject({ status: 'running', dropped })
+    expect(first?.chunks[0]?.suggestions).toHaveLength(suggestions.length)
+    expect(db.prepare('SELECT parts_done FROM analysis_chunk').get()).toEqual({ parts_done: 1 })
+    expect(db.prepare('SELECT count(*) AS n FROM suggestion').get()).toEqual({ n: suggestions.length })
+    db.close()
+  })
+
   it('gives every suggestion a short, tag-safe id that is unique across analyses', () => {
     const { db, analyses } = open()
     const ids: string[] = []

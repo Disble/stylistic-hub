@@ -60,6 +60,14 @@ const MIGRATIONS: readonly string[] = [
     summary TEXT,
     error TEXT,
     created_at TEXT NOT NULL
+  ) STRICT`,
+  // The parts already recorded, so a part whose save OpenWorkflow replays is recorded once.
+  `CREATE TABLE analysis_part (
+    analysis_id TEXT NOT NULL,
+    chunk_id TEXT NOT NULL,
+    part INTEGER NOT NULL,
+    PRIMARY KEY (analysis_id, chunk_id, part),
+    FOREIGN KEY (analysis_id, chunk_id) REFERENCES analysis_chunk (analysis_id, chunk_id)
   ) STRICT`
 ]
 
