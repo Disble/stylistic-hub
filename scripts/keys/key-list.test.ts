@@ -1,34 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import {
-  canonicalJson,
-  createKeyList,
-  entryFor,
-  generateKey,
-  keyId,
-  rawPublicKey,
-  signKeyList,
-  verifyKeyList
-} from './key-list'
+import { keyId, rawPublicKey } from '../../src/shared/signing/keys'
+import { verifyKeyList } from '../../src/shared/signing/verify'
+import { createKeyList, entryFor, generateKey, signKeyList } from './key-list'
 
 /** A fixed moment so expiry dates are predictable. */
 const NOW = new Date('2026-10-17T12:00:00.000Z')
-
-describe('canonicalJson', () => {
-  it('sorts object keys at every depth so the signed bytes never depend on key order', () => {
-    expect(canonicalJson({ b: 1, a: { d: [2, { f: 3, e: 4 }], c: null } })).toBe(
-      '{"a":{"c":null,"d":[2,{"e":4,"f":3}]},"b":1}'
-    )
-  })
-})
-
-describe('keyId', () => {
-  it('names a public key by the first 16 hex characters of its sha256', () => {
-    const { publicKey } = generateKey()
-    const id = keyId(rawPublicKey(publicKey))
-    expect(id).toMatch(/^[0-9a-f]{16}$/)
-    expect(keyId(rawPublicKey(publicKey))).toBe(id)
-  })
-})
 
 describe('createKeyList', () => {
   it('lists every online key with its role and scope, version 1, expiring 13 months later', () => {
@@ -66,8 +42,9 @@ describe('signKeyList / verifyKeyList', () => {
 
     const signature = signKeyList(list, root.privateKey)
 
-    expect(verifyKeyList(list, signature, rawPublicKey(root.publicKey))).toBe(true)
-    expect(verifyKeyList({ ...list, version: 2 }, signature, rawPublicKey(root.publicKey))).toBe(false)
-    expect(verifyKeyList(list, signature, rawPublicKey(other.publicKey))).toBe(false)
+    const roots = [rawPublicKey(root.publicKey)]
+    expect(verifyKeyList(list, signature, roots, 1, NOW)).toBe('ok')
+    expect(verifyKeyList({ ...list, version: 2 }, signature, roots, 1, NOW)).toBe('bad_signature')
+    expect(verifyKeyList(list, signature, [rawPublicKey(other.publicKey)], 1, NOW)).toBe('bad_signature')
   })
 })
