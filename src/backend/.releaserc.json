@@ -1,6 +1,12 @@
 {
   "extends": "semantic-release-monorepo",
-  "branches": ["main", { "name": "dev", "prerelease": "beta" }],
+  "branches": [
+    "main",
+    {
+      "name": "dev",
+      "prerelease": "beta"
+    }
+  ],
   "plugins": [
     [
       "@semantic-release/commit-analyzer",
@@ -31,6 +37,14 @@
       {
         "assets": ["package.json", "CHANGELOG.md"],
         "message": "chore(release): server ${nextRelease.version}"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "successComment": false,
+        "failComment": false,
+        "releasedLabels": false
       }
     ]
   ]
