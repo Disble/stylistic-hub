@@ -47,9 +47,13 @@ export function startSelfUpdate({
         autoUpdater.setFeedURL({ provider: 'generic', url })
         // electron-updater installs an older version only when allowed: after a channel switch (channels.md S2).
         autoUpdater.allowDowngrade = allowDowngrade
+        autoUpdater.autoInstallOnAppQuit = true
         const result = await autoUpdater.checkForUpdates()
         // Resolves once the installer is downloaded and its sha512 matched; it is installed when the hub quits.
         await result?.downloadPromise
+      },
+      cancel() {
+        autoUpdater.autoInstallOnAppQuit = false
       }
     }
   })

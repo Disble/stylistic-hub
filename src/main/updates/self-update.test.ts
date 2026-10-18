@@ -56,9 +56,13 @@ const updater = {
   }
 }
 
+/** How many times the served installer was withdrawn from install on quit. */
+let cancels = 0
+
 /** A self-update for a hub running `currentVersion`. */
 function start(currentVersion = '0.1.0', check = updater.check): SelfUpdate {
-  selfUpdate = createSelfUpdate({ currentVersion, updater: { check } })
+  cancels = 0
+  selfUpdate = createSelfUpdate({ currentVersion, updater: { check, cancel: () => void cancels++ } })
   return selfUpdate
 }
 
@@ -250,6 +254,25 @@ describe('createSelfUpdate', () => {
       version: '0.2.0'
     })
     expect(checks[0]?.allowDowngrade).toBe(true)
+  })
+
+  it('withdraws a served beta from install on quit when the user switches back before restarting', async () => {
+    const beta = await hubRelease('0.3.0-beta.1', { version: '0.3.0-beta.1', channel: 'beta' })
+    await world.engine.setChannel('stylistic-hub', 'beta')
+    const self = start('0.2.0')
+    expect((await self.onReport(await runCheck([hub, beta]), world.engine)).status).toBe('served')
+
+    await world.engine.setChannel('stylistic-hub', 'stable')
+
+    expect(await self.onReport(await runCheck([hub, beta], 101), world.engine)).toEqual({
+      status: 'skipped',
+      reason: 'not_newer'
+    })
+    expect(cancels).toBe(1)
+    expect(await self.onReport(await runCheck([hub, beta], 102), world.engine)).toMatchObject({
+      status: 'skipped'
+    })
+    expect(cancels).toBe(1)
   })
 
   it('serves the beta after a switch to beta even when it is older than the running stable', async () => {

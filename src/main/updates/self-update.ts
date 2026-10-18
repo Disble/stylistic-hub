@@ -14,6 +14,8 @@ import type { Channel, UpdateState } from './state'
  */
 export interface Updater {
   check(url: string, options: { allowDowngrade: boolean }): Promise<void>
+  /** Withdraws the downloaded installer from install on quit: the hub's channel no longer offers it. */
+  cancel(): void
 }
 
 /** What one report led to. */
@@ -88,7 +90,15 @@ export function createSelfUpdate({
       if (!report.verified) return { status: 'skipped', reason: 'no_catalog' }
       const { keys } = report.verified
       const choice = hubUpdate(report.verified, await engine.readState(), currentVersion)
-      if ('status' in choice) return choice
+      if ('status' in choice) {
+        // A served installer the channel no longer offers (a switch back before restarting) must not install on quit.
+        if (served) {
+          await served.feed.close()
+          served = undefined
+          updater.cancel()
+        }
+        return choice
+      }
       const { entry, allowDowngrade } = choice
       if (served?.version === entry.version) return { status: 'skipped', reason: 'already_served' }
       const installer = await engine.stageInstaller(entry, keys)
