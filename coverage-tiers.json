@@ -70,6 +70,26 @@
           "path": "src/main/ipc-screens.ts",
           "tier": "infrastructure",
           "reason": "Electron IPC wiring, exercised by launching the app"
+        },
+        {
+          "path": "src/main/updates/",
+          "tier": "core",
+          "reason": "Update engine: verifies, downloads and installs signed components; a miss installs untrusted code or breaks the installed version"
+        },
+        {
+          "path": "src/main/updates/schedule.ts",
+          "tier": "infrastructure",
+          "reason": "Wiring of the engine to the real clock, the embedded keys and a timer; exercised by launching the app"
+        },
+        {
+          "path": "src/main/updates/test-fixtures.ts",
+          "tier": "infrastructure",
+          "reason": "Signed test fixtures and the fake fetch, imported only by the update engine's tests"
+        },
+        {
+          "path": "src/main/updates/zip-fixtures.ts",
+          "tier": "infrastructure",
+          "reason": "Zip fixtures for the update engine's tests (yazl and a byte patch), imported only by tests"
         }
       ]
     },
