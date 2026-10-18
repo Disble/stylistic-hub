@@ -13,6 +13,7 @@ import { loadOrCreateHubToken } from './hub-token'
 import { registerProviderIpc } from './ipc-provider'
 import { registerScreenIpc } from './ipc-screens'
 import { createPiProvider } from './pi-provider'
+import { createModuleSwitch } from './module-switch'
 import { createServerStatus } from './server-status'
 import { createServerSwitch, serverDirFlag } from './server-switch'
 import { channelControls } from './updates/channels'
@@ -131,7 +132,8 @@ if (!isSingleInstance) {
       userData,
       database: paths.database,
       fetch,
-      onChecked: (report) => void serverSwitch.refresh(report),
+      // Modules first, so a server the check also switched starts with the new modules already set.
+      onChecked: (report) => void moduleSwitch.refresh().then(() => serverSwitch.refresh(report)),
       onReport: selfUpdate.onReport
     })
     const serverSwitch = createServerSwitch({
@@ -146,7 +148,31 @@ if (!isSingleInstance) {
         waitUntilHealthy({ request: hubStatusRequest({ port: HUB_PORT, token, caFile: paths.caCert }) }),
       status
     })
-    void serverSwitch.start()
+    const hubRequest = (path: string) =>
+      hubStatusRequest({ port: HUB_PORT, token, caFile: paths.caCert, path })
+    const moduleSwitch = createModuleSwitch({
+      engine: updates.engine,
+      componentsRoot: join(userData, 'components'),
+      devModules: {},
+      backend,
+      restartAllowed: () => serverSwitch.restartAllowed(),
+      // A module is healthy once its manifest and its task pane both answer 200 at `/m/<id>/`.
+      healthy: (id) =>
+        waitUntilHealthy({
+          request: async () => {
+            const manifest = await hubRequest(`/m/${id}/manifest.xml`)()
+            return manifest === 200 ? hubRequest(`/m/${id}/taskpane.html`)() : manifest
+          }
+        }),
+      serverHealthy: () => waitUntilHealthy({ request: hubRequest('/api/v1/status') }),
+      onChange: () => undefined,
+      report: status.setReason
+    })
+    // The backend's first start already serves the installed modules.
+    void moduleSwitch
+      .start()
+      .catch((error: unknown) => console.error('Could not resolve the modules:', error))
+      .then(() => serverSwitch.start())
     app.on('will-quit', () => {
       updates.stop()
       selfUpdate.stop()
