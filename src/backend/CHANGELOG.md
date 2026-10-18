@@ -1,5 +1,16 @@
 # Local server changelog
 
+## [server-v1.0.0-beta.2](https://github.com/Disble/stylistic-hub/compare/server-v1.0.0-beta.1...server-v1.0.0-beta.2) (2026-10-18)
+
+### Features
+
+* **server:** scope module tokens to their declared API groups ([201f96e](https://github.com/Disble/stylistic-hub/commit/201f96ef856e6ad5a7ed720b750235dcfcad4f90))
+* **server:** serve each module under /m/<id>/ and list them ([7632476](https://github.com/Disble/stylistic-hub/commit/76324766f76d9b8917175aba5233d1b9c5d4055e))
+
+### Bug Fixes
+
+* **server:** skip an invalid module instead of stopping ([075d42b](https://github.com/Disble/stylistic-hub/commit/075d42bb7f4c8199dccb7ff84c19f6e54e8d2139))
+
 ## [server-v1.0.0-beta.1](https://github.com/Disble/stylistic-hub/compare/server-v0.1.0-beta.2...server-v1.0.0-beta.1) (2026-10-18)
 
 ### ⚠ BREAKING CHANGES
