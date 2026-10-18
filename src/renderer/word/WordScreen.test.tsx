@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { WordStatus } from '../../shared/bridge'
+import type { LibraryComponent, WordStatus } from '../../shared/bridge'
+import { WORD_MODULE_ID } from '../hub-state'
 import { fakeHub } from '../fake-hub'
 import { WordScreen } from './WordScreen'
 
@@ -13,12 +14,36 @@ const NEW: WordStatus = { available: true, caTrusted: false, addinRegistered: fa
 const READY: WordStatus = { available: true, caTrusted: true, addinRegistered: true, version: '1.0.0.0' }
 
 /** Shows the Word screen over a hub whose Word status is `status`. */
-function renderWith(status: WordStatus, word: Partial<typeof window.hub.word> = {}) {
+function renderWith(status: WordStatus, word: Partial<typeof window.hub.word> = {}, library = {}) {
   const current = { value: status }
-  window.hub = fakeHub({ word: { status: async () => current.value, ...word } })
+  window.hub = fakeHub({ word: { status: async () => current.value, ...word }, library })
   render(<WordScreen />)
   return current
 }
+
+/** The Word module as the Library lists it: the id always comes from WORD_MODULE_ID, which the
+ * catalog-fixture pin in word-integration.test.ts ties to catalog/catalog.source.json, so a wrong id
+ * cannot hide behind a repeated literal. */
+function wordModule(extra: Partial<LibraryComponent> = {}): LibraryComponent {
+  return {
+    id: WORD_MODULE_ID,
+    kind: 'module',
+    installed: null,
+    requested: false,
+    channel: 'stable',
+    available: '2.0.0',
+    history: [],
+    ...extra
+  }
+}
+
+/** A library whose catalog check succeeded and lists `components`. */
+function libraryWith(components: LibraryComponent[]) {
+  return { list: async () => ({ firstRun: false, catalog: true, components }) }
+}
+
+/** Word with no downloaded module: the hub cannot add anything yet. */
+const DOWNLOADING: WordStatus = { available: false, caTrusted: false, addinRegistered: false }
 
 describe('WordScreen', () => {
   it('adds Stylistic to Word and shows the steps done', async () => {
@@ -98,11 +123,132 @@ describe('WordScreen', () => {
     expect(details.textContent).toContain('https://localhost:3000')
   })
 
-  it('explains that the add-in is not bundled and offers nothing to click', async () => {
-    renderWith({ available: false, caTrusted: false, addinRegistered: false })
+  it('installs Stylistic for Word from the Library when nothing is downloaded yet', async () => {
+    const install = vi.fn(async () => undefined)
+    renderWith(DOWNLOADING, {}, { ...libraryWith([wordModule({ available: '2.0.0' })]), install })
 
-    expect(await screen.findByText(/not bundled with this hub/)).toBeTruthy()
+    expect(await screen.findByText(/not downloaded yet/)).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Add to Word' })).toBeNull()
-    expect(within(document.body).queryByRole('list')).toBeNull()
+    expect(install).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Install Stylistic for Word' }))
+
+    await waitFor(() => expect(install).toHaveBeenCalledWith(WORD_MODULE_ID))
+  })
+
+  it('says the download is requested and checks the catalog on demand', async () => {
+    const check = vi.fn(async () => undefined)
+    renderWith(DOWNLOADING, {}, { ...libraryWith([wordModule({ requested: true })]), check })
+
+    expect(await screen.findByText(/Install requested/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Check now' }))
+
+    await waitFor(() => expect(check).toHaveBeenCalledOnce())
+  })
+
+  it('shows why the Word download failed', async () => {
+    renderWith(
+      DOWNLOADING,
+      {},
+      {
+        ...libraryWith([wordModule({ available: '2.0.0' })]),
+        install: async () => Promise.reject(new Error(`${WORD_MODULE_ID} was refused`))
+      }
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Install Stylistic for Word' }))
+
+    expect(await screen.findByText(`${WORD_MODULE_ID} was refused`)).toBeTruthy()
+  })
+
+  it('shows why the catalog check failed', async () => {
+    renderWith(
+      DOWNLOADING,
+      {},
+      {
+        ...libraryWith([wordModule({ requested: true })]),
+        check: async () => Promise.reject(new Error('catalog is expired'))
+      }
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Check now' }))
+
+    expect(await screen.findByText('catalog is expired')).toBeTruthy()
+  })
+
+  it('shows no Install when the catalog offers no Word module', async () => {
+    const install = vi.fn(async () => undefined)
+    renderWith(
+      DOWNLOADING,
+      {},
+      { list: async () => ({ firstRun: false, catalog: true, components: [] }), install }
+    )
+
+    expect(await screen.findByText(/not offered by the catalog/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Install Stylistic for Word' })).toBeNull()
+    expect(install).not.toHaveBeenCalled()
+  })
+
+  it('shows Word controls after late module readiness, not the early catalog notification', async () => {
+    const listeners: (() => void)[] = []
+    const current = { value: DOWNLOADING }
+    const status = vi.fn(async () => current.value)
+    window.hub = fakeHub({
+      word: { status },
+      library: {
+        ...libraryWith([wordModule({ requested: true })]),
+        onChecked: (listener: () => void) => {
+          listeners.push(listener)
+          return () => undefined
+        }
+      }
+    })
+    render(<WordScreen />)
+
+    expect(await screen.findByText(/Install requested/)).toBeTruthy()
+    // The catalog reports its download before asynchronous module resolution and health checks finish.
+    act(() => {
+      for (const listener of listeners) listener()
+    })
+    await vi.waitFor(() => expect(status).toHaveBeenCalledTimes(2))
+    expect(screen.queryByRole('button', { name: 'Add to Word' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Repair installation' })).toBeNull()
+
+    current.value = READY
+    act(() => {
+      for (const listener of listeners) listener()
+    })
+
+    expect(await screen.findByRole('button', { name: 'Repair installation' })).toBeTruthy()
+  })
+
+  it('unsubscribes its catalog refresh when unmounted', async () => {
+    const listeners: (() => void)[] = []
+    const unsubs: (() => void)[] = []
+    window.hub = fakeHub({
+      library: {
+        onChecked: (listener: () => void) => {
+          listeners.push(listener)
+          const unsub = vi.fn()
+          unsubs.push(unsub)
+          return unsub
+        }
+      }
+    })
+    render(<WordScreen />)
+
+    expect(await screen.findByRole('heading', { name: 'Stylistic for Word' })).toBeTruthy()
+    // Both the library and the Word readiness follow each catalog check.
+    expect(listeners).toHaveLength(2)
+    cleanup()
+
+    expect(unsubs).toHaveLength(2)
+    for (const unsub of unsubs) expect(unsub).toHaveBeenCalledOnce()
+  })
+
+  it('says the module is downloaded but the hub is not ready to add it yet', async () => {
+    renderWith(DOWNLOADING, {}, libraryWith([wordModule({ installed: '2.0.0' })]))
+
+    expect(await screen.findByText(/downloaded, but the hub is not ready/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Install Stylistic for Word' })).toBeNull()
   })
 })
