@@ -1,5 +1,5 @@
 // Writes the API v1 OpenAPI document of a source tree to a file, without starting the server, so CI can diff
-// the current contract against the last server release's (docs/development.md#api-contract-check).
+// the current contract against the last server release's (docs/development.md#continuous-integration).
 // Usage: bun scripts/openapi-doc.ts <tree root> <out.json>
 // The tree root is this repository or an extracted copy of an older `src/` placed inside it, so its imports
 // resolve against this repository's node_modules.

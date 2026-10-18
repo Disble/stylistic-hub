@@ -26,7 +26,13 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - run: bun run check
+      # `bun run check` minus coverage: the coverage tiers resolve through the dharness binary, so they are
+      # enforced by the local gate only (docs/development.md#continuous-integration).
+      - run: bun run format:check
+      - run: bun run lint
+      - run: bun run typecheck
+      - run: bun run test
+      - run: bun run check:word
       - run: bun run build
 
   api-contract:
