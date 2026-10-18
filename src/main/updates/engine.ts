@@ -1,8 +1,15 @@
 // The update engine (odd/tasks/update-engine.md S2): one catalog check, revocation of installed versions whose
 // key is gone, and the install of the catalog's stable version of the server and of what is already installed.
-import type { KeyList } from '../../shared/signing/documents'
+import type { Catalog, KeyList } from '../../shared/signing/documents'
 import { checkCatalog, type CatalogCheck, type EngineContext } from './catalog'
-import { installComponent, readInstalled, type CatalogEntry, type InstallOutcome } from './install'
+import type { StagedInstaller } from './feed'
+import {
+  installComponent,
+  readInstalled,
+  stageHubInstaller,
+  type CatalogEntry,
+  type InstallOutcome
+} from './install'
 import { addHistory, componentState, readState, updateState, type UpdateState } from './state'
 
 /** The only channel M4 follows (M6 adds the choice). */
@@ -12,12 +19,16 @@ const CHANNEL = 'stable'
 export interface CheckReport {
   catalog: 'ok' | string
   installs: { id: string; version: string; outcome: InstallOutcome }[]
+  /** The verified catalog and key list when `catalog` is `ok`, for the hub's self-update (S4). */
+  verified?: { catalog: Catalog; keys: KeyList }
 }
 
 /** The engine T3 and T4 drive: catalog check, install, state, and the rollback primitives. */
 export interface UpdateEngine {
   checkCatalog(): Promise<CatalogCheck>
   installComponent(entry: CatalogEntry, keys: KeyList): Promise<InstallOutcome>
+  /** Downloads and verifies the hub installer of `entry` into staging, without installing it (S4). */
+  stageInstaller(entry: CatalogEntry, keys: KeyList): Promise<StagedInstaller | string>
   readState(): Promise<UpdateState>
   markBad(id: string, version: string, reason: string): Promise<void>
   setCurrent(id: string, version: string): Promise<void>
@@ -65,6 +76,7 @@ export function createUpdateEngine(context: EngineContext, rootKeys: readonly Bu
   const engine: UpdateEngine = {
     checkCatalog: () => checkCatalog(context, rootKeys),
     installComponent: (entry, keys) => installComponent(context, entry, keys),
+    stageInstaller: (entry, keys) => stageHubInstaller(context, entry, keys),
     readState: () => readState(context.root),
     async markBad(id, version, reason) {
       await updateState(context.root, (state) => {
@@ -102,7 +114,7 @@ export function createUpdateEngine(context: EngineContext, rootKeys: readonly Bu
         const outcome = await installComponent(context, entry, check.keys)
         installs.push({ id: entry.id, version: entry.version, outcome })
       }
-      return { catalog: 'ok', installs }
+      return { catalog: 'ok', installs, verified: { catalog: check.catalog, keys: check.keys } }
     }
   }
   return engine

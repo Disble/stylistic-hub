@@ -1,9 +1,10 @@
 // Installs one catalog entry (odd/tasks/update-engine.md S2): component.json and its signature, the binding
 // check, the publisher's signature, compatibility, the resumable zip download, its sha256 and size, strict
-// extraction into staging, the rename into place, and only then the state switch.
+// extraction into staging, the rename into place, and only then the state switch. The hub's installer (S4) goes
+// through the same checks and download into staging, and stops there: electron-updater installs it.
 import { createHash } from 'node:crypto'
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { z } from 'zod'
 import {
   componentSchema,
@@ -16,6 +17,7 @@ import { verifyArtifact, verifyComponent } from '../../shared/signing/verify'
 import { fetchText, type EngineContext } from './catalog'
 import { downloadResumable, fileSize } from './download'
 import { extractZip } from './extract'
+import type { StagedInstaller } from './feed'
 import { addHistory, componentState, readState, updateState, writeAtomic } from './state'
 
 /** One component of the catalog. */
@@ -29,6 +31,9 @@ const installedSchema = z.object({ component: componentSchema, envelope: envelop
 
 /** An installed version's record. */
 export type InstalledVersion = z.infer<typeof installedSchema>
+
+/** The hub's component id, and the only key scope its installer is accepted from. */
+export const HUB_ID = 'stylistic-hub'
 
 /** The fields a signed component.json must share with the catalog entry that points at it. */
 const BOUND_FIELDS = ['id', 'kind', 'version', 'channel', 'sha256'] as const
@@ -91,21 +96,29 @@ async function fetchComponent(
   return { component: component.data, envelope: envelope.data }
 }
 
-/** Downloads (or resumes) the zip and checks its size and sha256; a mismatching file is deleted. */
-async function downloadZip(
+/** Downloads (or resumes) the artifact and checks its size and sha256; a mismatching file is deleted. */
+async function downloadArtifact(
   context: EngineContext,
   entry: CatalogEntry,
   component: Component,
-  zip: string
+  file: string
 ): Promise<string> {
-  if (fileSize(zip) < component.size && !(await downloadResumable(context.fetch, entry.artifactUrl, zip))) {
+  if (fileSize(file) < component.size && !(await downloadResumable(context.fetch, entry.artifactUrl, file))) {
     return 'network'
   }
-  const bytes = await readFile(zip)
+  const bytes = await readFile(file)
   const measured = { sha256: createHash('sha256').update(bytes).digest('hex'), size: bytes.length }
   const check = verifyArtifact(component, measured)
-  if (check !== 'ok') await rm(zip, { force: true })
+  if (check !== 'ok') await rm(file, { force: true })
   return check
+}
+
+/** Creates `staging` and discards everything in it but `keep`, the artifact a new attempt resumes. */
+async function prepareStaging(staging: string, keep: string): Promise<void> {
+  await mkdir(staging, { recursive: true })
+  for (const name of await readdir(staging)) {
+    if (name !== keep) await rm(join(staging, name), { recursive: true, force: true })
+  }
 }
 
 /** Everything up to the rename into `<id>/<version>/`; returns the verified record or why the install stopped. */
@@ -117,14 +130,11 @@ async function stage(
 ): Promise<InstalledVersion | string> {
   const staging = join(dir, '.staging')
   const zip = join(staging, `${entry.version}.zip`)
-  await mkdir(staging, { recursive: true })
   // Leftovers of another version or of an interrupted extraction are discarded; this version's zip is resumed.
-  for (const name of await readdir(staging)) {
-    if (name !== `${entry.version}.zip`) await rm(join(staging, name), { recursive: true, force: true })
-  }
+  await prepareStaging(staging, basename(zip))
   const installed = await fetchComponent(context, entry, keys, staging)
   if (typeof installed === 'string') return installed
-  const download = await downloadZip(context, entry, installed.component, zip)
+  const download = await downloadArtifact(context, entry, installed.component, zip)
   if (download !== 'ok') return download
   const extracted = join(staging, entry.version)
   const extraction = await extractZip(zip, extracted, installed.component.maxUncompressedSize)
@@ -134,6 +144,25 @@ async function stage(
   await rename(extracted, target)
   await writeAtomic(join(dir, `${entry.version}.json`), `${JSON.stringify(installed, null, 2)}\n`)
   return installed
+}
+
+/**
+ * Downloads and verifies the hub installer of `entry` into `<id>/.staging/<id>-<version>.exe`, signed under
+ * `keys` by a key scoped to the hub: the binding check, the signature and the sha256 and size, no extraction and
+ * no state change. Returns the verified installer or why not.
+ */
+export async function stageHubInstaller(
+  context: EngineContext,
+  entry: CatalogEntry,
+  keys: KeyList
+): Promise<StagedInstaller | string> {
+  const staging = join(context.root, entry.id, '.staging')
+  const file = join(staging, `${entry.id}-${entry.version}.exe`)
+  await prepareStaging(staging, basename(file))
+  const installed = await fetchComponent(context, { ...entry, publisher: HUB_ID }, keys, staging)
+  if (typeof installed === 'string') return installed
+  const download = await downloadArtifact(context, entry, installed.component, file)
+  return download === 'ok' ? { file, component: installed.component } : download
 }
 
 /** Deletes every version folder and record except `keep`, and the staging directory. */

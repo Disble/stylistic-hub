@@ -37,7 +37,7 @@ describe('runCheck', () => {
     const beta = { ...first, entry: { ...first.entry, channel: 'beta' as const, version: '2.0.0-beta.1' } }
     world.publish({ releases: [first, hub, addin, beta], serial: 101 })
 
-    expect(await world.engine.runCheck()).toEqual({ catalog: 'ok', installs: [] })
+    expect(await world.engine.runCheck()).toMatchObject({ catalog: 'ok', installs: [] })
     expect(world.seen.filter((request) => !request.url.includes('/catalog/'))).toEqual([
       { url: first.entry.componentUrl, range: null },
       { url: `${first.entry.componentUrl}.sig`, range: null },
@@ -132,7 +132,7 @@ describe('runCheck', () => {
       serial: 102,
       keys: world.keyList({ version: 2, componentKeys: [newComponentKey] })
     })
-    expect(await world.engine.runCheck()).toEqual({ catalog: 'ok', installs: [] })
+    expect(await world.engine.runCheck()).toMatchObject({ catalog: 'ok', installs: [] })
 
     expect((await world.engine.readState()).components['server']).toMatchObject({
       current: '1.1.0',
@@ -178,6 +178,6 @@ describe('rollback primitives', () => {
     })
 
     world.publish({ releases: [second], serial: 102 })
-    expect(await world.engine.runCheck()).toEqual({ catalog: 'ok', installs: [] })
+    expect(await world.engine.runCheck()).toMatchObject({ catalog: 'ok', installs: [] })
   })
 })
