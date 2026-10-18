@@ -19,10 +19,12 @@
   // - ports: the interfaces the domain needs (LlmPort, WorkflowEngine, repositories, ProviderAuth).
   // - adapters: one per adopted tool (Pi, OpenWorkflow, node:sqlite, Hono) implementing ports.
   // - backend: composition root of the backend utilityProcess.
-  // - shared: message and bridge contracts shared by type across processes.
+  // - shared: message and bridge contracts shared by type across processes, and the signature
+  //   verification library (src/shared/signing) that the release scripts and the hub both use.
   // - shell: Electron main process (window, tray, backend supervisor); never imports backend code.
   // - preload / renderer: the UI side sees only the shared contracts.
-  // - scripts: build and packaging tools run by package.json (add-in bundle, installer staging); import no app code.
+  // - scripts: build and packaging tools run by package.json (add-in bundle, installer staging, release signing);
+  //   import only shared, so signing and verification share one canonical JSON and one set of schemas.
   "boundaries": {
     "zones": [
       { "name": "integration", "patterns": ["src/backend/**/*.integration.test.ts"] },
@@ -46,7 +48,7 @@
       { "from": "shell", "allow": ["shared"] },
       { "from": "preload", "allow": [], "allowTypeOnly": ["shared"] },
       { "from": "renderer", "allow": [], "allowTypeOnly": ["shared"] },
-      { "from": "scripts", "allow": [] }
+      { "from": "scripts", "allow": ["shared"] }
     ],
     "coverage": {
       "requireAllFiles": true,
