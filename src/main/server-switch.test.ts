@@ -222,7 +222,8 @@ describe('createServerSwitch', () => {
   it('restores the backup from before the upgrade after a contract step and says the writes were lost', async () => {
     const backups = join(userData, 'backups')
     mkdirSync(backups)
-    writeDatabase(join(backups, 'stylistic-schema2-20261001000000.db'), 2, 2, ['older'])
+    // A newer backup at an older schema (a restore of an older database) loses to the one at 1.0.0's schema.
+    writeDatabase(join(backups, 'stylistic-schema2-20261012000000.db'), 2, 2, ['older'])
     writeDatabase(join(backups, 'stylistic-schema3-20261010000000.db'), 3, 3, ['before'])
     writeDatabase(join(backups, 'stylistic-schema4-20261015000000.db'), 4, 4, ['newer schema'])
     writeDatabase(database, 4, 4, ['before', 'after'])
@@ -240,12 +241,29 @@ describe('createServerSwitch', () => {
     expect(rowsOf(database)).toEqual(['before'])
     expect((await world.engine.readState()).history.at(-1)).toMatchObject({
       outcome: 'switched',
-      reason: 'writes_since_upgrade_lost'
+      reason: 'writes_since_upgrade_lost: stylistic-schema3-20261010000000.db'
     })
     expect(status.get().reason).toBe(
       'Server 1.1.0 failed its health check; the hub went back to 1.0.0. The database was restored from ' +
-        'its backup from before the upgrade, so the changes made since then were lost.'
+        'its backup stylistic-schema3-20261010000000.db, so the changes made since then were lost.'
     )
+  })
+
+  it('falls back to an older readable backup when none was taken at the schema of the previous version', async () => {
+    const backups = join(userData, 'backups')
+    mkdirSync(backups)
+    writeDatabase(join(backups, 'stylistic-schema1-20261012000000.db'), 1, 1, ['oldest'])
+    writeDatabase(join(backups, 'stylistic-schema2-20261001000000.db'), 2, 2, ['older'])
+    writeFileSync(join(backups, 'stylistic-schema3-20261010000000.db'), 'not a database')
+    writeDatabase(database, 4, 4, ['before', 'after'])
+    const { serverSwitch, status } = makeSwitch(
+      vi.fn<() => Promise<boolean>>().mockResolvedValueOnce(false).mockResolvedValue(true)
+    )
+
+    await serverSwitch.start()
+
+    expect(rowsOf(database)).toEqual(['older'])
+    expect(status.get().reason).toContain('stylistic-schema2-20261001000000.db')
   })
 
   it('refuses the downgrade and keeps the server stopped when no readable backup exists', async () => {

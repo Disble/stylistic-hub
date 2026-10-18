@@ -3,7 +3,7 @@
 // After a start from a component the health check must pass; a failed check or a crash loop marks the version
 // bad and goes back to the previous one, restoring the database backup only when a contract step was crossed.
 import { existsSync, readdirSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { readSchemaState, restoreBackup } from '../shared/schema-state'
 import type { UpdateEngine } from './updates/engine'
 import { readInstalled } from './updates/install'
@@ -55,15 +55,19 @@ export function resolveServerTarget({
 /** `backups/stylistic-schema<from>-<UTC yyyymmddHHMMss>.db`, as database.ts names them. */
 const BACKUP_NAME = /^stylistic-schema(\d+)-(\d{14})\.db$/
 
-/** The newest readable backup beside `database` taken at a schema no higher than `maxSchema`. */
+/**
+ * The readable backup beside `database` to restore for a server that writes `maxSchema`: the newest one taken at
+ * exactly that schema, else the newest at the highest older schema.
+ */
 function newestBackup(database: string, maxSchema: number): string | undefined {
   const dir = join(dirname(database), 'backups')
   const candidates = (existsSync(dir) ? readdirSync(dir) : [])
     .flatMap((name) => {
       const match = BACKUP_NAME.exec(name)
-      return match && Number(match[1]) <= maxSchema ? [{ name, stamp: match[2] ?? '' }] : []
+      const schema = Number(match?.[1])
+      return match && schema <= maxSchema ? [{ name, schema, stamp: match[2] ?? '' }] : []
     })
-    .sort((a, b) => b.stamp.localeCompare(a.stamp))
+    .sort((a, b) => b.schema - a.schema || b.stamp.localeCompare(a.stamp))
   for (const { name } of candidates) {
     const file = join(dir, name)
     try {
@@ -81,12 +85,12 @@ function newestBackup(database: string, maxSchema: number): string | undefined {
  * `minReaderSchema` allows it (an expand step), else the newest backup from before the upgrade is restored,
  * or the rollback is refused when there is none. The backend must be stopped.
  */
-function rollbackData(database: string, previousSchema: number): 'kept' | 'restored' | 'refused' {
+function rollbackData(database: string, previousSchema: number): 'kept' | 'refused' | { restored: string } {
   if (!existsSync(database) || readSchemaState(database).minReaderSchema <= previousSchema) return 'kept'
   const backup = newestBackup(database, previousSchema)
   if (!backup) return 'refused'
   restoreBackup(database, backup)
-  return 'restored'
+  return { restored: basename(backup) }
 }
 
 /** What the switch needs from the backend process. */
@@ -184,11 +188,15 @@ export function createServerSwitch({
           )
           return
         }
-        await engine.setCurrent(SERVER_ID, previous, data === 'restored' ? 'writes_since_upgrade_lost' : null)
-        const lost =
-          data === 'restored'
-            ? ' The database was restored from its backup from before the upgrade, so the changes made since then were lost.'
-            : ''
+        const restored = data === 'kept' ? undefined : data.restored
+        await engine.setCurrent(
+          SERVER_ID,
+          previous,
+          restored ? `writes_since_upgrade_lost: ${restored}` : null
+        )
+        const lost = restored
+          ? ` The database was restored from its backup ${restored}, so the changes made since then were lost.`
+          : ''
         status.rolledBack(`${what}; the hub went back to ${previous}.${lost}`)
         next = {
           entry: join(componentsRoot, SERVER_ID, previous, ENTRY),
