@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -50,6 +50,52 @@ describe('addinRoutes', () => {
     expect(await script.text()).toBe('console.log(1)')
     expect(script.headers.get('content-type')).toMatch(/javascript/)
     expect(icon.headers.get('content-type')).toBe('image/png')
+  })
+
+  it('makes Word ask for every file of the add-in again instead of reusing its copy', async () => {
+    const response = await addinRoutes({ dir, token }).request('/taskpane.js')
+
+    expect(response.headers.get('cache-control')).toBe('no-cache')
+  })
+
+  it("points the task pane at this build's own scripts and styles, so a copy Word cached from another build is never run", async () => {
+    writeFileSync(
+      join(dir, 'taskpane.html'),
+      '<html><head><script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>' +
+        '<link href="taskpane.css" rel="stylesheet" /><script defer src="taskpane.js"></script></head></html>'
+    )
+    writeFileSync(join(dir, 'taskpane.css'), 'body{}')
+    const routes = addinRoutes({ dir, token })
+    const versioned = async (): Promise<string[]> =>
+      [...(await (await routes.request('/taskpane.html')).text()).matchAll(/(?:src|href)="([^"]+)"/g)].map(
+        (match) => match[1] ?? ''
+      )
+
+    const before = await versioned()
+    utimesSync(join(dir, 'taskpane.js'), new Date(2030, 0, 1), new Date(2030, 0, 1))
+    const after = await versioned()
+
+    expect(before[0]).toBe('https://appsforoffice.microsoft.com/lib/1/hosted/office.js')
+    expect(before[1]).toMatch(/^taskpane\.css\?v=\w+$/)
+    expect(before[2]).toMatch(/^taskpane\.js\?v=\w+$/)
+    expect(after[1]).toBe(before[1])
+    expect(after[2]).not.toBe(before[2])
+    expect(await (await routes.request(before[2] ?? '')).text()).toBe('console.log(1)')
+  })
+
+  it('leaves a reference to a file the build lacks as it is, and versions a repeated one alike', async () => {
+    writeFileSync(
+      join(dir, 'taskpane.html'),
+      '<html><head><script src="taskpane.js"></script><script src="taskpane.js"></script>' +
+        '<link href="missing.css" rel="stylesheet" /></head></html>'
+    )
+
+    const html = await (await addinRoutes({ dir, token }).request('/taskpane.html')).text()
+
+    const [first, second] = [...html.matchAll(/src="([^"]+)"/g)].map((match) => match[1])
+    expect(first).toMatch(/^taskpane\.js\?v=\w+$/)
+    expect(second).toBe(first)
+    expect(html).toContain('href="missing.css"')
   })
 
   it('serves nothing outside the add-in folder', async () => {
