@@ -224,6 +224,8 @@ export function createServerSwitch({
       if (next.entry === target?.entry || (refused && next.component === null)) return
       await launch(next)
     },
+    /** False while a rollback runs, so the Server screen's Restart cannot start a backend over the restore. */
+    restartAllowed: (): boolean => !rollingBack,
     /** The supervisor's crash-loop handler: true when the switch takes over with a rollback. */
     crashLoop(): boolean {
       if (rollingBack) return true

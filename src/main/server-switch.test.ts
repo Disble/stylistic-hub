@@ -169,9 +169,12 @@ describe('createServerSwitch', () => {
     void serverSwitch.start()
     await vi.waitFor(() => expect(started).toHaveLength(1))
 
+    expect(serverSwitch.restartAllowed()).toBe(true)
     expect(serverSwitch.crashLoop()).toBe(true)
+    expect(serverSwitch.restartAllowed()).toBe(false)
 
     await vi.waitFor(() => expect(started).toEqual([entryOf('1.1.0'), entryOf('1.0.0')]))
+    await vi.waitFor(() => expect(serverSwitch.restartAllowed()).toBe(true))
     const state = await world.engine.readState()
     expect(state.components['server']).toMatchObject({ current: '1.0.0', bad: ['1.1.0'] })
     expect(state.history.at(-2)).toMatchObject({ outcome: 'marked_bad', reason: 'crash_loop' })

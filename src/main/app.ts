@@ -171,17 +171,23 @@ if (!isSingleInstance) {
       else wordSession.stop()
       if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: enabled, args: [BACKGROUND_FLAG] })
     }
-    registerScreenIpc(status, backend, app.getPath('logs'), {
-      ...word,
-      connect: async () => {
-        await word.connect()
-        keepInWord(true)
+    registerScreenIpc(
+      status,
+      backend,
+      app.getPath('logs'),
+      {
+        ...word,
+        connect: async () => {
+          await word.connect()
+          keepInWord(true)
+        },
+        disconnect: async () => {
+          await word.disconnect()
+          keepInWord(false)
+        }
       },
-      disconnect: async () => {
-        await word.disconnect()
-        keepInWord(false)
-      }
-    })
+      serverSwitch.restartAllowed
+    )
 
     const icon = nativeImage.createFromPath(join(app.getAppPath(), 'resources', 'icon.png'))
     tray = new Tray(icon.resize({ width: 16, height: 16 }))
