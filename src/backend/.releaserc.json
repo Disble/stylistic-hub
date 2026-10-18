@@ -1,5 +1,12 @@
 {
   "extends": "semantic-release-monorepo",
+  "branches": [
+    "main",
+    {
+      "name": "dev",
+      "prerelease": "beta"
+    }
+  ],
   "plugins": [
     [
       "@semantic-release/commit-analyzer",
@@ -26,10 +33,29 @@
       }
     ],
     [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "cd ../.. && bun run build:server && bun scripts/release/pack-server.ts --version ${nextRelease.version} --channel ${nextRelease.channel ? 'beta' : 'stable'}"
+      }
+    ],
+    [
       "@semantic-release/git",
       {
         "assets": ["package.json", "CHANGELOG.md"],
         "message": "chore(release): server ${nextRelease.version}"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "assets": [
+          "../../out/server-release/server-*.zip",
+          "../../out/server-release/component.json",
+          "../../out/server-release/component.json.sig"
+        ],
+        "successComment": false,
+        "failComment": false,
+        "releasedLabels": false
       }
     ]
   ]

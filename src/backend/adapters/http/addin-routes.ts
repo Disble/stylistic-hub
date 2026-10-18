@@ -8,6 +8,8 @@ export interface AddinRoutesOptions {
   /** stylistic-addon's webpack output (`dist/`). */
   dir: string
   token: string
+  /** The path these routes are mounted under (`/m/<id>` for a module); the root when absent. */
+  mount?: string
 }
 
 /** A `src` or `href` naming one of the build's own files: not another origin, no query yet. */
@@ -37,7 +39,7 @@ async function versionAssets(html: string, dir: string): Promise<string> {
  * anyway. The page is never cached, so a new token is picked up on the next load, and it names
  * this build's files, which Word must check again before reusing.
  */
-export function addinRoutes({ dir, token }: AddinRoutesOptions): Hono {
+export function addinRoutes({ dir, token, mount = '' }: AddinRoutesOptions): Hono {
   const routes = new Hono()
 
   routes.get('/taskpane.html', async (c) => {
@@ -53,7 +55,8 @@ export function addinRoutes({ dir, token }: AddinRoutesOptions): Hono {
     await next()
     if (c.res.ok) c.res.headers.set('Cache-Control', 'no-cache')
   })
-  routes.use('/*', serveStatic({ root: dir }))
+  // serveStatic reads the whole request path, mount included.
+  routes.use('/*', serveStatic({ root: dir, rewriteRequestPath: (path) => path.slice(mount.length) }))
 
   return routes
 }

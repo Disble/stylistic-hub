@@ -8,16 +8,19 @@ import { secureHeaders } from 'hono/secure-headers'
 import { addinRoutes } from './addin-routes'
 import { apiV1, type ApiV1Options } from './api-v1'
 import { hostAllowlist } from './host-allowlist'
+import { type ApiScope, moduleToken, tokenVerifier } from './module-tokens'
 import { problem } from './problem'
 
 /** What the HTTP adapter needs from the composition root. */
 export interface HttpAppOptions extends ApiV1Options {
-  /** Per-install secret the task pane sends as a bearer token. */
+  /** Per-install secret: the bearer token of the add-in at the root, valid on every API route. */
   token: string
   /** Port the task pane and the API share, fixed by the add-in manifest. */
   port: number
   /** stylistic-addon's build, served at the root when given. */
   addinDir?: string | undefined
+  /** Modules, each served at `/m/<id>/` like the add-in at the root, with the API scopes it declared. */
+  modules: readonly { id: string; dir: string; version: string; scopes: readonly ApiScope[] }[]
 }
 
 /** Loopback peers, including the IPv4-mapped form Node reports on dual-stack sockets. */
@@ -25,10 +28,11 @@ const LOOPBACK = ['127.0.0.1', '::1', '::ffff:127.0.0.1']
 
 /**
  * Builds the hub's HTTP surface. Every request must come from loopback with one of our Host
- * names; the API also requires the task pane's origin for CORS and the hub token, and answers
- * every error it can as `application/problem+json`.
+ * names; the API also requires the task pane's origin for CORS and a token, and answers every
+ * error it can as `application/problem+json`. The hub token reaches every route; a module's own
+ * token, which its task pane receives instead, reaches only the scopes the module declared.
  */
-export function createHttpApp({ token, port, addinDir, ...api }: HttpAppOptions): Hono {
+export function createHttpApp({ token, port, addinDir, modules, ...api }: HttpAppOptions): Hono {
   const app = new Hono()
 
   app.use(hostAllowlist([`localhost:${port}`, `127.0.0.1:${port}`]))
@@ -36,11 +40,12 @@ export function createHttpApp({ token, port, addinDir, ...api }: HttpAppOptions)
   // No HSTS: it is per host, not per port, so it would force HTTPS on the user's other localhost servers.
   app.use(secureHeaders({ strictTransportSecurity: false }))
   app.use('/api/*', cors({ origin: `https://localhost:${port}` }))
-  app.use('/api/*', bearerAuth({ token }))
+  const verify = tokenVerifier(token, modules)
+  app.use('/api/*', bearerAuth({ verifyToken: (sent, c) => verify(sent, c.req.path) }))
 
-  app.route('/api/v1', apiV1(api))
+  app.route('/api/v1', apiV1({ ...api, modules }))
   app.notFound((c) =>
-    c.req.path.startsWith('/api/')
+    c.req.path.startsWith('/api/') || c.req.path.startsWith('/m/')
       ? problem(c, 404, 'not_found', `No route ${c.req.method} ${c.req.path}.`)
       : c.text('Not found', 404)
   )
@@ -61,6 +66,8 @@ export function createHttpApp({ token, port, addinDir, ...api }: HttpAppOptions)
     return problem(c, 500, 'internal_error', error.message)
   })
   // Registered last: the API paths above never fall through to the add-in's files.
+  for (const { id, dir } of modules)
+    app.route(`/m/${id}`, addinRoutes({ dir, token: moduleToken(token, id), mount: `/m/${id}` }))
   if (addinDir) app.route('/', addinRoutes({ dir: addinDir, token }))
 
   return app

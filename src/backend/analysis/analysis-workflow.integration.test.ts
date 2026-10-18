@@ -281,6 +281,33 @@ describe('analysis workflows', () => {
     expect(analyses.get('a1')?.status).toBe('canceled')
   })
 
+  it('changes nothing when OpenWorkflow replays a part whose save committed but was not recorded', async () => {
+    const { analyses, bodies } = setup()
+    analyses.create({ id: 'a1', documentId: DOC, chunks: [{ id: '0', parts: 2 }] })
+    const outputs: unknown[] = []
+    // The process dies after `save` commits and before OpenWorkflow records it, so the step runs again.
+    const replaying: Step = {
+      run: async (name, fn) => {
+        if (name === 'save') outputs.push(await fn())
+        const output = await fn()
+        if (name === 'save') outputs.push(output)
+        return output
+      },
+      child: async () => ({ ok: true, value: undefined as never })
+    }
+    const input = { analysisId: 'a1', documentId: DOC, genre: 'general', chunkId: '0', part: 0 }
+
+    await bodies[PART_WORKFLOW]?.({ ...input, text: 'Ayer fuistes al mercado.' }, replaying, { id: 'p' })
+
+    expect(outputs).toHaveLength(2)
+    expect(outputs[1]).toEqual(outputs[0])
+    const chunk = analyses.get('a1')?.chunks[0]
+    expect(chunk).toMatchObject({ status: 'running', dropped: 1 })
+    expect(chunk?.suggestions).toHaveLength(2)
+    expect(db.prepare('SELECT parts_done FROM analysis_chunk').get()).toEqual({ parts_done: 1 })
+    expect(db.prepare('SELECT count(*) AS n FROM suggestion').get()).toEqual({ n: 2 })
+  })
+
   it('corrects with the stylistic agent at temperature 0 and the document profile in the prompt', async () => {
     const { run, calls } = setup()
 

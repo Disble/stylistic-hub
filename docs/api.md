@@ -6,6 +6,7 @@ The HTTP contract the add-in's `HubAnalysisAdapter` is written against. The mach
 
 - Base URL: `https://localhost:<port>/api/v1`, served by the hub on the port the add-in manifest names.
 - Every route requires `Authorization: Bearer <token>`. The task pane reads the token from `<meta name="stylistic-hub-token">` in `taskpane.html`, which the hub fills in when it serves the add-in. There are no accounts and no `/auth` routes: one hub serves one Windows user.
+- The add-in served at the root gets the hub token, which reaches every route. A module served at `/m/<id>/` gets its own token, which reaches only the [scopes](#scopes) the module declared.
 - Requests must come from loopback with the host `localhost:<port>` or `127.0.0.1:<port>`; CORS is granted only to `https://localhost:<port>`.
 
 ## Analyzing a document
@@ -23,11 +24,30 @@ The HTTP contract the add-in's `HubAnalysisAdapter` is written against. The mach
 
 ## Feedback
 
-`POST /feedback` with `{ suggestionId, action: "accept" | "reject", comment? }` answers `202`. The hub learns from it in the background; `GET /feedback/{feedbackId}` says what became of it: `outcome` is `acknowledged` without a comment, otherwise `updated` or `ignored`, with the model's `summary`.
+`POST /feedback` with `{ suggestionId, action: "accept" | "reject", comment? }` answers `202`. The hub learns from it in the background; `GET /feedback/{feedbackId}` says what became of it: `outcome` is `acknowledged` without a comment, otherwise `updated` or `ignored`, with the model's `summary`. If the hub cannot start learning from it, the `202` already carries `status: "failed"` with the `error`.
 
 ## Preferences
 
 `GET /preferences` and `PUT /preferences` with `{ correctionInstructions }` read and save the user's standing correction instructions (at most `correctionInstructionsMaxLength` characters); `null` or blank text clears them.
+
+## Modules
+
+`GET /modules` answers `{ modules: [{ id, version }] }`: each module the hub serves at `/m/<id>/` and the `<Version>` of its `manifest.xml`, read when the server started. A task pane can compare it with its own version and offer a reload when a newer one is served.
+
+## Scopes
+
+Each route belongs to one scope, the group a module declares in its `component.json` `requires.scopes` ([add-in contract](addin-contract.md#modules)). A module's token on a route outside its scopes gets `401 unauthorized`, the same problem as a wrong token. Scopes limit a module's mistakes, not a hostile module: every module and the root add-in share one origin, and any `taskpane.html`, with the token it carries, is fetchable without authentication, so a module can read another module's token.
+
+| Scope | Routes |
+|---|---|
+| `status` | `GET /status` |
+| `documents` | `GET /documents/{documentId}` |
+| `analyses` | `POST /documents/{documentId}/analyses`, `GET /analyses/{analysisId}`, `POST /analyses/{analysisId}/cancel` |
+| `feedback` | `POST /feedback`, `GET /feedback/{feedbackId}` |
+| `preferences` | `GET /preferences`, `PUT /preferences` |
+| `modules` | `GET /modules` |
+
+`GET /openapi.json` is in no scope: only the hub token reads it.
 
 ## Errors
 
@@ -35,8 +55,8 @@ Every error is `application/problem+json` (RFC 9457): `{ type, title, status, de
 
 | `code` | Status | When |
 |---|---|---|
-| `unauthorized` | 401 | The token is missing, empty or wrong, or the header is not `Bearer` |
-| `validation_failed` | 400, 415 | The body or a path parameter does not match the contract, or the body is malformed JSON (400) or not JSON (415); `detail` names what is wrong |
+| `unauthorized` | 401 | The token is missing, empty or wrong, the header is not `Bearer`, or a module's token is outside the module's scopes |
+| `validation_failed` | 400, 415 | The body or a path parameter does not match the contract, or the body is malformed JSON (400) or not JSON (415); `detail` names what is wrong. The analysis request and its chunks refuse fields the contract does not name |
 | `not_found` | 404 | No such analysis, document, feedback or suggestion, or no such route |
 | `no_model` | 409 | An analysis was requested before a model was chosen in the hub |
 | `payload_too_large` | 413 | The body is over 10 MB |

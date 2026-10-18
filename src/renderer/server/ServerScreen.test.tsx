@@ -42,6 +42,18 @@ describe('ServerScreen', () => {
     )
   })
 
+  it('shows a rollback and its reason', async () => {
+    const reason = 'Server 1.1.0 failed its health check; the hub went back to 1.0.0.'
+    window.hub = fakeHub({
+      server: { status: async () => ({ ...RUNNING, state: 'rolled-back', version: '1.0.0', reason }) }
+    })
+    render(<ServerScreen onOpen={() => undefined} />)
+
+    expect(await screen.findByText('Version 1.0.0')).toBeTruthy()
+    expect(screen.getByRole('article', { name: 'Analysis API' }).textContent).toContain('Rolled back')
+    expect(screen.getByText(reason)).toBeTruthy()
+  })
+
   it('keeps a past crash visible as a warning once the server runs again', async () => {
     window.hub = fakeHub({ server: { status: async () => ({ ...RUNNING, crashes: 1, lastExitCode: 9 }) } })
     render(<ServerScreen onOpen={() => undefined} />)
@@ -72,6 +84,32 @@ describe('ServerScreen', () => {
     expect(openLogs).toHaveBeenCalledOnce()
   })
 
+  it('exports diagnostics and says where they are and that they include the logs', async () => {
+    const exportDiagnostics = vi.fn(async () => 'C:\\Users\\me\\stylistic-diagnostics.zip')
+    window.hub = fakeHub({ server: { exportDiagnostics } })
+    render(<ServerScreen onOpen={() => undefined} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Export diagnostics' }))
+
+    expect(
+      await screen.findByText(
+        'Diagnostics saved to C:\\Users\\me\\stylistic-diagnostics.zip. It includes the logs, which may hold excerpts of analyzed text; check it before attaching it to a report.'
+      )
+    ).toBeTruthy()
+    expect(exportDiagnostics).toHaveBeenCalledOnce()
+  })
+
+  it('says nothing when the diagnostics save dialog is canceled', async () => {
+    const exportDiagnostics = vi.fn(async () => undefined)
+    window.hub = fakeHub({ server: { exportDiagnostics } })
+    render(<ServerScreen onOpen={() => undefined} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Export diagnostics' }))
+
+    await waitFor(() => expect(exportDiagnostics).toHaveBeenCalledOnce())
+    expect(screen.queryByText(/Diagnostics saved/)).toBeNull()
+  })
+
   it('shows the AI provider in use and opens its screen', async () => {
     const onOpen = vi.fn()
     window.hub = fakeHub({ provider: { list: async () => [CHATGPT], getModel: async () => SOL } })
@@ -92,6 +130,38 @@ describe('ServerScreen', () => {
     const provider = await screen.findByRole('region', { name: 'AI provider' })
     expect(await within(provider).findByText('No provider connected')).toBeTruthy()
     expect(within(provider).getByRole('button', { name: 'Connect a provider' })).toBeTruthy()
+  })
+
+  it('shows the channel of the server and of the hub, and sets a new one through the bridge', async () => {
+    const setChannel = vi.fn(async () => undefined)
+    window.hub = fakeHub({
+      server: { channels: async () => ({ server: 'stable', hub: 'beta' }), setChannel }
+    })
+    render(<ServerScreen onOpen={() => undefined} />)
+    const server = (await screen.findByLabelText('Server channel')) as HTMLSelectElement
+    const hub = screen.getByLabelText('Hub channel') as HTMLSelectElement
+    await waitFor(() => expect(hub.value).toBe('beta'))
+    expect(server.value).toBe('stable')
+
+    fireEvent.change(server, { target: { value: 'beta' } })
+    fireEvent.change(hub, { target: { value: 'stable' } })
+
+    await waitFor(() => expect(setChannel).toHaveBeenCalledTimes(2))
+    expect(setChannel.mock.calls).toEqual([
+      ['server', 'beta'],
+      ['hub', 'stable']
+    ])
+    expect(server.value).toBe('beta')
+  })
+
+  it('says why a channel could not be set', async () => {
+    const setChannel = vi.fn(async () => Promise.reject(new Error('Invalid channel')))
+    window.hub = fakeHub({ server: { setChannel } })
+    render(<ServerScreen onOpen={() => undefined} />)
+
+    fireEvent.change(await screen.findByLabelText('Server channel'), { target: { value: 'beta' } })
+
+    expect(await screen.findByText('Invalid channel')).toBeTruthy()
   })
 
   it('shows the runtime the hub runs on', async () => {

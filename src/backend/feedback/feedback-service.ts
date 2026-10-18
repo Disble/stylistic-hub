@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { Problem } from '../analysis/errors'
+import { messageOf, Problem } from '../analysis/errors'
 import type { AnalysisRepository } from '../ports/analysis-repository'
 import type { FeedbackRepository } from '../ports/feedback-repository'
 import type { WorkflowEngine } from '../ports/workflow-engine'
@@ -27,7 +27,13 @@ export function createFeedbackService({ analyses, feedback, engine }: FeedbackSe
       if (!analyses.suggestion(suggestionId)) throw new Problem('not_found', `No suggestion ${suggestionId}.`)
       const id = randomUUID()
       const created = feedback.create({ id, suggestionId, action, ...(comment ? { comment } : {}) })
-      await engine.start(FEEDBACK_WORKFLOW, { feedbackId: id })
+      try {
+        await engine.start(FEEDBACK_WORKFLOW, { feedbackId: id })
+      } catch (error) {
+        // The add-in sends feedback and forgets it: the failure is answered as the feedback's state.
+        feedback.fail(id, messageOf(error))
+        return feedback.get(id) as Feedback
+      }
       return created
     },
 

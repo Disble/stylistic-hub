@@ -35,8 +35,11 @@ export interface WordStatus {
 
 /** The local server process as the Server screen shows it. */
 export interface ServerStatus {
-  /** `restarting`: it exited unexpectedly and the hub starts it again after `restartInMs`. */
-  state: 'starting' | 'running' | 'restarting'
+  /**
+   * `restarting`: it exited unexpectedly and the hub starts it again after `restartInMs`. `rolled-back`: a
+   * server version failed its health check or kept crashing, and the hub went back (or stopped); see `reason`.
+   */
+  state: 'starting' | 'running' | 'restarting' | 'rolled-back'
   version: string
   /** Where the task pane and the API are served. */
   address: string
@@ -44,6 +47,51 @@ export interface ServerStatus {
   crashes: number
   lastExitCode?: number
   restartInMs?: number
+  /** Why the hub rolled back or stopped the server, kept for as long as the hub runs. */
+  reason?: string
+}
+
+/** A release stream: `stable`, or `beta` prereleases. */
+export type Channel = 'stable' | 'beta'
+
+/** The channels the Server screen chooses: the server's and the hub's own. */
+export interface Channels {
+  server: Channel
+  hub: Channel
+}
+
+/** One line of a component's update history, as the Library screen shows it. */
+export interface HistoryLine {
+  time: string
+  from: string | null
+  to: string | null
+  outcome: 'installed' | 'failed' | 'disabled' | 'marked_bad' | 'switched'
+  reason: string | null
+}
+
+/** One card of the Library screen (odd/tasks/module-library.md S5). */
+export interface LibraryComponent {
+  id: string
+  kind: 'server' | 'hub' | 'module'
+  /** The running version; null when none is installed. */
+  installed: string | null
+  /** A module the user asked for, which the next catalog check installs. */
+  requested: boolean
+  channel: Channel
+  /** The version the last verified catalog offers this install on the component's channel. */
+  available: string | null
+  /** The newest history lines first. */
+  history: HistoryLine[]
+}
+
+/** What the Library screen shows. */
+export interface Library {
+  /** No server component is installed yet: the hub downloads it at each catalog check. */
+  firstRun: boolean
+  /** A catalog check succeeded since the hub opened, so `available` is known. */
+  catalog: boolean
+  /** The server, the hub, then the modules by id. */
+  components: LibraryComponent[]
 }
 
 /** The API the preload script exposes to the renderer as `window.hub`. */
@@ -76,8 +124,23 @@ export interface HubBridge {
     restart(): Promise<void>
     /** Opens the hub's logs folder in Explorer. */
     openLogs(): Promise<void>
+    /** Asks where to save the diagnostics zip and writes it; resolves to its path, or undefined when canceled. */
+    exportDiagnostics(): Promise<string | undefined>
     /** Subscribes to status changes; returns the unsubscribe function. */
     onStatus(listener: (status: ServerStatus) => void): () => void
+    channels(): Promise<Channels>
+    /** Sets the channel of the server, the hub (`hub`) or an installed module (its id), then runs a catalog check. */
+    setChannel(target: string, channel: Channel): Promise<void>
+  }
+  library: {
+    list(): Promise<Library>
+    /** Asks for module `id`, then runs a catalog check, which installs it. */
+    install(id: string): Promise<void>
+    uninstall(id: string): Promise<void>
+    /** Runs a catalog check now. */
+    check(): Promise<void>
+    /** Subscribes to the end of each catalog check; returns the unsubscribe function. */
+    onChecked(listener: () => void): () => void
   }
   word: {
     status(): Promise<WordStatus>

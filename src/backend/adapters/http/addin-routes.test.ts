@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Hono } from 'hono'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { addinRoutes } from './addin-routes'
 
@@ -113,5 +114,29 @@ describe('addinRoutes', () => {
 
     expect(response.status).toBe(500)
     expect(await response.text()).not.toContain(token)
+  })
+
+  it('serves a module mounted under its own path alike, its relative assets resolving under it', async () => {
+    writeFileSync(
+      join(dir, 'taskpane.html'),
+      '<html><head><script defer src="taskpane.js"></script></head></html>'
+    )
+    const mount = '/m/stylistic-addon'
+    const app = new Hono().route(mount, addinRoutes({ dir, token, mount }))
+
+    const page = await app.request(`${mount}/taskpane.html`)
+    const html = await page.text()
+    const script = html.match(/src="([^"]+)"/)?.[1] ?? ''
+    const asset = await app.request(new URL(script, `https://localhost:3000${mount}/taskpane.html`).href)
+    const icon = await app.request(`${mount}/assets/icon-32.png`)
+
+    expect(page.headers.get('cache-control')).toBe('no-store')
+    expect(html).toContain(`<meta name="stylistic-hub-token" content="${token}"></head>`)
+    expect(script).toMatch(/^taskpane\.js\?v=\w+$/)
+    expect(await asset.text()).toBe('console.log(1)')
+    expect(asset.headers.get('cache-control')).toBe('no-cache')
+    expect(icon.headers.get('content-type')).toBe('image/png')
+    expect((await app.request(`${mount}/../hub-addin-secret.txt`)).status).toBe(404)
+    expect((await app.request(`${mount}/%2e%2e/hub-addin-secret.txt`)).status).toBe(404)
   })
 })

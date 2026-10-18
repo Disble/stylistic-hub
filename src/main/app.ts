@@ -1,16 +1,25 @@
 import { existsSync } from 'node:fs'
+import { arch, release, type } from 'node:os'
 import { join } from 'node:path'
 import { app, BrowserWindow, Menu, nativeImage, shell, Tray } from 'electron'
 import { safeExternalUrl } from '../shared/login/external-link'
 import { HUB_PORT, SERVER_VERSION } from '../shared/versions'
-import { startBackend } from './backend-host'
+import { BUILT_IN_ENTRY, createBackend } from './backend-host'
+import { waitUntilHealthy } from './health-check'
+import { hubStatusRequest } from './health-request'
 import { hubPaths } from './hub-paths'
 import { createLocalModel } from './local-model'
 import { loadOrCreateHubToken } from './hub-token'
+import { createLibrary } from './library'
 import { registerProviderIpc } from './ipc-provider'
 import { registerScreenIpc } from './ipc-screens'
 import { createPiProvider } from './pi-provider'
+import { createModuleSwitch, moduleDirFlags } from './module-switch'
 import { createServerStatus } from './server-status'
+import { createServerSwitch, serverDirFlag } from './server-switch'
+import { channelControls } from './updates/channels'
+import { startUpdateChecks } from './updates/schedule'
+import { startSelfUpdate } from './updates/self-update-electron'
 import { createWordIntegration } from './word-integration'
 import { createWordSession } from './word-session'
 
@@ -96,32 +105,106 @@ if (!isSingleInstance) {
   app.on('second-instance', showWindow)
 
   void app.whenReady().then(async () => {
-    const paths = hubPaths(app.getPath('userData'))
+    const userData = app.getPath('userData')
+    const paths = hubPaths(userData)
+    const token = loadOrCreateHubToken(paths.token)
     const status = createServerStatus({
       version: SERVER_VERSION,
       address: `https://localhost:${HUB_PORT}`,
       onChange: (current) => mainWindow?.webContents.send('hub:server-status', current)
     })
-    const backend = startBackend({
+    const backend = createBackend({
       status,
       certificatesDir: paths.certificates,
       database: paths.database,
       piDir: paths.piDir,
       port: HUB_PORT,
       addinDir: existsSync(ADDIN_DIR) ? ADDIN_DIR : undefined,
-      token: loadOrCreateHubToken(paths.token),
-      logFile: join(app.getPath('logs'), 'server.log')
+      token,
+      logFile: join(app.getPath('logs'), 'server.log'),
+      // Both callbacks run only after the switch below exists: the first spawn and the first check end later.
+      onCrashLoop: () => serverSwitch.crashLoop()
     })
-    app.on('will-quit', () => backend.stop())
+    // Node's global fetch, as for the local model: the catalog and components are public HTTPS files whose
+    // signatures the engine verifies, and it is the fetch type the engine is written and tested against.
+    // The hub's own update (D10): after each check, a newer verified installer is handed to electron-updater.
+    const selfUpdate = startSelfUpdate({ userData, currentVersion: app.getVersion() })
+    const updates = startUpdateChecks({
+      userData,
+      database: paths.database,
+      fetch,
+      // Modules first, so a server the check also switched starts with the new modules already set.
+      onChecked: (report) => {
+        library.observe(report)
+        mainWindow?.webContents.send('hub:library-checked')
+        void moduleSwitch.refresh().then(() => serverSwitch.refresh(report))
+      },
+      onReport: selfUpdate.onReport
+    })
+    const library = createLibrary({
+      engine: updates.engine,
+      check: updates.check,
+      hubVersion: app.getVersion()
+    })
+    const serverSwitch = createServerSwitch({
+      engine: updates.engine,
+      componentsRoot: join(userData, 'components'),
+      database: paths.database,
+      builtIn: { entry: BUILT_IN_ENTRY, version: SERVER_VERSION },
+      // `--server <dir>` runs a development build of the server (unpackaged hub only).
+      devServerDir: serverDirFlag(process.argv, app.isPackaged),
+      backend,
+      healthy: () =>
+        waitUntilHealthy({ request: hubStatusRequest({ port: HUB_PORT, token, caFile: paths.caCert }) }),
+      status
+    })
+    // Word gets the served modules' stable manifests, else the bundled add-in (odd/tasks/module-library.md S4).
+    const word = createWordIntegration({
+      caFile: paths.caCert,
+      manifestFile: join(ADDIN_DIR, 'manifest.xml'),
+      moduleManifests: () => moduleSwitch.manifests(),
+      componentsRoot: join(userData, 'components')
+    })
+    const hubRequest = (path: string) =>
+      hubStatusRequest({ port: HUB_PORT, token, caFile: paths.caCert, path })
+    const moduleSwitch = createModuleSwitch({
+      engine: updates.engine,
+      componentsRoot: join(userData, 'components'),
+      // `--module <id>=<dir>` serves a development build of a module (unpackaged hub only).
+      devModules: moduleDirFlags(process.argv, app.isPackaged),
+      backend,
+      restartAllowed: () => serverSwitch.restartAllowed(),
+      // A module is healthy once its manifest and its task pane both answer 200 at `/m/<id>/`.
+      healthy: (id) =>
+        waitUntilHealthy({
+          request: async () => {
+            const manifest = await hubRequest(`/m/${id}/manifest.xml`)()
+            return manifest === 200 ? hubRequest(`/m/${id}/taskpane.html`)() : manifest
+          }
+        }),
+      serverHealthy: () => waitUntilHealthy({ request: hubRequest('/api/v1/status') }),
+      servesModules: async () => (await hubRequest('/api/v1/modules')().catch(() => 0)) !== 404,
+      onChange: () =>
+        void word
+          .sync()
+          .catch((error: unknown) => console.error('Could not update Stylistic in Word:', error)),
+      report: status.setReason
+    })
+    // The backend's first start already serves the installed modules.
+    void moduleSwitch
+      .start()
+      .catch((error: unknown) => console.error('Could not resolve the modules:', error))
+      .then(() => serverSwitch.start())
+    app.on('will-quit', () => {
+      updates.stop()
+      selfUpdate.stop()
+      backend.stop()
+    })
     registerProviderIpc(
       await createPiProvider(paths.piDir),
       createLocalModel({ modelsFile: join(paths.piDir, 'models.json'), fetch }),
       () => mainWindow?.webContents
     )
-    const word = createWordIntegration({
-      caFile: paths.caCert,
-      manifestFile: join(ADDIN_DIR, 'manifest.xml')
-    })
     const wordSession = createWordSession({
       script: join(WORD_DIR, 'word-session.ps1'),
       document: join(ADDIN_DIR, 'Stylistic.docx'),
@@ -135,17 +218,34 @@ if (!isSingleInstance) {
       else wordSession.stop()
       if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: enabled, args: [BACKGROUND_FLAG] })
     }
-    registerScreenIpc(status, backend, app.getPath('logs'), {
-      ...word,
-      connect: async () => {
-        await word.connect()
-        keepInWord(true)
+    registerScreenIpc(
+      status,
+      backend,
+      app.getPath('logs'),
+      {
+        ...word,
+        connect: async () => {
+          await word.connect()
+          keepInWord(true)
+        },
+        disconnect: async () => {
+          await word.disconnect()
+          keepInWord(false)
+        }
       },
-      disconnect: async () => {
-        await word.disconnect()
-        keepInWord(false)
-      }
-    })
+      channelControls(updates.engine, updates.check),
+      {
+        logsDir: app.getPath('logs'),
+        componentsRoot: join(userData, 'components'),
+        hubVersion: app.getVersion(),
+        os: `${type()} ${release()} ${arch()}`,
+        versions: { electron: process.versions.electron, node: process.versions.node },
+        serverStatus: status.get,
+        wordStatus: word.status
+      },
+      library,
+      serverSwitch.restartAllowed
+    )
 
     const icon = nativeImage.createFromPath(join(app.getAppPath(), 'resources', 'icon.png'))
     tray = new Tray(icon.resize({ width: 16, height: 16 }))

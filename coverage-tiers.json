@@ -3,7 +3,9 @@
   "enforcedPrefixes": [
     "src/backend/",
     "src/main/",
-    "src/renderer/"
+    "src/renderer/",
+    "src/shared/schema-state.ts",
+    "src/shared/signing/"
   ],
   "features": [
     {
@@ -61,6 +63,11 @@
           "reason": "Forks the utilityProcess; exercised by launching the app"
         },
         {
+          "path": "src/main/health-request.ts",
+          "tier": "infrastructure",
+          "reason": "The node:https call of the health check to the running backend; exercised by launching the app"
+        },
+        {
           "path": "src/main/ipc-provider.ts",
           "tier": "infrastructure",
           "reason": "Electron IPC wiring, exercised by launching the app"
@@ -69,6 +76,31 @@
           "path": "src/main/ipc-screens.ts",
           "tier": "infrastructure",
           "reason": "Electron IPC wiring, exercised by launching the app"
+        },
+        {
+          "path": "src/main/updates/",
+          "tier": "core",
+          "reason": "Update engine: verifies, downloads and installs signed components; a miss installs untrusted code or breaks the installed version"
+        },
+        {
+          "path": "src/main/updates/schedule.ts",
+          "tier": "infrastructure",
+          "reason": "Wiring of the engine to the real clock, the embedded keys and a timer; exercised by launching the app"
+        },
+        {
+          "path": "src/main/updates/self-update-electron.ts",
+          "tier": "infrastructure",
+          "reason": "Wiring of the hub's self-update to electron-updater's autoUpdater; exercised by a packaged hub updating itself"
+        },
+        {
+          "path": "src/main/updates/test-fixtures.ts",
+          "tier": "infrastructure",
+          "reason": "Signed test fixtures and the fake fetch, imported only by the update engine's tests"
+        },
+        {
+          "path": "src/main/updates/zip-fixtures.ts",
+          "tier": "infrastructure",
+          "reason": "Zip fixtures for the update engine's tests (yazl and a byte patch), imported only by tests"
         }
       ]
     },
@@ -89,6 +121,18 @@
           "reason": "Test double of window.hub, imported only by renderer tests"
         }
       ]
+    },
+    {
+      "id": "signing",
+      "path": "src/shared/signing/",
+      "defaultTier": "core",
+      "reason": "Signature and integrity checks of the key list, catalog and components: a miss installs untrusted code"
+    },
+    {
+      "id": "schema-state",
+      "path": "src/shared/schema-state.ts",
+      "defaultTier": "core",
+      "reason": "The database's schema state and the backup restore the hub's rollback relies on: a miss loses the author's documents"
     }
   ]
 }

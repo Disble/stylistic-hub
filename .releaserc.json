@@ -1,5 +1,12 @@
 {
   "tagFormat": "hub-v${version}",
+  "branches": [
+    "main",
+    {
+      "name": "dev",
+      "prerelease": "beta"
+    }
+  ],
   "plugins": [
     [
       "@semantic-release/commit-analyzer",
@@ -28,7 +35,7 @@
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "bun run dist"
+        "prepareCmd": "bun run dist && bun scripts/release/pack-component.ts --file release/StylisticHub-Setup-${nextRelease.version}.exe --out release --id stylistic-hub --kind hub --version ${nextRelease.version} --channel ${nextRelease.channel ? 'beta' : 'stable'} --release-notes https://github.com/Disble/stylistic-hub/releases/tag/hub-v${nextRelease.version}"
       }
     ],
     [
@@ -36,6 +43,28 @@
       {
         "assets": ["package.json", "CHANGELOG.md"],
         "message": "chore(release): hub ${nextRelease.version}"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "successComment": false,
+        "failComment": false,
+        "releasedLabels": false,
+        "assets": [
+          {
+            "path": "release/StylisticHub-Setup-*.exe",
+            "label": "Windows installer"
+          },
+          {
+            "path": "release/component.json",
+            "label": "component.json"
+          },
+          {
+            "path": "release/component.json.sig",
+            "label": "component.json.sig"
+          }
+        ]
       }
     ]
   ]

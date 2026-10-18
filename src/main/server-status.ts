@@ -35,6 +35,20 @@ export function createServerStatus({
     },
     exited({ code, restartInMs }: { code: number; restartInMs: number }) {
       set({ ...status, state: 'restarting', crashes: status.crashes + 1, lastExitCode: code, restartInMs })
+    },
+    /** The version that runs now: a server component's, or the built-in server's. */
+    setVersion(version: string) {
+      set({ ...status, version })
+    },
+    /** A server version failed and the hub went back; the reason stays visible once the earlier one runs. */
+    rolledBack(reason: string) {
+      const next: ServerStatus = { ...status, state: 'rolled-back', reason }
+      delete next.restartInMs
+      set(next)
+    },
+    /** Explains the state, for instance a crash loop with no earlier version to go back to. */
+    setReason(reason: string) {
+      set({ ...status, reason })
     }
   }
 }

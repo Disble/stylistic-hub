@@ -17,6 +17,9 @@ coverage/
 # Logs
 *.log
 
+# Development signing keys (`bun run keys:dev`)
+.dev-keys/
+
 # Environment and local config
 .env
 .env.*

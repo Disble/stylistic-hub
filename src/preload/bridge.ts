@@ -31,10 +31,24 @@ const bridge: HubBridge = {
     status: () => ipcRenderer.invoke('hub:server:status'),
     restart: () => ipcRenderer.invoke('hub:server:restart'),
     openLogs: () => ipcRenderer.invoke('hub:server:open-logs'),
+    channels: () => ipcRenderer.invoke('hub:server:channels'),
+    setChannel: (target, channel) => ipcRenderer.invoke('hub:server:set-channel', target, channel),
+    exportDiagnostics: () => ipcRenderer.invoke('hub:server:export-diagnostics'),
     onStatus: (listener) => {
       const handler = (_event: unknown, status: ServerStatus) => listener(status)
       ipcRenderer.on('hub:server-status', handler)
       return () => void ipcRenderer.removeListener('hub:server-status', handler)
+    }
+  },
+  library: {
+    list: () => ipcRenderer.invoke('hub:library:list'),
+    install: (id) => ipcRenderer.invoke('hub:library:install', id),
+    uninstall: (id) => ipcRenderer.invoke('hub:library:uninstall', id),
+    check: () => ipcRenderer.invoke('hub:library:check'),
+    onChecked: (listener) => {
+      const handler = () => listener()
+      ipcRenderer.on('hub:library-checked', handler)
+      return () => void ipcRenderer.removeListener('hub:library-checked', handler)
     }
   },
   word: {

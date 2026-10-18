@@ -12,6 +12,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "build:server": "vite build --config vite.server.config.ts && bun scripts/release/build-server.ts",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint .",
@@ -22,11 +23,12 @@
     "check:word": "bun scripts/check-word-session.ts",
     "check:providers": "bun src/backend/check-providers.ts",
     "addin:bundle": "bun scripts/bundle-addin.ts",
+    "keys:dev": "bun scripts/keys/dev-keys.ts",
     "release:server": "cd src/backend && semantic-release",
     "release:hub": "semantic-release",
     "test:coverage": "vitest run --coverage --config .dharness/vitest.coverage.mjs",
     "check": "bun run format:check && bun run lint && bun run typecheck && bun run test:coverage && bun run check:word",
-    "dist": "bun scripts/require-addin.ts && bun run build && bun scripts/stage-prod-addin.ts && electron-builder --win nsis --x64",
+    "dist": "bun scripts/require-addin.ts && bun run build && bun scripts/stage-prod-addin.ts && electron-builder --win nsis --x64 --publish never",
     "dist:dir": "bun scripts/require-addin.ts && bun run build && bun scripts/stage-prod-addin.ts && electron-builder --win dir --x64",
     "prepare": "lefthook install"
   },
@@ -38,9 +40,11 @@
     "@peculiar/asn1-schema": "2.11.0",
     "@peculiar/asn1-x509": "2.11.0",
     "@peculiar/x509": "2.2.0",
+    "electron-updater": "6.8.10",
     "hono": "4.13.13",
     "openworkflow": "0.11.0",
     "reflect-metadata": "0.2.2",
+    "yauzl": "3.4.0",
     "zod": "4.6.7"
   },
   "devDependencies": {
@@ -52,12 +56,14 @@
     "@semantic-release/changelog": "7.0.0",
     "@semantic-release/exec": "7.1.0",
     "@semantic-release/git": "11.0.1",
+    "@semantic-release/github": "12.0.10",
     "@testing-library/dom": "10.4.2",
     "@testing-library/react": "16.3.3",
     "@types/adm-zip": "0.6.0",
     "@types/node": "24.19.2",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "@types/yauzl": "3.4.0",
     "@vitejs/plugin-react": "5.2.0",
     "@vitest/coverage-v8": "5.0.5",
     "adm-zip": "0.6.1",
@@ -81,6 +87,7 @@
     "typescript": "5.9.3",
     "typescript-eslint": "8.71.2",
     "vite": "7.3.7",
-    "vitest": "5.0.5"
+    "vitest": "5.0.5",
+    "yazl": "3.3.1"
   }
 }

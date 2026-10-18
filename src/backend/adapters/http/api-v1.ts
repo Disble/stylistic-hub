@@ -20,6 +20,8 @@ export interface ApiV1Options {
   feedback: FeedbackService
   documents: DocumentRepository
   preferences: SqlitePreferencesRepository
+  /** The modules served at `/m/<id>/`, read at startup. */
+  modules: readonly { id: string; version: string }[]
 }
 
 /** Largest request body: a whole novel is about 1 MB of text. */
@@ -68,16 +70,17 @@ const AnalysisSchema = z
   })
   .openapi('Analysis')
 
-/** A request to analyze a document. */
+/** A request to analyze a document; unknown fields are refused, as `PUT /preferences` does. */
 const AnalysisRequestSchema = z
   .object({
     genre: GenreSchema,
     chunks: z
-      .array(z.object({ id: z.string().min(1).max(64), text: z.string().min(1) }))
+      .array(z.object({ id: z.string().min(1).max(64), text: z.string().min(1) }).strict())
       .min(1)
       .max(1000)
       .refine((chunks) => new Set(chunks.map((c) => c.id)).size === chunks.length, 'Chunk ids must be unique')
   })
+  .strict()
   .openapi('AnalysisRequest')
 
 /** Feedback as the hub records it. */
@@ -123,6 +126,18 @@ const StatusSchema = z
     })
   })
   .openapi('Status')
+
+/** The modules the hub serves, so a task pane can tell a newer version of itself is installed. */
+const ModulesSchema = z
+  .object({
+    modules: z.array(
+      z.object({
+        id: z.string(),
+        version: z.string().openapi({ description: 'The `<Version>` of the module’s manifest.xml.' })
+      })
+    )
+  })
+  .openapi('Modules')
 
 /** A document and its living style profile. */
 const DocumentSchema = z
@@ -176,6 +191,13 @@ const routes = {
     security,
     summary: 'Whether the hub can analyze now',
     responses: { 200: json(StatusSchema, 'The hub’s version and readiness'), 401: refused[401] }
+  }),
+  modules: createRoute({
+    method: 'get',
+    path: '/modules',
+    security,
+    summary: 'The modules the hub serves at /m/{id}/ and their versions',
+    responses: { 200: json(ModulesSchema, 'The served modules'), 401: refused[401] }
   }),
   document: createRoute({
     method: 'get',
@@ -287,7 +309,8 @@ export function apiV1({
   analyses,
   feedback,
   documents,
-  preferences
+  preferences,
+  modules
 }: ApiV1Options): OpenAPIHono {
   const api = new OpenAPIHono({
     defaultHook: (result, c) => {
@@ -317,6 +340,10 @@ export function apiV1({
 
   api.openapi(routes.status, async (c) =>
     c.json({ version: serverVersion, analysis: await analyses.readiness() }, 200)
+  )
+
+  api.openapi(routes.modules, (c) =>
+    c.json({ modules: modules.map(({ id, version }) => ({ id, version })) }, 200)
   )
 
   api.openapi(routes.document, (c) => {

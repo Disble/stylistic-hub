@@ -1,0 +1,134 @@
+# Checks every push and pull request, diffs the API v1 contract against the last server release, and on a
+# push to dev (beta) or main (stable) releases the server and the hub with semantic-release
+# (docs/development.md#continuous-integration). The dharness gate stays local: it is not built for CI.
+name: CI
+
+on:
+  push:
+    branches: [main, dev, 'feature/**', 'release/**', 'hotfix/**']
+  pull_request:
+    branches: [main, dev]
+
+permissions:
+  contents: read
+
+env:
+  # The lefthook hooks call the local-only dharness binary; CI runs the same checks as steps instead.
+  LEFTHOOK: '0'
+  BUN_VERSION: 1.4.1
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      # `bun run check` minus coverage: the coverage tiers resolve through the dharness binary, so they are
+      # enforced by the local gate only (docs/development.md#continuous-integration).
+      - run: bun run format:check
+      - run: bun run lint
+      - run: bun run typecheck
+      - run: bun run test
+      - run: bun run check:word
+      - run: bun run build
+
+  api-contract:
+    runs-on: ubuntu-latest
+    env:
+      OASDIFF_VERSION: 1.33.0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - name: API v1 of the last server release and of this commit
+        shell: bash
+        run: |
+          # The nearest server release this commit descends from (a hotfix from main is not compared with a dev beta).
+          base_tag=$(git describe --tags --abbrev=0 --match 'server-v*' HEAD)
+          echo "Comparing against $base_tag"
+          base=node_modules/.cache/openapi-base
+          mkdir -p "$base"
+          git archive "$base_tag" src | tar -x -C "$base"
+          bun scripts/openapi-doc.ts "$base" base.json
+          bun scripts/openapi-doc.ts . head.json
+      - name: Fail on a breaking change
+        shell: bash
+        run: |
+          curl -sSfL "https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz" | tar -xz oasdiff
+          ./oasdiff breaking base.json head.json --fail-on ERR
+
+  release-server:
+    if: github.event_name == 'push' && (github.ref_name == 'dev' || github.ref_name == 'main')
+    needs: [check, api-contract]
+    runs-on: windows-latest
+    concurrency: release-${{ github.ref_name }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - run: bun run release:server
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signs component.json of the server artifact (docs/signed-releases.md).
+          STYLISTIC_COMPONENT_KEY: ${{ secrets.STYLISTIC_COMPONENT_KEY }}
+
+  release-hub:
+    if: github.event_name == 'push' && (github.ref_name == 'dev' || github.ref_name == 'main')
+    needs: release-server
+    runs-on: windows-latest
+    # One group for both release jobs, so a later push's server release never races this hub release.
+    concurrency: release-${{ github.ref_name }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The branch head, which includes the server release commit pushed by the previous job.
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: Disble/stylistic-addon
+          path: addin-src
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Is the add-in's hub build on its main?
+        id: addin
+        shell: bash
+        run: |
+          if grep -q '"build:hub"' addin-src/package.json; then echo "ready=true" >> "$GITHUB_OUTPUT"
+          else echo "::notice::The add-in's main has no build:hub yet; the hub release waits for it (docs/roadmap.md M2)."; fi
+      - if: steps.addin.outputs.ready == 'true'
+        run: bun install --frozen-lockfile
+      - if: steps.addin.outputs.ready == 'true'
+        run: bun install --frozen-lockfile
+        working-directory: addin-src
+      - if: steps.addin.outputs.ready == 'true'
+        run: bun run addin:bundle addin-src
+      - if: steps.addin.outputs.ready == 'true'
+        run: bun run release:hub
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signs the installer's component.json (scope stylistic-hub), like the server's.
+          STYLISTIC_COMPONENT_KEY: ${{ secrets.STYLISTIC_COMPONENT_KEY }}
