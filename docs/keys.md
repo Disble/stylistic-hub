@@ -16,7 +16,7 @@ All keys are ed25519. A key's id is the first 16 hex characters of the sha256 of
 
 ## The ceremony
 
-`powershell -ExecutionPolicy Bypass -File scripts\keys\ceremony.ps1` asks for the root passphrase (shown as typed in that window only and confirmed with y/n, so a typo is caught; an empty line generates one), logs each step without secrets to `%TEMP%stylistic-ceremony.log`, then `scripts/keys/ceremony.ts`:
+`powershell -ExecutionPolicy Bypass -File scripts\keys\ceremony.ps1` asks for the root passphrase (shown as typed in that window only and confirmed with y/n, so a typo is caught; an empty line generates one), logs each step without secrets to `%TEMP%\stylistic-ceremony.log`, then `scripts/keys/ceremony.ts`:
 
 1. generates the root, next-root, catalog and two component keys;
 2. sets the three online private keys as GitHub secrets through `gh secret set`'s standard input (they never touch a file);
