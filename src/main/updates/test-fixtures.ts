@@ -39,6 +39,9 @@ export function envelope(document: unknown, key: TestKey): Envelope {
   return { keyId: key.id, signature: signature(document, key) }
 }
 
+/** The publisher, and key scope, of the add-in module stream (docs/keys.md). */
+export const ADDON_PUBLISHER = 'stylistic-addon'
+
 /** A key list entry. */
 function keyEntry(key: TestKey, role: 'catalog' | 'component', scope?: string): KeyList['keys'][number] {
   return { id: key.id, role, ...(scope ? { scope } : {}), publicKey: key.raw.toString('base64') }
@@ -60,6 +63,8 @@ export interface ReleaseOptions {
   version: string
   /** The release stream, in component.json and the catalog entry (default `stable`). */
   channel?: Channel
+  /** The catalog entry's publisher: the key scope its component.json must be signed under (default `stylistic-hub`). */
+  publisher?: string
   items?: ZipItem[]
   zip?: Buffer
   requires?: Record<string, unknown>
@@ -71,7 +76,7 @@ export interface ReleaseOptions {
 
 /** A signed release in the M3 format, published under `https://example.test/<id>-<version>/`. */
 export async function makeRelease(options: ReleaseOptions, key: TestKey): Promise<Release> {
-  const { id = 'server', kind = 'server', version, channel = 'stable' } = options
+  const { id = 'server', kind = 'server', version, channel = 'stable', publisher = 'stylistic-hub' } = options
   const items = options.items ?? [{ name: 'entry.js', data: `console.log('${id} ${version}')` }]
   const zip = options.zip ?? (await makeZip(items))
   const component: Component = {
@@ -92,7 +97,7 @@ export async function makeRelease(options: ReleaseOptions, key: TestKey): Promis
   const entry: CatalogEntry = {
     id,
     kind,
-    publisher: 'stylistic-hub',
+    publisher,
     channel,
     version,
     sha256: createHash('sha256').update(zip).digest('hex'),
@@ -208,13 +213,15 @@ export interface World {
   rootKey: TestKey
   catalogKey: TestKey
   componentKey: TestKey
+  /** A component key scoped to `ADDON_PUBLISHER`, named in every key list. */
+  addonKey: TestKey
   /** The components directory, under the OS temp folder. */
   root: string
   routes: Map<string, Route>
   seen: SeenRequest[]
   context: EngineContext
   engine: UpdateEngine
-  /** A key list naming the catalog key and `componentKeys` (default: the component key). */
+  /** A key list naming the catalog key, `componentKeys` (default: the component key) and the add-in key. */
   keyList(options?: { version?: number; expires?: string; componentKeys?: TestKey[] }): KeyList
   /** Serves a signed catalog of `releases` (and their files) with `keys`, `serial` and `expires`. */
   publish(options: { releases: Release[]; keys?: KeyList; serial?: number; expires?: string }): void
@@ -233,6 +240,7 @@ export async function makeWorld(): Promise<World> {
   const rootKey = newKey()
   const catalogKey = newKey()
   const componentKey = newKey()
+  const addonKey = newKey()
   const root = join(await mkdtemp(join(tmpdir(), 'stylistic-updates-')), 'components')
   const routes = new Map<string, Route>()
   const { fetch, seen } = fakeFetch(routes)
@@ -242,13 +250,15 @@ export async function makeWorld(): Promise<World> {
     expires,
     keys: [
       keyEntry(catalogKey, 'catalog'),
-      ...(componentKeys ?? [componentKey]).map((key) => keyEntry(key, 'component', 'stylistic-hub'))
+      ...(componentKeys ?? [componentKey]).map((key) => keyEntry(key, 'component', 'stylistic-hub')),
+      keyEntry(addonKey, 'component', ADDON_PUBLISHER)
     ]
   })
   return {
     rootKey,
     catalogKey,
     componentKey,
+    addonKey,
     root,
     routes,
     seen,

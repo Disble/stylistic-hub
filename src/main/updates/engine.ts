@@ -2,7 +2,9 @@
 // key is gone, and the install of the version offered on each component's channel (odd/tasks/channels.md S1, S3,
 // S4) for the server and for what is already installed.
 import { randomUUID } from 'node:crypto'
-import type { Catalog, KeyList } from '../../shared/signing/documents'
+import { rm } from 'node:fs/promises'
+import { join } from 'node:path'
+import { componentSchema, type Catalog, type KeyList } from '../../shared/signing/documents'
 import { checkCatalog, type CatalogCheck, type EngineContext } from './catalog'
 import { channelOf, offered } from './channels'
 import type { StagedInstaller } from './feed'
@@ -36,6 +38,10 @@ export interface UpdateEngine {
   setCurrent(id: string, version: string, reason?: string | null): Promise<void>
   /** Sets the channel component `id` follows (`HUB_ID`: the hub's own); the next check applies it. */
   setChannel(id: string, channel: Channel): Promise<void>
+  /** Records that the user wants module `id`; the next check installs it as it updates installed ones (S2). */
+  requestInstall(id: string): Promise<void>
+  /** Removes module `id`: its state entry, with a history line, then `<root>/<id>/` (S2). */
+  uninstall(id: string): Promise<void>
   /** A catalog check, revocation, then the installs the catalog calls for. */
   runCheck(): Promise<CheckReport>
 }
@@ -77,6 +83,13 @@ function wanted(state: UpdateState, entry: CatalogEntry, installId: string): boo
   if (!offered(entry, channelOf(state, entry.id), installId) || (entry.kind !== 'server' && !installed))
     return false
   return installed?.current !== entry.version && !installed?.bad.includes(entry.version)
+}
+
+/** `id` when it is a component id other than the server's and the hub's; throws otherwise. */
+function moduleId(id: string): string {
+  const module = componentSchema.shape.id.parse(id)
+  if (module === 'server' || module === HUB_ID) throw new Error(`${module} is not a module`)
+  return module
 }
 
 /** This install's id, created at the first check that needs it and kept from then on (S3). */
@@ -127,6 +140,24 @@ export function createUpdateEngine(context: EngineContext, rootKeys: readonly Bu
         if (id === HUB_ID) state.hub = { channel }
         else componentState(state, id).channel = channel
       })
+    },
+    async requestInstall(id) {
+      const module = moduleId(id)
+      await updateState(context.root, (state) => {
+        componentState(state, module)
+      })
+    },
+    async uninstall(id) {
+      const module = moduleId(id)
+      await updateState(context.root, (state) => {
+        const installed = state.components[module]
+        if (!installed) throw new Error(`${module} is not installed`)
+        delete state.components[module]
+        const time = context.now().toISOString()
+        const from = installed.current
+        addHistory(state, { time, component: module, from, to: null, outcome: 'uninstalled', reason: null })
+      })
+      await rm(join(context.root, module), { recursive: true, force: true })
     },
     async runCheck() {
       const check = await engine.checkCatalog()
