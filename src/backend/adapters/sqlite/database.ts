@@ -80,9 +80,13 @@ export const MIGRATIONS: readonly Migration[] = [
     summary TEXT,
     error TEXT,
     created_at TEXT NOT NULL
-  ) STRICT`,
-  // The parts already recorded, so a part whose save OpenWorkflow replays is recorded once.
-  `CREATE TABLE analysis_part (
+  ) STRICT`
+  },
+  // The parts already recorded, so a part whose save OpenWorkflow replays is recorded once. Expand: a new
+  // table that schema-3 servers never read, so they can still open the database (minReaderSchema stays 3).
+  {
+    kind: 'expand',
+    sql: `CREATE TABLE analysis_part (
     analysis_id TEXT NOT NULL,
     chunk_id TEXT NOT NULL,
     part INTEGER NOT NULL,
