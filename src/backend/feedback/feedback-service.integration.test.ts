@@ -95,6 +95,27 @@ describe('createFeedbackService', () => {
     expect(started).toEqual([])
   })
 
+  it('fails the feedback with the error when the engine cannot start it', async () => {
+    const { suggestionId } = setup()
+    const failing = createFeedbackService({
+      analyses: new SqliteAnalysisRepository(db),
+      feedback: new SqliteFeedbackRepository(db),
+      engine: {
+        start: async () => Promise.reject(new Error('database is locked')),
+        get: async () => undefined,
+        cancel: async () => undefined
+      }
+    })
+
+    const feedback = await failing.submit({ suggestionId, action: 'accept' })
+
+    expect(feedback).toMatchObject({ suggestionId, status: 'failed', error: 'database is locked' })
+    expect(failing.get(feedback.id)).toEqual(feedback)
+    expect(db.prepare('SELECT status, error FROM feedback').all()).toEqual([
+      { status: 'failed', error: 'database is locked' }
+    ])
+  })
+
   it('says when feedback is unknown', () => {
     expect(() => setup().service.get('missing')).toThrow(expect.objectContaining({ code: 'not_found' }))
   })
