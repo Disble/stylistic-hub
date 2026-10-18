@@ -291,6 +291,44 @@ describe('createModuleSwitch', () => {
     expect(onChange).toHaveBeenCalledTimes(1)
   })
 
+  it('drops the pending health check of a module uninstalled meanwhile, so it is not installed again', async () => {
+    await install('1.0.0')
+    let answer: (healthy: boolean) => void = () => undefined
+    const healthy = vi
+      .fn<(id: string) => Promise<boolean>>()
+      .mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
+    const { moduleSwitch, report } = makeSwitch({ healthy })
+    await moduleSwitch.start()
+    await vi.waitFor(() => expect(healthy).toHaveBeenCalledTimes(1))
+    await world.engine.uninstall(ID)
+    await moduleSwitch.refresh()
+
+    answer(false)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect((await world.engine.readState()).components[ID]).toBeUndefined()
+    expect(report).not.toHaveBeenCalled()
+    expect((await world.engine.runCheck()).installs).toEqual([])
+  })
+
+  it('gives no verdict on a version that is no longer current when its health check fails', async () => {
+    await install('1.0.0')
+    let answer: (healthy: boolean) => void = () => undefined
+    const healthy = vi
+      .fn<(id: string) => Promise<boolean>>()
+      .mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
+    const { moduleSwitch, report } = makeSwitch({ healthy })
+    await moduleSwitch.start()
+    await vi.waitFor(() => expect(healthy).toHaveBeenCalledTimes(1))
+    await install('1.1.0')
+
+    answer(false)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect((await world.engine.readState()).components[ID]).toMatchObject({ current: '1.1.0', bad: [] })
+    expect(report).not.toHaveBeenCalled()
+  })
+
   it('gives no verdict on a module while the server itself is not healthy', async () => {
     await install('1.0.0')
     const { moduleSwitch, healthCheck, onChange } = makeSwitch({ serverHealthy: async () => false })

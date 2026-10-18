@@ -205,7 +205,10 @@ export function createModuleSwitch({
       setBackend(modules, restart)
       const before = versions
       versions = installed
-      if ([...before.keys()].some((id) => !installed.has(id))) onChange()
+      const left = [...before.keys()].filter((id) => !installed.has(id))
+      // A module that left the set makes its pending check late: its verdict would recreate the state entry.
+      for (const id of left) generations.set(id, (generations.get(id) ?? 0) + 1)
+      if (left.length > 0) onChange()
       const switched = [...installed].filter(([id, version]) => before.get(id) !== version)
       const checks = await Promise.all(switched.map(([id, version]) => switchTo(id, version)))
       return checks.map(({ check }) => check)
@@ -218,6 +221,8 @@ export function createModuleSwitch({
   const rollBack = async (id: string, failed: string): Promise<void> => {
     const what = `Module ${id} ${failed} failed its health check`
     try {
+      // Another version became current, or the module was uninstalled: a verdict would blame or reinstall it.
+      if ((await engine.readState()).components[id]?.current !== failed) return
       await engine.markBad(id, failed, 'health_check_failed')
       const module = (await engine.readState()).components[id]
       const previous = module?.previous
