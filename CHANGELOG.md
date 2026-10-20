@@ -1,5 +1,11 @@
 # Stylistic Hub changelog
 
+## [1.1.1-beta.1](https://github.com/Disble/stylistic-hub/compare/hub-v1.1.0...hub-v1.1.1-beta.1) (2026-10-20)
+
+### Bug Fixes
+
+* **word:** restore automatic loader after module readiness ([094ee92](https://github.com/Disble/stylistic-hub/commit/094ee92b65c8e96672a6e65cff57857579cc9da1))
+
 ## [1.1.0](https://github.com/Disble/stylistic-hub/compare/hub-v1.0.0...hub-v1.1.0) (2026-10-18)
 
 ### Features
