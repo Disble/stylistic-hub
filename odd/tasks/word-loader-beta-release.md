@@ -10,8 +10,8 @@ Delivery: one fix unit, then release evidence; Bun/Vitest and CI; Risk: item 4 (
 
 ## Tasks
 
-- T1 [S1-S3] inline; in_progress; pass the repository release gates and commit the existing correction, its tests and documentation; commit: pending.
-- T2 [S1-S2] inline; pending; merge the feature into dev with Git Flow and push the authorized beta release; commit: pending.
+- T1 [S1-S3] inline; done; repository release gates, normal hooks and existing independent concurrency verification passed; commit: 094ee92.
+- T2 [S1-S2] inline; in_progress; merge the feature into dev with Git Flow and push the authorized beta release; commit: pending.
 - T3 [S1-S3] inline; pending; observe CI completion and verify the published hub beta, installer and signed metadata; commit: pending.
 
 ## Log
@@ -27,3 +27,4 @@ Delivery: one fix unit, then release evidence; Bun/Vitest and CI; Risk: item 4 (
 - L9 Remote synchronization: default HTTPS fetch failed with "Empty reply from server" (exit 128). One command-local HTTP/1.1 attempt succeeded (exit 0), with dev and origin/dev identical at 65c9635. No permanent Git configuration was changed.
 - L10 Release gate: bun run check passed (exit 0, 59 seconds), including formatting, lint, types, native coverage tiers and PowerShell parser validation. Coverage summary: statements 88.85%, branches 91.3%, functions 86.3%, lines 89.51%; all required per-file thresholds passed. The earlier default-run timeout evidence remains recorded in L6.
 - L11 First commit attempt: pre-commit checks passed, including dharness, but commit-msg rejected the body with "body's lines must not be longer than 100 characters" (body-max-line-length); no commit was created. Correction: wrap the message body below 100 columns and rerun the normal hooks; source behavior is unchanged.
+- L12 Fix committed as 094ee92, "fix(word): restore automatic loader after module readiness": 308 additions and 21 deletions. Format, types, coverage, dharness and commit-msg hooks passed. Committed-range assessment: native medium, escalated high for item 4; RDD off, reviewDue false. The required independent focused verification already passed on this same implementation (12/12 tests, both findings closed); no additional native review was started. This documentation update records T1 before integrating into dev.
