@@ -167,6 +167,31 @@ if (!isSingleInstance) {
       moduleManifests: () => moduleSwitch.manifests(),
       componentsRoot: join(userData, 'components')
     })
+    const wordSession = createWordSession({
+      script: join(WORD_DIR, 'word-session.ps1'),
+      document: join(WORD_DIR, 'Stylistic.docx'),
+      parentPid: process.pid,
+      logFile: join(app.getPath('logs'), 'word-session.log')
+    })
+    app.on('will-quit', () => wordSession.stop())
+    // Invalidate old status reads when a newer read or an explicit Word action takes precedence.
+    let wordSessionRevision = 0
+    // While Stylistic is in Word, the hub starts with Windows and keeps loading it into every Word session.
+    const keepInWord = (enabled: boolean) => {
+      wordSessionRevision++
+      if (enabled) wordSession.start()
+      else wordSession.stop()
+      if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: enabled, args: [BACKGROUND_FLAG] })
+    }
+    const restoreWordSession = () => {
+      const revision = ++wordSessionRevision
+      return word.status().then(
+        (current) => {
+          if (revision === wordSessionRevision) keepInWord(current.addinRegistered)
+        },
+        (error: unknown) => console.error('Could not read Word status:', error)
+      )
+    }
     const hubRequest = (path: string) =>
       hubStatusRequest({ port: HUB_PORT, token, caFile: paths.caCert, leafFile: paths.leafCert, path })
     const moduleSwitch = createModuleSwitch({
@@ -192,6 +217,7 @@ if (!isSingleInstance) {
         void word
           .sync()
           .catch((error: unknown) => console.error('Could not update Stylistic in Word:', error))
+          .then(restoreWordSession)
           .then(() => mainWindow?.webContents.send('hub:library-checked')),
       report: status.setReason
     })
@@ -199,13 +225,16 @@ if (!isSingleInstance) {
     // modules resolved: tidying first would delete an upgrade's legacy registration before knowing the module
     // that replaces it, and a later sync adds nothing while Word holds no entry. A failing tidy still starts
     // the server.
-    void moduleSwitch
+    const modulesReady = moduleSwitch
       .start()
       .catch((error: unknown) => console.error('Could not resolve the modules:', error))
       .then(() =>
         word.sync().catch((error: unknown) => console.error('Could not tidy Stylistic in Word:', error))
       )
+    // Server health/rollback must not block restoration of an already registered Word module.
+    void modulesReady
       .then(() => serverSwitch.start())
+      .catch((error: unknown) => console.error('Could not start the local server:', error))
     app.on('will-quit', () => {
       updates.stop()
       selfUpdate.stop()
@@ -216,19 +245,6 @@ if (!isSingleInstance) {
       createLocalModel({ modelsFile: join(paths.piDir, 'models.json'), fetch }),
       () => mainWindow?.webContents
     )
-    const wordSession = createWordSession({
-      script: join(WORD_DIR, 'word-session.ps1'),
-      document: join(WORD_DIR, 'Stylistic.docx'),
-      parentPid: process.pid,
-      logFile: join(app.getPath('logs'), 'word-session.log')
-    })
-    app.on('will-quit', () => wordSession.stop())
-    // While Stylistic is in Word, the hub starts with Windows and keeps loading it into every Word session.
-    const keepInWord = (enabled: boolean) => {
-      if (enabled) wordSession.start()
-      else wordSession.stop()
-      if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: enabled, args: [BACKGROUND_FLAG] })
-    }
     registerScreenIpc(
       status,
       backend,
@@ -236,10 +252,12 @@ if (!isSingleInstance) {
       {
         ...word,
         connect: async () => {
+          wordSessionRevision++
           await word.connect()
           keepInWord(true)
         },
         disconnect: async () => {
+          wordSessionRevision++
           await word.disconnect()
           keepInWord(false)
         }
@@ -273,12 +291,9 @@ if (!isSingleInstance) {
     if (!process.argv.includes(BACKGROUND_FLAG)) showWindow()
     app.on('activate', showWindow)
 
-    // Follows Word's actual state, also when Stylistic was removed outside the hub. A failure here must not
-    // leave the hub without its window and tray, which already exist.
-    word.status().then(
-      (current) => keepInWord(current.addinRegistered),
-      (error: unknown) => console.error('Could not read Word status:', error)
-    )
+    // An unresolved module set looks unregistered. Decide only after resolution and registration sync;
+    // later module readiness notifications repeat the decision without delaying the window or tray.
+    void modulesReady.then(restoreWordSession)
   })
 
   // Closing the window leaves the hub in the tray: Word needs its server and its session loader.
