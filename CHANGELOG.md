@@ -1,5 +1,11 @@
 # Stylistic Hub changelog
 
+## [1.1.1-beta.2](https://github.com/Disble/stylistic-hub/compare/hub-v1.1.1-beta.1...hub-v1.1.1-beta.2) (2026-10-21)
+
+### Bug Fixes
+
+* **addin:** reload a task pane Word opened without its host bridge ([ae6a895](https://github.com/Disble/stylistic-hub/commit/ae6a8958753f82712792ce4be973a4bbe83c1d73))
+
 ## [1.1.1-beta.1](https://github.com/Disble/stylistic-hub/compare/hub-v1.1.0...hub-v1.1.1-beta.1) (2026-10-20)
 
 ### Bug Fixes
