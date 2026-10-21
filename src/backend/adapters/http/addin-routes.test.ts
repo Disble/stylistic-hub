@@ -1,9 +1,10 @@
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { runInNewContext } from 'node:vm'
 import { Hono } from 'hono'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { addinRoutes } from './addin-routes'
+import { addinRoutes, HOST_BRIDGE_GUARD } from './addin-routes'
 
 /** Temp folder holding the built add-in and a file just outside it. */
 let root: string
@@ -40,6 +41,18 @@ describe('addinRoutes', () => {
     expect(response.headers.get('cache-control')).toBe('no-store')
     expect(html).toContain(`<meta name="stylistic-hub-token" content="${token}"></head>`)
     expect(html).toContain('<title>Stylistic</title>')
+  })
+
+  it('puts the host bridge guard first in the head, before Office.js runs', async () => {
+    writeFileSync(
+      join(dir, 'taskpane.html'),
+      '<html><head><meta charset="UTF-8"/>' +
+        '<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script></head></html>'
+    )
+
+    const html = await (await addinRoutes({ dir, token }).request('/taskpane.html')).text()
+
+    expect(html).toContain(`<head><script>${HOST_BRIDGE_GUARD}</script><meta charset="UTF-8"/>`)
   })
 
   it('serves the rest of the built add-in as it is', async () => {
@@ -138,5 +151,50 @@ describe('addinRoutes', () => {
     expect(icon.headers.get('content-type')).toBe('image/png')
     expect((await app.request(`${mount}/../hub-addin-secret.txt`)).status).toBe(404)
     expect((await app.request(`${mount}/%2e%2e/hub-addin-secret.txt`)).status).toBe(404)
+  })
+})
+
+/** What the guard does in a task pane opened at `url`, once its wait is over. */
+function runGuard({ url, bridged, reloads }: { url: string; bridged: boolean; reloads?: string }) {
+  const storage = new Map<string, string>(
+    reloads === undefined ? [] : [['stylistic.hostBridgeReloads', reloads]]
+  )
+  const waits: (() => void)[] = []
+  let reloaded = 0
+  runInNewContext(HOST_BRIDGE_GUARD, {
+    window: { external: bridged ? { GetContext: () => ({}) } : {} },
+    location: { search: new URL(url).search, reload: () => reloaded++ },
+    sessionStorage: {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+      removeItem: (key: string) => storage.delete(key)
+    },
+    setTimeout: (run: () => void) => waits.push(run)
+  })
+  for (const run of waits) run()
+  return { reloaded, stored: storage.get('stylistic.hostBridgeReloads') }
+}
+
+describe('HOST_BRIDGE_GUARD', () => {
+  const inWord =
+    'https://localhost:3000/m/stylistic-word-addin/taskpane.html?_host_Info=Word$Win32$16.01$en-US$$$$0'
+
+  it('reloads the task pane once when Word opened it without its host bridge', () => {
+    expect(runGuard({ url: inWord, bridged: false })).toEqual({ reloaded: 1, stored: '1' })
+  })
+
+  it('leaves a task pane Word opened with its bridge alone, and forgets earlier reloads', () => {
+    expect(runGuard({ url: inWord, bridged: true, reloads: '1' })).toEqual({ reloaded: 0, stored: undefined })
+  })
+
+  it('stops after two reloads, so a Word that never bridges the pane does not reload it forever', () => {
+    expect(runGuard({ url: inWord, bridged: false, reloads: '2' })).toEqual({ reloaded: 0, stored: '2' })
+  })
+
+  it('never reloads the page outside Word', () => {
+    expect(runGuard({ url: 'https://localhost:3000/taskpane.html', bridged: false })).toEqual({
+      reloaded: 0,
+      stored: undefined
+    })
   })
 })

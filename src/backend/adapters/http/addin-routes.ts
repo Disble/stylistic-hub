@@ -12,6 +12,22 @@ export interface AddinRoutesOptions {
   mount?: string
 }
 
+/**
+ * Reloads a task pane that Word opened without its host bridge (`window.external.GetContext`),
+ * at most twice per pane. When a pane is the first one in a WebView2 that has just started, Word
+ * sometimes never injects the bridge into that page: Office.js logs "There is no window.external",
+ * Office never becomes ready and the pane stays blank, while a reload gets the bridge. Measured
+ * 2026-10-21: blank in 5 of 5 cold starts without it, loaded in 3 of 3 with it. The key is cleared
+ * once a load has the bridge; outside Word (no `_host_Info`) it does nothing.
+ */
+export const HOST_BRIDGE_GUARD =
+  '(function(){var k="stylistic.hostBridgeReloads";' +
+  'function bridged(){return !!window.external&&typeof window.external.GetContext!=="undefined"}' +
+  'try{if(!/[?&]_host_Info=/.test(location.search)||bridged()){sessionStorage.removeItem(k);return}' +
+  'var reloads=Number(sessionStorage.getItem(k))||0;if(reloads>=2)return;' +
+  'setTimeout(function(){if(bridged())return;sessionStorage.setItem(k,String(reloads+1));location.reload()},1000)' +
+  '}catch(e){}})()'
+
 /** A `src` or `href` naming one of the build's own files: not another origin, no query yet. */
 const LOCAL_ASSET = /\b(src|href)="(?![a-z]+:|\/\/)([^"?#]+)"/gi
 
@@ -47,7 +63,10 @@ export function addinRoutes({ dir, token, mount = '' }: AddinRoutesOptions): Hon
     // Without the token the task pane would fail every call, so a build without </head> is an error.
     if (!html.includes('</head>')) throw new Error('taskpane.html has no </head> to put the hub token before')
     c.header('Cache-Control', 'no-store')
-    const page = await versionAssets(html, dir)
+    const page = (await versionAssets(html, dir)).replace(
+      /<head(\s[^>]*)?>/i,
+      (head) => `${head}<script>${HOST_BRIDGE_GUARD}</script>`
+    )
     return c.html(page.replace('</head>', `<meta name="stylistic-hub-token" content="${token}"></head>`))
   })
   // serveStatic's onFound runs after the response is built, too late to add a header.
