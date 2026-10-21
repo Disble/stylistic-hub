@@ -1,5 +1,11 @@
 # Local server changelog
 
+## [server-v1.0.1-beta.1](https://github.com/Disble/stylistic-hub/compare/server-v1.0.0...server-v1.0.1-beta.1) (2026-10-21)
+
+### Bug Fixes
+
+* **addin:** reload a task pane Word opened without its host bridge ([ae6a895](https://github.com/Disble/stylistic-hub/commit/ae6a8958753f82712792ce4be973a4bbe83c1d73))
+
 ## [server-v1.0.0](https://github.com/Disble/stylistic-hub/compare/server-v0.0.1...server-v1.0.0) (2026-10-18)
 
 ### ⚠ BREAKING CHANGES
