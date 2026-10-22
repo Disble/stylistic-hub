@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { HubUpdateStatus } from '../../shared/bridge'
 import type { CheckReport } from './engine'
 import { createSelfUpdate, type SelfUpdate } from './self-update'
 import { envelope, makeRelease, newKey, makeWorld, type Release, type World } from './test-fixtures'
@@ -60,14 +61,18 @@ const updater = {
 let cancels = 0
 /** How many times electron-updater was asked to quit and install now. */
 let installs = 0
+/** Every status the self-update announced. */
+let statuses: HubUpdateStatus[] = []
 
 /** A self-update for a hub running `currentVersion`. */
 function start(currentVersion = '0.1.0', check = updater.check): SelfUpdate {
   cancels = 0
   installs = 0
+  statuses = []
   selfUpdate = createSelfUpdate({
     currentVersion,
-    updater: { check, cancel: () => void cancels++, install: () => void installs++ }
+    updater: { check, cancel: () => void cancels++, install: () => void installs++ },
+    onStatus: (status) => void statuses.push(status)
   })
   return selfUpdate
 }
@@ -240,37 +245,67 @@ describe('createSelfUpdate', () => {
     expect(urls).toHaveLength(2)
   })
 
-  it('is ready once electron-updater downloaded the served version, and restarts into it on request', async () => {
+  it('reports downloading, then ready once electron-updater has the installer, and restarts on request', async () => {
     const self = start()
-    expect(self.ready()).toBeUndefined()
+    expect(self.status()).toBeUndefined()
     expect(() => self.restart()).toThrow('no_update_ready')
     expect(installs).toBe(0)
 
     await self.onReport(await runCheck([hub]), world.engine)
 
-    expect(self.ready()).toBe('0.2.0')
+    expect(statuses).toEqual([
+      { state: 'downloading', version: '0.2.0' },
+      { state: 'ready', version: '0.2.0' }
+    ])
+    expect(self.status()).toEqual({ state: 'ready', version: '0.2.0' })
+    await self.onReport(await runCheck([hub], 101), world.engine)
+    expect(statuses).toHaveLength(2)
     self.restart()
     expect(installs).toBe(1)
   })
 
-  it('is not ready when electron-updater failed, nor after the channel withdrew the served version', async () => {
+  it('reports why the update failed, and up to date when nothing newer is offered', async () => {
+    world.publish({ releases: [hub], serial: 100 })
+    world.routes.set(hub.entry.artifactUrl, Buffer.from('tampered'))
+    const tampered = start()
+    await tampered.onReport(await world.engine.runCheck(), world.engine)
+    expect(tampered.status()).toMatchObject({ state: 'failed', version: '0.2.0' })
+    await tampered.stop()
+
     const failing = start('0.1.0', () => Promise.reject(new Error('offline')))
-    await failing.onReport(await runCheck([hub]), world.engine)
-    expect(failing.ready()).toBeUndefined()
+    await failing.onReport(await runCheck([hub], 101), world.engine)
+    expect(failing.status()).toEqual({ state: 'failed', version: '0.2.0', reason: 'updater: Error: offline' })
+    expect(() => failing.restart()).toThrow('no_update_ready')
     await failing.stop()
 
+    const current = start('0.2.0')
+    await current.onReport(await runCheck([hub], 102), world.engine)
+    expect(current.status()).toEqual({ state: 'up-to-date' })
+    expect(statuses).toEqual([{ state: 'up-to-date' }])
+  })
+
+  it('is up to date again, not ready, after the channel withdrew the downloaded version', async () => {
     const beta = await hubRelease('0.3.0-beta.1', { version: '0.3.0-beta.1', channel: 'beta' })
     await world.engine.setChannel('stylistic-hub', 'beta')
     const self = start('0.2.0')
     await self.onReport(await runCheck([hub, beta], 101), world.engine)
-    expect(self.ready()).toBe('0.3.0-beta.1')
+    expect(self.status()).toEqual({ state: 'ready', version: '0.3.0-beta.1' })
 
     await world.engine.setChannel('stylistic-hub', 'stable')
     await self.onReport(await runCheck([hub, beta], 102), world.engine)
 
-    expect(self.ready()).toBeUndefined()
+    expect(self.status()).toEqual({ state: 'up-to-date' })
     expect(() => self.restart()).toThrow('no_update_ready')
     expect(installs).toBe(0)
+  })
+
+  it('keeps its status when the catalog check failed', async () => {
+    const self = start()
+    await self.onReport(await runCheck([hub]), world.engine)
+
+    await self.onReport({ catalog: 'expired', installs: [] }, world.engine)
+
+    expect(self.status()).toEqual({ state: 'ready', version: '0.2.0' })
   })
 
   it('follows the beta channel to a published hub prerelease', async () => {

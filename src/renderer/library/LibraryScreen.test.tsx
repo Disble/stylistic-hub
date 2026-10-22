@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { Library, LibraryComponent } from '../../shared/bridge'
+import type { HubUpdateStatus, Library, LibraryComponent } from '../../shared/bridge'
 import { fakeHub } from '../fake-hub'
 import { LibraryScreen } from './LibraryScreen'
 
@@ -107,22 +107,58 @@ describe('LibraryScreen', () => {
     await waitFor(() => expect(uninstall).toHaveBeenCalledWith('word-addin'))
   })
 
+  /** LIBRARY with the hub card's update at `update`. */
+  const withUpdate = (update: HubUpdateStatus): Library => ({
+    ...LIBRARY,
+    components: LIBRARY.components.map((c) => (c.kind === 'hub' ? { ...c, update } : c))
+  })
+  const hubCard = () => screen.getByRole('article', { name: 'Stylistic Hub' })
+
   it('offers a restart only on a hub card with a downloaded update, and restarts on click', async () => {
     const restart = vi.fn(async () => undefined)
     await renderLibrary(LIBRARY)
     expect(screen.queryByRole('button', { name: /Restart/ })).toBeNull()
     cleanup()
 
-    const ready = {
-      ...LIBRARY,
-      components: LIBRARY.components.map((c) => (c.kind === 'hub' ? { ...c, ready: '1.2.0-beta.1' } : c))
-    }
-    await renderLibrary(ready, { library: { restart } })
-    const hub = screen.getByRole('article', { name: 'Stylistic Hub' })
-    fireEvent.click(within(hub).getByRole('button', { name: 'Restart and update to 1.2.0-beta.1' }))
+    await renderLibrary(withUpdate({ state: 'ready', version: '1.2.0-beta.1' }), { library: { restart } })
+    expect(hubCard().textContent).toContain('1.2.0-beta.1 is downloaded and verified.')
+    fireEvent.click(within(hubCard()).getByRole('button', { name: 'Restart and update to 1.2.0-beta.1' }))
 
     await waitFor(() => expect(restart).toHaveBeenCalledOnce())
     expect(screen.getAllByRole('button', { name: /Restart/ })).toHaveLength(1)
+  })
+
+  it('shows each step of the hub’s update on its card: up to date, downloading, failed', async () => {
+    await renderLibrary(withUpdate({ state: 'up-to-date' }))
+    expect(hubCard().textContent).toContain('Up to date: no newer hub on this channel.')
+    cleanup()
+
+    await renderLibrary(withUpdate({ state: 'downloading', version: '1.2.0-beta.2' }))
+    expect(within(hubCard()).getByText('Downloading and verifying 1.2.0-beta.2…')).toBeTruthy()
+    expect(within(hubCard()).queryByRole('button', { name: /Restart/ })).toBeNull()
+    cleanup()
+
+    await renderLibrary(withUpdate({ state: 'failed', version: '1.2.0-beta.2', reason: 'network' }))
+    expect(hubCard().textContent).toContain(
+      'Could not update to 1.2.0-beta.2 (network). The next check tries again.'
+    )
+  })
+
+  it('says a check is running, and when the last one ended and how', async () => {
+    await renderLibrary({ ...LIBRARY, checking: true })
+    const button = screen.getByRole('button', { name: 'Checking…' })
+    expect(button.hasAttribute('disabled')).toBe(true)
+    cleanup()
+
+    const time = '2026-10-22T15:54:00.000Z'
+    const at = new Date(time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    await renderLibrary({ ...LIBRARY, lastCheck: { time, result: 'ok' } })
+    expect(screen.getByText(`Last checked at ${at}.`)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Check now' })).toBeTruthy()
+    cleanup()
+
+    await renderLibrary({ ...LIBRARY, lastCheck: { time, result: 'expired' } })
+    expect(screen.getByText(`The check at ${at} failed: expired.`)).toBeTruthy()
   })
 
   it('sets a channel through the Server screen’s call: `hub` for the hub, the id otherwise', async () => {

@@ -1,4 +1,5 @@
 import { arch, release, type } from 'node:os'
+import { appendFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app, BrowserWindow, Menu, nativeImage, shell, Tray } from 'electron'
 import { safeExternalUrl } from '../shared/login/external-link'
@@ -89,6 +90,8 @@ if (!isSingleInstance) {
   /** Kept referenced so the tray icon is not garbage-collected. */
   let tray: Tray | undefined
 
+  /** The tray menu; it offers the restart into a downloaded hub update, as the Library does. */
+  let updateTrayMenu: () => void = () => undefined
   const showWindow = () => {
     if (!mainWindow) {
       const window = createWindow()
@@ -128,21 +131,53 @@ if (!isSingleInstance) {
     // Node's global fetch, as for the local model: the catalog and components are public HTTPS files whose
     // signatures the engine verifies, and it is the fetch type the engine is written and tested against.
     // The hub's own update (D10): after each check, a newer verified installer is handed to electron-updater.
-    const selfUpdate = startSelfUpdate({ userData, currentVersion: app.getVersion() })
+    // update.log in the logs folder: each check, each hub update step and why one failed.
+    const updateLog = join(app.getPath('logs'), 'update.log')
+    const log = (message: string) => {
+      console.error(message)
+      void appendFile(
+        updateLog,
+        `${new Date().toISOString()} ${message}
+`
+      ).catch(() => undefined)
+    }
+    const selfUpdate = startSelfUpdate({
+      userData,
+      currentVersion: app.getVersion(),
+      log,
+      // The Library and the tray show each step of the hub's update as it happens.
+      onStatus: (status) => {
+        log(`self-update status: ${JSON.stringify(status)}`)
+        mainWindow?.webContents.send('hub:library-checked')
+        updateTrayMenu()
+      }
+    })
     const updates = startUpdateChecks({
       userData,
       database: paths.database,
       fetch,
       // Modules first, so a server the check also switched starts with the new modules already set.
       onChecked: (report) => {
+        log(`check: ${JSON.stringify({ catalog: report.catalog, installs: report.installs })}`)
         library.observe(report)
         mainWindow?.webContents.send('hub:library-checked')
         void moduleSwitch.refresh().then(() => serverSwitch.refresh(report))
       },
-      // The Library reads again once the hub update is downloaded, to offer its restart.
-      onReport: (report, engine) =>
-        selfUpdate.onReport(report, engine).then(() => mainWindow?.webContents.send('hub:library-checked'))
+      onReport: selfUpdate.onReport
     })
+    updateTrayMenu = () => {
+      const update = selfUpdate.status()
+      tray?.setContextMenu(
+        Menu.buildFromTemplate([
+          { label: 'Open Stylistic Hub', click: showWindow },
+          ...(update?.state === 'ready'
+            ? [{ label: `Restart and update to ${update.version}`, click: () => selfUpdate.restart() }]
+            : []),
+          { type: 'separator' },
+          { label: 'Quit Stylistic Hub', click: () => app.quit() }
+        ])
+      )
+    }
     const library = createLibrary({
       engine: updates.engine,
       check: updates.check,
@@ -282,13 +317,7 @@ if (!isSingleInstance) {
     const icon = nativeImage.createFromPath(join(app.getAppPath(), 'resources', 'icon.png'))
     tray = new Tray(icon.resize({ width: 16, height: 16 }))
     tray.setToolTip('Stylistic Hub')
-    tray.setContextMenu(
-      Menu.buildFromTemplate([
-        { label: 'Open Stylistic Hub', click: showWindow },
-        { type: 'separator' },
-        { label: 'Quit Stylistic Hub', click: () => app.quit() }
-      ])
-    )
+    updateTrayMenu()
     tray.on('click', showWindow)
 
     if (!process.argv.includes(BACKGROUND_FLAG)) showWindow()
