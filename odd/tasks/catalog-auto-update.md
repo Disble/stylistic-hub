@@ -16,8 +16,8 @@ Objective: a hub, server or module on `beta` is never offered less than `stable`
 
 | ID | Specs | Route | Status | Evidence |
 |---|---|---|---|---|
-| T1 | S1, S2, S5 | inline | done | RED 7 failing (L4), GREEN `bun run check` 680 passed |
-| T2 | S3, S4, S5 | inline | pending | |
+| T1 | S1, S2, S5 | inline | done | `83153b3`; RED 7 failing (L4), GREEN `bun run check` 680 passed |
+| T2 | S3, S4, S5 | inline | done | RED module missing, GREEN 5 tests; loop simulated on a scratch copy (L5); `bun run check` 685 passed |
 | T3 | all | independent verifier (Risk item 5: release/CI) | pending | |
 | T4 | S3, S4 | user: repo setting "Allow GitHub Actions to create and approve pull requests", merge to dev | pending | |
 
@@ -27,3 +27,4 @@ Objective: a hub, server or module on `beta` is never offered less than `stable`
 - **L2** (2026-10-21) User: "dale, hazlo", approving the proposal: beta cumulative; CI opens the catalog PR after each release, auto-merge for beta only, stable keeps review.
 - **L3** Evidence: catalog.source.json on main holds only `stable` entries; `offered()` requires `entry.channel === channel`; the engine installs every wanted entry in catalog order, so two offered versions of one component would both install and the last listed would win. The repository has `can_approve_pull_request_reviews: false` (GITHUB_TOKEN cannot open PRs) and `main` is unprotected; a merge made with GITHUB_TOKEN does not trigger `push` workflows, so the Catalog workflow must be dispatched.
 - **L4** T1 RED: 7 new tests failed before the change (Library beta card `available` not the newest of beta and stable; engine installed both offered versions in catalog order and downgraded on a switch to beta; self-update `no_hub_entry` for a stable hub on beta, served the first listed beta, and downgraded on a switch to beta). The "marked bad" test passed before and after (still-holds). GREEN: `newestOffered` in channels.ts (and `isNewer` moved there from self-update.ts) used by the engine, the self-update and the Library; `bun run check` exit 0, 680 tests. The old self-update test "serves the beta after a switch to beta even when it is older than the running stable" now asserts the opposite, as S2 requires.
+- **L5** T2: `scripts/catalog/catalog-entry.ts` (RED: `Cannot find module './catalog-entry'`; GREEN 5 tests). Real-data run on a scratch copy of main's catalog with `hub-v1.1.1-beta.2`: `changed` adds the beta entry (sha256 `127220c9…`, size 127890367), a second run prints `unchanged`. The job's loop, extracted from ci.yml and run locally (jq stand-in, no push) with dev's versions: `server-v1.0.1-beta.1: changed`, `hub-v1.1.1-beta.2: changed`; second run both `unchanged`. Found and fixed: versions read inside the `for` list escaped `set -e`, so an unreadable version would have looked unreleased; now plain assignments with `jq -e`. actionlint 1.7.7 reports nothing (shellcheck not installed locally). The PR, merge and dispatch steps are only provable in CI (T4).

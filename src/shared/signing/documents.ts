@@ -52,7 +52,7 @@ export const componentSchema = z.looseObject({
   releaseNotes: z.url()
 })
 
-/** `catalog/catalog.source.json`: the components the hub offers, changed by reviewed pull request. */
+/** `catalog/catalog.source.json`: the components the hub offers, changed by pull request (docs/signed-releases.md). */
 const catalogSourceSchema = z.looseObject({
   components: z.array(
     z.looseObject({
