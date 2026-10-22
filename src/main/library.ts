@@ -1,7 +1,7 @@
 // The Library screen's data and actions (odd/tasks/module-library.md S5): one entry per component, from
 // `state.json` and the last catalog a check verified, which only this module keeps (in memory, since it opened).
 import type { Library, LibraryComponent } from '../shared/bridge'
-import { channelOf, offered } from './updates/channels'
+import { channelOf, newestOffered } from './updates/channels'
 import type { CheckReport, UpdateEngine } from './updates/engine'
 import { HUB_ID, type CatalogEntry } from './updates/install'
 import type { UpdateState } from './updates/state'
@@ -20,7 +20,7 @@ function kindOf(id: string): LibraryComponent['kind'] {
 
 /**
  * The cards: the server and the hub always, then every module in the state or in the catalog. `available` is the
- * last catalog entry offered on the component's channel (the engine's checks end on that one too).
+ * newest catalog entry offered on the component's channel, the one the engine installs.
  */
 export function buildLibrary(
   state: UpdateState,
@@ -35,7 +35,12 @@ export function buildLibrary(
     const channel = channelOf(state, id)
     const entry = state.components[id]
     const available =
-      verified && entries.filter((e) => e.id === id && offered(e, channel, verified.installId)).at(-1)
+      verified &&
+      newestOffered(
+        entries.filter((e) => e.id === id),
+        channel,
+        verified.installId
+      )
     return {
       id,
       kind: kindOf(id),

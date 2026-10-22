@@ -56,7 +56,7 @@ Report the branch and short commit, the version, the installer path, size and ti
 ### Execution Steps
 
 1. Stable: merge `release/X.Y.Z` (or `hotfix/X.Y.Z`) into `main` with `--no-ff`, then `git switch main`. Test release: `git switch dev`. Then `git pull`; working tree must be clean.
-2. Pushing `main` (or `dev`) is the release: the CI `release-server` and `release-hub` jobs run semantic-release with the signing secrets. Run them locally only when the component key is exported in your shell; the prepare step signs `component.json` and fails without it.
+2. Pushing `main` (or `dev`) is the release: the CI `release-server` and `release-hub` jobs run semantic-release with the signing secrets. Run them locally only when the component key is exported in your shell; the prepare step signs `component.json` and fails without it. The `catalog-entry` job then lists the releases in the catalog: a beta merges itself, a stable leaves a pull request to `main` for the user to review and merge.
 3. `bun run release:server --no-ci --dry-run`, then `bun run release:hub --no-ci --dry-run`; read the next versions. Outside CI semantic-release always dry-runs unless given `--no-ci`.
 4. `bun run release:server --no-ci` first: the hub reads `SERVER_VERSION` from `src/backend/package.json`.
 5. `bun run release:hub --no-ci`: bumps `package.json`, writes `CHANGELOG.md`, builds `release/StylisticHub-Setup-<version>.exe`, commits and tags.
