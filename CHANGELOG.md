@@ -1,5 +1,15 @@
 # Stylistic Hub changelog
 
+## [1.2.0-beta.1](https://github.com/Disble/stylistic-hub/compare/hub-v1.1.1-beta.2...hub-v1.2.0-beta.1) (2026-10-22)
+
+### Features
+
+* **updates:** let the beta channel take the newest of beta and stable ([83153b3](https://github.com/Disble/stylistic-hub/commit/83153b37e6efe7c48135102d7cd4dcd629e8afc2))
+
+### Bug Fixes
+
+* **catalog:** never fall back to an older version on beta, nor merge stable ([c951db1](https://github.com/Disble/stylistic-hub/commit/c951db1997ead21175a478af428cfee5d0a32158))
+
 ## [1.1.1-beta.2](https://github.com/Disble/stylistic-hub/compare/hub-v1.1.1-beta.1...hub-v1.1.1-beta.2) (2026-10-21)
 
 ### Bug Fixes
