@@ -46,7 +46,7 @@ describe('channel per component', () => {
     expect(await serverState()).not.toHaveProperty('channel')
   })
 
-  it('installs the latest beta on the beta channel and ignores the stable entry', async () => {
+  it('installs the latest beta on the beta channel over an older stable entry', async () => {
     const stable = await server('1.0.0')
     const beta = await server('1.1.0-beta.1', 'beta')
     await check([stable, beta], 100)
@@ -75,6 +75,44 @@ describe('channel per component', () => {
       previous: '1.1.0-beta.1',
       channel: 'stable'
     })
+  })
+
+  it('offers the beta channel a stable version newer than every beta, installing only that one', async () => {
+    await world.engine.setChannel('server', 'beta')
+    const releases = [await server('1.0.0'), await server('1.1.0-beta.1', 'beta'), await server('1.1.0')]
+
+    expect(await check(releases, 100)).toEqual([
+      { id: 'server', version: '1.1.0', outcome: { status: 'installed' } }
+    ])
+  })
+
+  it('installs only the newest offered version, whatever the catalog order', async () => {
+    await world.engine.setChannel('server', 'beta')
+    const releases = [await server('1.1.0-beta.2', 'beta'), await server('1.1.0-beta.1', 'beta')]
+
+    expect(await check(releases, 100)).toEqual([
+      { id: 'server', version: '1.1.0-beta.2', outcome: { status: 'installed' } }
+    ])
+  })
+
+  it('skips a version marked bad on this install and installs the newest other one', async () => {
+    await world.engine.setChannel('server', 'beta')
+    await world.engine.markBad('server', '1.1.0-beta.2', 'health_check_failed')
+    const releases = [await server('1.1.0-beta.1', 'beta'), await server('1.1.0-beta.2', 'beta')]
+
+    expect(await check(releases, 100)).toEqual([
+      { id: 'server', version: '1.1.0-beta.1', outcome: { status: 'installed' } }
+    ])
+  })
+
+  it('never downgrades on a switch to beta: a running stable newer than every beta stays', async () => {
+    const releases = [await server('1.1.0'), await server('1.1.0-beta.3', 'beta')]
+    await check(releases, 100)
+
+    await world.engine.setChannel('server', 'beta')
+
+    expect(await check(releases, 101)).toEqual([])
+    expect(await serverState()).toMatchObject({ current: '1.1.0', channel: 'beta' })
   })
 
   it("keeps the hub's channel apart from the components'", async () => {

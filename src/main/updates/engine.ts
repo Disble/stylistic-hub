@@ -6,7 +6,7 @@ import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { componentSchema, type Catalog, type KeyList } from '../../shared/signing/documents'
 import { checkCatalog, type CatalogCheck, type EngineContext } from './catalog'
-import { channelOf, offered } from './channels'
+import { channelOf, newestOffered } from './channels'
 import type { StagedInstaller } from './feed'
 import {
   HUB_ID,
@@ -75,14 +75,18 @@ async function revoke(context: EngineContext, keys: KeyList): Promise<void> {
 }
 
 /**
- * Whether the engine installs `entry` now: offered to this install on the component's channel, the server or
- * already installed, not the current version, never marked bad. An older version is a switch back (S2).
+ * What the engine installs now, one entry per component: the newest offered on the component's channel and never
+ * marked bad (odd/tasks/catalog-auto-update.md S2), for the server or an installed component, when it is not the
+ * current version. An older version is a switch back (S2).
  */
-function wanted(state: UpdateState, entry: CatalogEntry, installId: string): boolean {
-  const installed = state.components[entry.id]
-  if (!offered(entry, channelOf(state, entry.id), installId) || (entry.kind !== 'server' && !installed))
-    return false
-  return installed?.current !== entry.version && !installed?.bad.includes(entry.version)
+function wanted(state: UpdateState, entries: readonly CatalogEntry[], installId: string): CatalogEntry[] {
+  return [...new Set(entries.map((entry) => entry.id))].flatMap((id) => {
+    const installed = state.components[id]
+    const candidates = entries.filter((entry) => entry.id === id && !installed?.bad.includes(entry.version))
+    const entry = newestOffered(candidates, channelOf(state, id), installId)
+    if (!entry || (entry.kind !== 'server' && !installed) || installed?.current === entry.version) return []
+    return [entry]
+  })
 }
 
 /** `id` when it is a component id other than the server's and the hub's; throws otherwise. */
@@ -173,7 +177,7 @@ export function createUpdateEngine(context: EngineContext, rootKeys: readonly Bu
       const installId = await installIdOf(context.root)
       const state = await readState(context.root)
       const installs: CheckReport['installs'] = []
-      for (const entry of check.catalog.components.filter((item) => wanted(state, item, installId))) {
+      for (const entry of wanted(state, check.catalog.components, installId)) {
         const outcome = await installComponent(context, entry, check.keys)
         installs.push({ id: entry.id, version: entry.version, outcome })
       }

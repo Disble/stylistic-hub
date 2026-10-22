@@ -116,6 +116,23 @@ describe('buildLibrary', () => {
     ])
   })
 
+  it('offers a beta card the newest of its beta and stable versions, whatever the catalog order', () => {
+    const library = buildLibrary(
+      state({ server: installed('1.0.0', 'beta') }, [], { channel: 'beta' }),
+      verified([
+        entry('server', '1.2.0'),
+        entry('server', '1.2.0-beta.1', { channel: 'beta' }),
+        entry(HUB_ID, '1.0.0')
+      ]),
+      '1.0.0'
+    )
+
+    expect(library.components.slice(0, 2)).toMatchObject([
+      { id: 'server', channel: 'beta', available: '1.2.0' },
+      { id: HUB_ID, channel: 'beta', available: '1.0.0' }
+    ])
+  })
+
   it('offers no pulled version and none outside this install’s rollout', () => {
     const library = buildLibrary(
       state({ server: installed('1.0.0') }),

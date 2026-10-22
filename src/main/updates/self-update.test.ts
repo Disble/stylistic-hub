@@ -275,15 +275,36 @@ describe('createSelfUpdate', () => {
     expect(cancels).toBe(1)
   })
 
-  it('serves the beta after a switch to beta even when it is older than the running stable', async () => {
+  it('never downgrades on a switch to beta: a running stable newer than every beta stays', async () => {
     await world.engine.setChannel('stylistic-hub', 'beta')
     const beta = await hubRelease('0.2.0-beta.3', { version: '0.2.0-beta.3', channel: 'beta' })
 
     expect(await start('0.2.0').onReport(await runCheck([hub, beta]), world.engine)).toEqual({
-      status: 'served',
-      version: '0.2.0-beta.3'
+      status: 'skipped',
+      reason: 'not_newer'
     })
-    expect(checks[0]?.allowDowngrade).toBe(true)
+    expect(checks).toEqual([])
+  })
+
+  it('follows the beta channel to a stable hub when the catalog lists no newer beta', async () => {
+    await world.engine.setChannel('stylistic-hub', 'beta')
+
+    expect(await start('0.1.0').onReport(await runCheck([hub]), world.engine)).toEqual({
+      status: 'served',
+      version: '0.2.0'
+    })
+    expect(checks[0]?.allowDowngrade).toBe(false)
+  })
+
+  it('serves the newest offered hub, whatever the catalog order', async () => {
+    await world.engine.setChannel('stylistic-hub', 'beta')
+    const first = await hubRelease('0.3.0-beta.1', { version: '0.3.0-beta.1', channel: 'beta' })
+    const second = await hubRelease('0.3.0-beta.2', { version: '0.3.0-beta.2', channel: 'beta' })
+
+    expect(await start('0.2.0').onReport(await runCheck([first, second, hub]), world.engine)).toEqual({
+      status: 'served',
+      version: '0.3.0-beta.2'
+    })
   })
 
   it('allows no downgrade within a channel', async () => {
