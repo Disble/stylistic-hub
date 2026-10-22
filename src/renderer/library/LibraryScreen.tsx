@@ -80,6 +80,13 @@ function ComponentCard({
           </Select>
         </Field>
       )}
+      {kind === 'hub' && component.ready && (
+        <div>
+          <Button appearance="primary" onClick={() => run(window.hub.library.restart)}>
+            Restart and update to {component.ready}
+          </Button>
+        </div>
+      )}
       {kind === 'module' && (
         <div>
           {inState ? (

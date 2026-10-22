@@ -17,6 +17,8 @@ export interface Updater {
   check(url: string, options: { allowDowngrade: boolean }): Promise<void>
   /** Withdraws the downloaded installer from install on quit: the hub's channel no longer offers it. */
   cancel(): void
+  /** Quits the hub now and runs the downloaded installer, which starts the hub again. */
+  install(): void
 }
 
 /** What one report led to. */
@@ -29,6 +31,10 @@ export interface SelfUpdate {
     report: CheckReport,
     engine: Pick<UpdateEngine, 'stageInstaller' | 'readState'>
   ): Promise<SelfUpdateOutcome>
+  /** The version electron-updater downloaded and verified, which installs when the hub quits; else undefined. */
+  ready(): string | undefined
+  /** Quits and installs the `ready` version now; throws `no_update_ready` when there is none. */
+  restart(): void
   /** Stops the feed. */
   stop(): Promise<void>
 }
@@ -61,7 +67,7 @@ export function createSelfUpdate({
   currentVersion: string
   updater: Updater
 }): SelfUpdate {
-  let served: { version: string; feed: Feed } | undefined
+  let served: { version: string; feed: Feed; downloaded?: true } | undefined
   return {
     async onReport(report, engine) {
       if (!report.verified) return { status: 'skipped', reason: 'no_catalog' }
@@ -93,7 +99,13 @@ export function createSelfUpdate({
           reason: `updater: ${String(error)}`
         }
       }
+      served.downloaded = true
       return { status: 'served', version: entry.version }
+    },
+    ready: () => (served?.downloaded ? served.version : undefined),
+    restart() {
+      if (!served?.downloaded) throw new Error('no_update_ready')
+      updater.install()
     },
     async stop() {
       await served?.feed.close()

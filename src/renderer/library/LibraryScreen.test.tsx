@@ -107,6 +107,24 @@ describe('LibraryScreen', () => {
     await waitFor(() => expect(uninstall).toHaveBeenCalledWith('word-addin'))
   })
 
+  it('offers a restart only on a hub card with a downloaded update, and restarts on click', async () => {
+    const restart = vi.fn(async () => undefined)
+    await renderLibrary(LIBRARY)
+    expect(screen.queryByRole('button', { name: /Restart/ })).toBeNull()
+    cleanup()
+
+    const ready = {
+      ...LIBRARY,
+      components: LIBRARY.components.map((c) => (c.kind === 'hub' ? { ...c, ready: '1.2.0-beta.1' } : c))
+    }
+    await renderLibrary(ready, { library: { restart } })
+    const hub = screen.getByRole('article', { name: 'Stylistic Hub' })
+    fireEvent.click(within(hub).getByRole('button', { name: 'Restart and update to 1.2.0-beta.1' }))
+
+    await waitFor(() => expect(restart).toHaveBeenCalledOnce())
+    expect(screen.getAllByRole('button', { name: /Restart/ })).toHaveLength(1)
+  })
+
   it('sets a channel through the Server screen’s call: `hub` for the hub, the id otherwise', async () => {
     const setChannel = vi.fn(async () => undefined)
     await renderLibrary(LIBRARY, { server: { setChannel } })

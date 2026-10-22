@@ -12,7 +12,7 @@ import { dirname, join } from 'node:path'
 import electronUpdater from 'electron-updater'
 import type { CheckReport, UpdateEngine } from './engine'
 import { HUB_ID } from './install'
-import { createSelfUpdate } from './self-update'
+import { createSelfUpdate, type SelfUpdate } from './self-update'
 
 /** electron-updater's singleton for this platform (NsisUpdater on Windows). */
 const { autoUpdater } = electronUpdater
@@ -26,7 +26,10 @@ export function startSelfUpdate({
   userData: string
   currentVersion: string
   log?: (message: string) => void
-}): { onReport: (report: CheckReport, engine: UpdateEngine) => Promise<void>; stop: () => void } {
+}): {
+  onReport: (report: CheckReport, engine: UpdateEngine) => Promise<void>
+  stop: () => void
+} & Pick<SelfUpdate, 'ready' | 'restart'> {
   const configFile = join(userData, 'components', HUB_ID, 'app-update.yml')
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
@@ -54,13 +57,17 @@ export function startSelfUpdate({
       },
       cancel() {
         autoUpdater.autoInstallOnAppQuit = false
-      }
+      },
+      // Silent, as on quit, and the installer starts the hub again (NsisUpdater.js:108-112: /S and --force-run).
+      install: () => autoUpdater.quitAndInstall(true, true)
     }
   })
   return {
     async onReport(report, engine) {
       log(`self-update: ${JSON.stringify(await selfUpdate.onReport(report, engine))}`)
     },
+    ready: selfUpdate.ready,
+    restart: selfUpdate.restart,
     stop: () => void selfUpdate.stop()
   }
 }

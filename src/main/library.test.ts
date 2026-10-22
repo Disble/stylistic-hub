@@ -133,6 +133,19 @@ describe('buildLibrary', () => {
     ])
   })
 
+  it('marks on the hub card the downloaded update that installs when the hub restarts', () => {
+    const library = buildLibrary(
+      state({ server: installed('1.0.0') }),
+      undefined,
+      '1.1.1-beta.1',
+      '1.2.0-beta.1'
+    )
+
+    expect(library.components.find((c) => c.kind === 'hub')?.ready).toBe('1.2.0-beta.1')
+    expect(library.components.filter((c) => c.ready)).toHaveLength(1)
+    expect(buildLibrary(state(), undefined, '1.0.0').components.some((c) => 'ready' in c)).toBe(false)
+  })
+
   it('offers no pulled version and none outside this install’s rollout', () => {
     const library = buildLibrary(
       state({ server: installed('1.0.0') }),
@@ -262,6 +275,20 @@ describe('createLibrary', () => {
 
     expect(engine.uninstall).toHaveBeenCalledWith('addin')
     expect(check).toHaveBeenCalledOnce()
+  })
+
+  it('shows the self-update’s ready version and restarts the hub into it on request', async () => {
+    const restart = vi.fn()
+    const library = createLibrary({
+      engine: fakeEngine(state()),
+      check: vi.fn(),
+      hubVersion: '1.0.0',
+      hubUpdate: { ready: () => '1.1.0', restart }
+    })
+
+    expect((await library.list()).components[1]).toMatchObject({ kind: 'hub', ready: '1.1.0' })
+    await library.restart()
+    expect(restart).toHaveBeenCalledOnce()
   })
 
   it('runs a catalog check on request', () => {

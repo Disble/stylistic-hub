@@ -58,11 +58,17 @@ const updater = {
 
 /** How many times the served installer was withdrawn from install on quit. */
 let cancels = 0
+/** How many times electron-updater was asked to quit and install now. */
+let installs = 0
 
 /** A self-update for a hub running `currentVersion`. */
 function start(currentVersion = '0.1.0', check = updater.check): SelfUpdate {
   cancels = 0
-  selfUpdate = createSelfUpdate({ currentVersion, updater: { check, cancel: () => void cancels++ } })
+  installs = 0
+  selfUpdate = createSelfUpdate({
+    currentVersion,
+    updater: { check, cancel: () => void cancels++, install: () => void installs++ }
+  })
   return selfUpdate
 }
 
@@ -232,6 +238,39 @@ describe('createSelfUpdate', () => {
       reason: 'updater: Error: offline'
     })
     expect(urls).toHaveLength(2)
+  })
+
+  it('is ready once electron-updater downloaded the served version, and restarts into it on request', async () => {
+    const self = start()
+    expect(self.ready()).toBeUndefined()
+    expect(() => self.restart()).toThrow('no_update_ready')
+    expect(installs).toBe(0)
+
+    await self.onReport(await runCheck([hub]), world.engine)
+
+    expect(self.ready()).toBe('0.2.0')
+    self.restart()
+    expect(installs).toBe(1)
+  })
+
+  it('is not ready when electron-updater failed, nor after the channel withdrew the served version', async () => {
+    const failing = start('0.1.0', () => Promise.reject(new Error('offline')))
+    await failing.onReport(await runCheck([hub]), world.engine)
+    expect(failing.ready()).toBeUndefined()
+    await failing.stop()
+
+    const beta = await hubRelease('0.3.0-beta.1', { version: '0.3.0-beta.1', channel: 'beta' })
+    await world.engine.setChannel('stylistic-hub', 'beta')
+    const self = start('0.2.0')
+    await self.onReport(await runCheck([hub, beta], 101), world.engine)
+    expect(self.ready()).toBe('0.3.0-beta.1')
+
+    await world.engine.setChannel('stylistic-hub', 'stable')
+    await self.onReport(await runCheck([hub, beta], 102), world.engine)
+
+    expect(self.ready()).toBeUndefined()
+    expect(() => self.restart()).toThrow('no_update_ready')
+    expect(installs).toBe(0)
   })
 
   it('follows the beta channel to a published hub prerelease', async () => {

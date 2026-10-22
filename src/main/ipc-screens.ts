@@ -61,6 +61,7 @@ export function registerScreenIpc(
   ipcMain.handle('hub:library:install', (_event, id: string) => library.install(id))
   ipcMain.handle('hub:library:uninstall', (_event, id: string) => library.uninstall(id))
   ipcMain.handle('hub:library:check', () => library.check())
+  ipcMain.handle('hub:library:restart', () => library.restart())
   ipcMain.handle('hub:word:status', () => word.status())
   ipcMain.handle('hub:word:connect', () => word.connect())
   ipcMain.handle('hub:word:disconnect', () => word.disconnect())

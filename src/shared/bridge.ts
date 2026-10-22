@@ -89,6 +89,8 @@ export interface LibraryComponent {
   channel: Channel
   /** The version the last verified catalog offers this install on the component's channel. */
   available: string | null
+  /** Hub card only: the update already downloaded and verified, which installs when the hub restarts. */
+  ready?: string
   /** The newest history lines first. */
   history: HistoryLine[]
 }
@@ -148,6 +150,8 @@ export interface HubBridge {
     uninstall(id: string): Promise<void>
     /** Runs a catalog check now. */
     check(): Promise<void>
+    /** Quits the hub and installs its `ready` update, which starts the hub again. */
+    restart(): Promise<void>
     /** Subscribes to the end of each catalog check; returns the unsubscribe function. */
     onChecked(listener: () => void): () => void
   }
