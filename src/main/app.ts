@@ -139,12 +139,15 @@ if (!isSingleInstance) {
         mainWindow?.webContents.send('hub:library-checked')
         void moduleSwitch.refresh().then(() => serverSwitch.refresh(report))
       },
-      onReport: selfUpdate.onReport
+      // The Library reads again once the hub update is downloaded, to offer its restart.
+      onReport: (report, engine) =>
+        selfUpdate.onReport(report, engine).then(() => mainWindow?.webContents.send('hub:library-checked'))
     })
     const library = createLibrary({
       engine: updates.engine,
       check: updates.check,
-      hubVersion: app.getVersion()
+      hubVersion: app.getVersion(),
+      hubUpdate: selfUpdate
     })
     const serverSwitch = createServerSwitch({
       engine: updates.engine,

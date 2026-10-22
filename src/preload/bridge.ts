@@ -45,6 +45,7 @@ const bridge: HubBridge = {
     install: (id) => ipcRenderer.invoke('hub:library:install', id),
     uninstall: (id) => ipcRenderer.invoke('hub:library:uninstall', id),
     check: () => ipcRenderer.invoke('hub:library:check'),
+    restart: () => ipcRenderer.invoke('hub:library:restart'),
     onChecked: (listener) => {
       const handler = () => listener()
       ipcRenderer.on('hub:library-checked', handler)
