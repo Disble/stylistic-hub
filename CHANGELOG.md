@@ -1,5 +1,11 @@
 # Stylistic Hub changelog
 
+## [1.2.0-beta.3](https://github.com/Disble/stylistic-hub/compare/hub-v1.2.0-beta.2...hub-v1.2.0-beta.3) (2026-10-22)
+
+### Features
+
+* **library:** show each step of the hub update ([7cd5f31](https://github.com/Disble/stylistic-hub/commit/7cd5f319325ed6934d3f3124d4483867598510ed))
+
 ## [1.2.0-beta.2](https://github.com/Disble/stylistic-hub/compare/hub-v1.2.0-beta.1...hub-v1.2.0-beta.2) (2026-10-22)
 
 ### Features

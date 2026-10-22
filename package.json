@@ -1,6 +1,6 @@
 {
   "name": "stylistic-hub",
-  "version": "1.2.0-beta.2",
+  "version": "1.2.0-beta.3",
   "description": "Windows desktop hub for Stylistic: installs the Word add-in and runs the local backend",
   "private": true,
   "type": "module",
