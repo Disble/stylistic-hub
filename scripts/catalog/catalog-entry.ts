@@ -6,6 +6,7 @@
 // Prints `changed` (and writes the source) or `unchanged`.
 import { readFileSync, writeFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
+import { format, resolveConfig } from 'prettier'
 import { catalogSchema, componentSchema, type Component } from '../../src/shared/signing/documents'
 import type { CatalogSource } from './sign-catalog'
 
@@ -69,6 +70,14 @@ export function upsertEntry(
   return { changed: true, source: { ...source, components } }
 }
 
+/**
+ * `source` as JSON formatted by prettier with the config that applies at `filepath`, so the repository's
+ * `prettier --check .` passes: plain `JSON.stringify` breaks a short `blocked` list over several lines.
+ */
+export async function formatSource(source: CatalogSource, filepath: string): Promise<string> {
+  return format(JSON.stringify(source), { ...(await resolveConfig(filepath)), filepath })
+}
+
 if (import.meta.main) {
   const { values } = parseArgs({
     options: {
@@ -91,6 +100,6 @@ if (import.meta.main) {
     assets: values.asset
   })
   const result = upsertEntry(source, entry)
-  if (result.changed) writeFileSync(values.source, `${JSON.stringify(result.source, null, 2)}\n`)
+  if (result.changed) writeFileSync(values.source, await formatSource(result.source, values.source))
   console.log(result.changed ? 'changed' : 'unchanged')
 }

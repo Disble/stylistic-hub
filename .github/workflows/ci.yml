@@ -147,40 +147,50 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - name: Write the released entries and open the catalog pull request
+      - name: Write the released entries and open the catalog pull requests
         run: |
           set -euo pipefail
-          changed=()
           # Plain assignments, so a version that cannot be read fails the job instead of looking unreleased.
           server=$(jq -er .version src/backend/package.json)
           hub=$(jq -er .version package.json)
-          for tag in "server-v$server" "hub-v$hub"; do
-            if ! gh release view "$tag" >/dev/null 2>&1; then echo "$tag: no release"; continue; fi
-            dir="$RUNNER_TEMP/$tag"
-            gh release download "$tag" --pattern component.json --dir "$dir" --clobber
-            assets=()
-            while IFS= read -r name; do assets+=(--asset "$name"); done \
-              < <(gh release view "$tag" --json assets --jq '.assets[].name')
-            result=$(bun scripts/catalog/catalog-entry.ts --source catalog-main/catalog/catalog.source.json \
-              --component "$dir/component.json" --publisher stylistic-hub \
-              --release "https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/" "${assets[@]}")
-            echo "$tag: $result"
-            if [ "$result" = changed ]; then changed+=("$tag"); fi
-          done
-          if [ ${#changed[@]} -eq 0 ]; then echo 'The catalog already lists these releases.'; exit 0; fi
-          title="chore(catalog): list ${changed[*]}"
-          branch="catalog/$(IFS=+; echo "${changed[*]}")"
-          cd catalog-main
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git switch -c "$branch"
-          git commit -am "$title"
-          git push --force origin "$branch"
-          if ! gh pr view "$branch" --json state --jq .state 2>/dev/null | grep -q OPEN; then
-            gh pr create --base main --head "$branch" --title "$title" \
-              --body "Written by the catalog-entry job of run $GITHUB_RUN_ID from the releases ${changed[*]}."
-          fi
-          if [ "$GITHUB_REF_NAME" = dev ]; then
-            gh pr merge "$branch" --squash --delete-branch
-            gh workflow run catalog.yml --ref main
-          fi
+          git -C catalog-main config user.name 'github-actions[bot]'
+          git -C catalog-main config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          # One pull request per channel, decided by each release's signed component.json and not by the branch:
+          # dev gets main merged back, so a dev run can read a stable release, whose entry must wait for review.
+          list() {
+            local channel=$1 tag dir out result changed=()
+            git -C catalog-main fetch -q origin main
+            git -C catalog-main switch -q --detach FETCH_HEAD
+            for tag in "server-v$server" "hub-v$hub"; do
+              if ! out=$(gh release view "$tag" --json assets --jq '.assets[].name' 2>&1); then
+                if grep -q 'release not found' <<<"$out"; then echo "$tag: no release"; continue; fi
+                echo "$out"; return 1
+              fi
+              dir="$RUNNER_TEMP/$tag"
+              gh release download "$tag" --pattern component.json --dir "$dir" --clobber
+              if [ "$(jq -er .channel "$dir/component.json")" != "$channel" ]; then continue; fi
+              assets=()
+              while IFS= read -r name; do assets+=(--asset "$name"); done <<<"$out"
+              result=$(bun scripts/catalog/catalog-entry.ts --source catalog-main/catalog/catalog.source.json \
+                --component "$dir/component.json" --publisher stylistic-hub \
+                --release "https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/" "${assets[@]}")
+              echo "$tag ($channel): $result"
+              if [ "$result" = changed ]; then changed+=("$tag"); fi
+            done
+            if [ ${#changed[@]} -eq 0 ]; then echo "The catalog already lists the $channel releases."; return 0; fi
+            local title="chore(catalog): list ${changed[*]}"
+            local branch="catalog/$(IFS=+; echo "${changed[*]}")"
+            git -C catalog-main switch -q -c "$branch"
+            git -C catalog-main commit -qam "$title"
+            git -C catalog-main push -q --force origin "$branch"
+            if ! gh pr view "$branch" --json state --jq .state 2>/dev/null | grep -q OPEN; then
+              gh pr create --base main --head "$branch" --title "$title" \
+                --body "Written by the catalog-entry job of run $GITHUB_RUN_ID from the releases ${changed[*]}."
+            fi
+            if [ "$channel" = beta ]; then
+              gh pr merge "$branch" --squash --delete-branch
+              gh workflow run catalog.yml --ref main
+            fi
+          }
+          list beta
+          list stable

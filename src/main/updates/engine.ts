@@ -6,7 +6,7 @@ import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { componentSchema, type Catalog, type KeyList } from '../../shared/signing/documents'
 import { checkCatalog, type CatalogCheck, type EngineContext } from './catalog'
-import { channelOf, newestOffered } from './channels'
+import { channelOf, isNewer, newestOffered } from './channels'
 import type { StagedInstaller } from './feed'
 import {
   HUB_ID,
@@ -75,17 +75,28 @@ async function revoke(context: EngineContext, keys: KeyList): Promise<void> {
 }
 
 /**
+ * Whether `version` may replace `current` on `channel`: anything other than the current version, but on `beta` only
+ * a newer one. An older version is a switch back to `stable` (S2); on `beta`, which also takes stable, a bad newest
+ * beta or a stable outside the rollout must not send the install back (odd/tasks/catalog-auto-update.md S2).
+ */
+function replaces(version: string, current: string | null | undefined, channel: Channel): boolean {
+  if (!current) return true
+  return version !== current && (channel === 'stable' || isNewer(version, current))
+}
+
+/**
  * What the engine installs now, one entry per component: the newest offered on the component's channel and never
- * marked bad (odd/tasks/catalog-auto-update.md S2), for the server or an installed component, when it is not the
- * current version. An older version is a switch back (S2).
+ * marked bad (odd/tasks/catalog-auto-update.md S2), for the server or an installed component, when it `replaces`
+ * the current version.
  */
 function wanted(state: UpdateState, entries: readonly CatalogEntry[], installId: string): CatalogEntry[] {
   return [...new Set(entries.map((entry) => entry.id))].flatMap((id) => {
     const installed = state.components[id]
+    const channel = channelOf(state, id)
     const candidates = entries.filter((entry) => entry.id === id && !installed?.bad.includes(entry.version))
-    const entry = newestOffered(candidates, channelOf(state, id), installId)
-    if (!entry || (entry.kind !== 'server' && !installed) || installed?.current === entry.version) return []
-    return [entry]
+    const entry = newestOffered(candidates, channel, installId)
+    if (!entry || (entry.kind !== 'server' && !installed)) return []
+    return replaces(entry.version, installed?.current, channel) ? [entry] : []
   })
 }
 

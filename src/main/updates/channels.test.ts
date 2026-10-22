@@ -105,6 +105,28 @@ describe('channel per component', () => {
     ])
   })
 
+  it('keeps a beta install on its beta when the newest beta is marked bad, never falling back to an older stable', async () => {
+    await world.engine.setChannel('server', 'beta')
+    const stable = await server('1.1.0')
+    await check([stable, await server('1.2.0-beta.1', 'beta')], 100)
+    await world.engine.markBad('server', '1.2.0-beta.2', 'health_check_failed')
+
+    expect(await check([stable, await server('1.2.0-beta.2', 'beta')], 101)).toEqual([])
+    expect(await serverState()).toMatchObject({ current: '1.2.0-beta.1' })
+  })
+
+  it('keeps a beta install on a stable it runs when the newer stable is outside its rollout', async () => {
+    await world.engine.setChannel('server', 'beta')
+    await check([await server('1.2.0')], 100)
+    const outside = {
+      ...(await server('1.3.0')),
+      entry: { ...(await server('1.3.0')).entry, rolloutPercent: 0 }
+    }
+
+    expect(await check([outside, await server('1.2.0-beta.5', 'beta')], 101)).toEqual([])
+    expect(await serverState()).toMatchObject({ current: '1.2.0' })
+  })
+
   it('never downgrades on a switch to beta: a running stable newer than every beta stays', async () => {
     const releases = [await server('1.1.0'), await server('1.1.0-beta.3', 'beta')]
     await check(releases, 100)

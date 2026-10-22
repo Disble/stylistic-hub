@@ -1,6 +1,8 @@
+import { join } from 'node:path'
+import { check, resolveConfig } from 'prettier'
 import { describe, expect, it } from 'vitest'
 import type { Component } from '../../src/shared/signing/documents'
-import { catalogEntry, upsertEntry } from './catalog-entry'
+import { catalogEntry, formatSource, upsertEntry } from './catalog-entry'
 import type { CatalogSource } from './sign-catalog'
 
 /** The release folder of the hub 1.1.1-beta.2. */
@@ -99,5 +101,15 @@ describe('upsertEntry', () => {
     const source: CatalogSource = { components: [STABLE, { ...BETA, rolloutPercent: 50 }] }
 
     expect(upsertEntry(source, BETA)).toEqual({ changed: false, source })
+  })
+})
+
+describe('formatSource', () => {
+  it('writes the source as the repository formats it, so prettier --check passes with pulled versions', async () => {
+    const filepath = join(process.cwd(), 'catalog', 'catalog.source.json')
+    const text = await formatSource({ components: [{ ...STABLE, blocked: ['0.9.0'] }, BETA] }, filepath)
+
+    expect(text).toContain('"blocked": ["0.9.0"]')
+    expect(await check(text, { ...(await resolveConfig(filepath)), filepath })).toBe(true)
   })
 })
