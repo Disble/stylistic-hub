@@ -88,7 +88,7 @@ vi.mock('./ipc-screens', () => ({ registerScreenIpc: hub.registerScreens }))
 vi.mock('./library', () => ({ createLibrary: () => ({}) }))
 vi.mock('./updates/channels', () => ({ channelControls: () => ({}) }))
 vi.mock('./updates/schedule', () => ({ startUpdateChecks: () => ({ engine: {}, check: vi.fn() }) }))
-vi.mock('./updates/self-update-electron', () => ({ startSelfUpdate: () => ({}) }))
+vi.mock('./updates/self-update-electron', () => ({ startSelfUpdate: () => ({ status: () => undefined }) }))
 
 /** Drain the bounded startup promise chain, without timing sleeps or touching live application state. */
 async function settle() {

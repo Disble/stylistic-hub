@@ -3,6 +3,7 @@
 // odd/tasks/catalog-auto-update.md S1-S2) and newer than the running hub, or older after a channel switch, is
 // downloaded and verified by the engine, served from the loopback feed, and only then handed to electron-updater,
 // which re-checks its sha512 and installs it on quit.
+import type { HubUpdateStatus } from '../../shared/bridge'
 import { channelOf, isNewer, newestOffered } from './channels'
 import type { CheckReport, UpdateEngine } from './engine'
 import { startFeed, type Feed } from './feed'
@@ -31,8 +32,8 @@ export interface SelfUpdate {
     report: CheckReport,
     engine: Pick<UpdateEngine, 'stageInstaller' | 'readState'>
   ): Promise<SelfUpdateOutcome>
-  /** The version electron-updater downloaded and verified, which installs when the hub quits; else undefined. */
-  ready(): string | undefined
+  /** Where the hub's own update stands, for the Library; undefined before the first verified catalog. */
+  status(): HubUpdateStatus | undefined
   /** Quits and installs the `ready` version now; throws `no_update_ready` when there is none. */
   restart(): void
   /** Stops the feed. */
@@ -59,15 +60,25 @@ function hubUpdate(
   return { entry, allowDowngrade: true }
 }
 
-/** A self-update for a hub running `currentVersion`, installing through `updater`. */
+/**
+ * A self-update for a hub running `currentVersion`, installing through `updater`; `onStatus` hears each change of
+ * `status()`, so the Library can show it while it happens.
+ */
 export function createSelfUpdate({
   currentVersion,
-  updater
+  updater,
+  onStatus
 }: {
   currentVersion: string
   updater: Updater
+  onStatus?: (status: HubUpdateStatus) => void
 }): SelfUpdate {
-  let served: { version: string; feed: Feed; downloaded?: true } | undefined
+  let served: { version: string; feed: Feed } | undefined
+  let current: HubUpdateStatus | undefined
+  const set = (status: HubUpdateStatus) => {
+    current = status
+    onStatus?.(status)
+  }
   return {
     async onReport(report, engine) {
       if (!report.verified) return { status: 'skipped', reason: 'no_catalog' }
@@ -80,31 +91,36 @@ export function createSelfUpdate({
           served = undefined
           updater.cancel()
         }
+        set({ state: 'up-to-date' })
         return choice
       }
       const { entry, allowDowngrade } = choice
-      if (served?.version === entry.version) return { status: 'skipped', reason: 'already_served' }
+      const { version } = entry
+      if (served?.version === version) return { status: 'skipped', reason: 'already_served' }
+      set({ state: 'downloading', version })
       const installer = await engine.stageInstaller(entry, keys)
-      if (typeof installer === 'string') return { status: 'failed', reason: installer }
+      if (typeof installer === 'string') {
+        set({ state: 'failed', version, reason: installer })
+        return { status: 'failed', reason: installer }
+      }
       await served?.feed.close()
-      served = { version: entry.version, feed: await startFeed(installer) }
+      served = { version, feed: await startFeed(installer) }
       try {
         await updater.check(served.feed.url, { allowDowngrade })
       } catch (error) {
         // Not served after all: the next report stages (already downloaded, verified again) and retries.
         await served.feed.close()
         served = undefined
-        return {
-          status: 'failed',
-          reason: `updater: ${String(error)}`
-        }
+        const reason = `updater: ${String(error)}`
+        set({ state: 'failed', version, reason })
+        return { status: 'failed', reason }
       }
-      served.downloaded = true
-      return { status: 'served', version: entry.version }
+      set({ state: 'ready', version })
+      return { status: 'served', version }
     },
-    ready: () => (served?.downloaded ? served.version : undefined),
+    status: () => current,
     restart() {
-      if (!served?.downloaded) throw new Error('no_update_ready')
+      if (current?.state !== 'ready') throw new Error('no_update_ready')
       updater.install()
     },
     async stop() {
