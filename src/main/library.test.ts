@@ -116,6 +116,32 @@ describe('buildLibrary', () => {
     ])
   })
 
+  it('offers a beta card the newest of its beta and stable versions, whatever the catalog order', () => {
+    const library = buildLibrary(
+      state({ server: installed('1.0.0', 'beta') }, [], { channel: 'beta' }),
+      verified([
+        entry('server', '1.2.0'),
+        entry('server', '1.2.0-beta.1', { channel: 'beta' }),
+        entry(HUB_ID, '1.0.0')
+      ]),
+      '1.0.0'
+    )
+
+    expect(library.components.slice(0, 2)).toMatchObject([
+      { id: 'server', channel: 'beta', available: '1.2.0' },
+      { id: HUB_ID, channel: 'beta', available: '1.0.0' }
+    ])
+  })
+
+  it('shows where the hub’s own update stands on the hub card only', () => {
+    const update = { state: 'downloading', version: '1.2.0-beta.1' } as const
+    const library = buildLibrary(state({ server: installed('1.0.0') }), undefined, '1.1.1-beta.1', update)
+
+    expect(library.components.find((c) => c.kind === 'hub')?.update).toEqual(update)
+    expect(library.components.filter((c) => c.update)).toHaveLength(1)
+    expect(buildLibrary(state(), undefined, '1.0.0').components.some((c) => 'update' in c)).toBe(false)
+  })
+
   it('offers no pulled version and none outside this install’s rollout', () => {
     const library = buildLibrary(
       state({ server: installed('1.0.0') }),
@@ -245,6 +271,45 @@ describe('createLibrary', () => {
 
     expect(engine.uninstall).toHaveBeenCalledWith('addin')
     expect(check).toHaveBeenCalledOnce()
+  })
+
+  it('shows the self-update’s status and restarts the hub into the ready update on request', async () => {
+    const restart = vi.fn()
+    const library = createLibrary({
+      engine: fakeEngine(state()),
+      check: vi.fn(),
+      hubVersion: '1.0.0',
+      hubUpdate: { status: () => ({ state: 'ready', version: '1.1.0' }), restart }
+    })
+
+    expect((await library.list()).components[1]).toMatchObject({
+      kind: 'hub',
+      update: { state: 'ready', version: '1.1.0' }
+    })
+    await library.restart()
+    expect(restart).toHaveBeenCalledOnce()
+  })
+
+  it('says a check it asked for is running until a report arrives, then when it ended and how', async () => {
+    const library = createLibrary({
+      engine: fakeEngine(state()),
+      check: vi.fn(),
+      hubVersion: '1.0.0',
+      now: () => new Date('2026-10-22T15:54:00.000Z')
+    })
+    expect(await library.list()).toMatchObject({ checking: false })
+    expect('lastCheck' in (await library.list())).toBe(false)
+
+    library.check()
+    expect((await library.list()).checking).toBe(true)
+    await library.install('addin')
+    expect((await library.list()).checking).toBe(true)
+
+    library.observe({ catalog: 'expired', installs: [] })
+    expect(await library.list()).toMatchObject({
+      checking: false,
+      lastCheck: { time: '2026-10-22T15:54:00.000Z', result: 'expired' }
+    })
   })
 
   it('runs a catalog check on request', () => {

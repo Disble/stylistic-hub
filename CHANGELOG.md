@@ -1,5 +1,39 @@
 # Stylistic Hub changelog
 
+## [1.2.0-beta.3](https://github.com/Disble/stylistic-hub/compare/hub-v1.2.0-beta.2...hub-v1.2.0-beta.3) (2026-10-22)
+
+### Features
+
+* **library:** show each step of the hub update ([7cd5f31](https://github.com/Disble/stylistic-hub/commit/7cd5f319325ed6934d3f3124d4483867598510ed))
+
+## [1.2.0-beta.2](https://github.com/Disble/stylistic-hub/compare/hub-v1.2.0-beta.1...hub-v1.2.0-beta.2) (2026-10-22)
+
+### Features
+
+* **library:** restart the hub into a downloaded update ([7c85a0f](https://github.com/Disble/stylistic-hub/commit/7c85a0fd5c2bf5a63df433c97cfa4e9b25be6b4b))
+
+## [1.2.0-beta.1](https://github.com/Disble/stylistic-hub/compare/hub-v1.1.1-beta.2...hub-v1.2.0-beta.1) (2026-10-22)
+
+### Features
+
+* **updates:** let the beta channel take the newest of beta and stable ([83153b3](https://github.com/Disble/stylistic-hub/commit/83153b37e6efe7c48135102d7cd4dcd629e8afc2))
+
+### Bug Fixes
+
+* **catalog:** never fall back to an older version on beta, nor merge stable ([c951db1](https://github.com/Disble/stylistic-hub/commit/c951db1997ead21175a478af428cfee5d0a32158))
+
+## [1.1.1-beta.2](https://github.com/Disble/stylistic-hub/compare/hub-v1.1.1-beta.1...hub-v1.1.1-beta.2) (2026-10-21)
+
+### Bug Fixes
+
+* **addin:** reload a task pane Word opened without its host bridge ([ae6a895](https://github.com/Disble/stylistic-hub/commit/ae6a8958753f82712792ce4be973a4bbe83c1d73))
+
+## [1.1.1-beta.1](https://github.com/Disble/stylistic-hub/compare/hub-v1.1.0...hub-v1.1.1-beta.1) (2026-10-20)
+
+### Bug Fixes
+
+* **word:** restore automatic loader after module readiness ([094ee92](https://github.com/Disble/stylistic-hub/commit/094ee92b65c8e96672a6e65cff57857579cc9da1))
+
 ## [1.1.0](https://github.com/Disble/stylistic-hub/compare/hub-v1.0.0...hub-v1.1.0) (2026-10-18)
 
 ### Features

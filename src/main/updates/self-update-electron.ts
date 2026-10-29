@@ -10,23 +10,32 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 // electron-updater is CommonJS: Node's ESM loader exposes only its default export (a named import fails at load).
 import electronUpdater from 'electron-updater'
+import type { HubUpdateStatus } from '../../shared/bridge'
 import type { CheckReport, UpdateEngine } from './engine'
 import { HUB_ID } from './install'
-import { createSelfUpdate } from './self-update'
+import { createSelfUpdate, type SelfUpdate } from './self-update'
 
 /** electron-updater's singleton for this platform (NsisUpdater on Windows). */
 const { autoUpdater } = electronUpdater
 
-/** Starts the self-update of a hub running `currentVersion`; returns the report handler and a stop function. */
+/**
+ * Starts the self-update of a hub running `currentVersion`; `onStatus` hears each change of its status. Returns the
+ * report handler, the status, the restart into a downloaded update and a stop function.
+ */
 export function startSelfUpdate({
   userData,
   currentVersion,
-  log = console.error
+  log = console.error,
+  onStatus
 }: {
   userData: string
   currentVersion: string
   log?: (message: string) => void
-}): { onReport: (report: CheckReport, engine: UpdateEngine) => Promise<void>; stop: () => void } {
+  onStatus?: (status: HubUpdateStatus) => void
+}): {
+  onReport: (report: CheckReport, engine: UpdateEngine) => Promise<void>
+  stop: () => void
+} & Pick<SelfUpdate, 'status' | 'restart'> {
   const configFile = join(userData, 'components', HUB_ID, 'app-update.yml')
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
@@ -38,6 +47,7 @@ export function startSelfUpdate({
   autoUpdater.on('error', (error: Error) => log(`self-update: electron-updater: ${error.message}`))
   const selfUpdate = createSelfUpdate({
     currentVersion,
+    ...(onStatus && { onStatus }),
     updater: {
       async check(url, { allowDowngrade }) {
         await mkdir(dirname(configFile), { recursive: true })
@@ -54,13 +64,17 @@ export function startSelfUpdate({
       },
       cancel() {
         autoUpdater.autoInstallOnAppQuit = false
-      }
+      },
+      // Silent, as on quit, and the installer starts the hub again (NsisUpdater.js:108-112: /S and --force-run).
+      install: () => autoUpdater.quitAndInstall(true, true)
     }
   })
   return {
     async onReport(report, engine) {
       log(`self-update: ${JSON.stringify(await selfUpdate.onReport(report, engine))}`)
     },
+    status: selfUpdate.status,
+    restart: selfUpdate.restart,
     stop: () => void selfUpdate.stop()
   }
 }

@@ -1,4 +1,5 @@
 import { arch, release, type } from 'node:os'
+import { appendFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app, BrowserWindow, Menu, nativeImage, shell, Tray } from 'electron'
 import { safeExternalUrl } from '../shared/login/external-link'
@@ -89,6 +90,8 @@ if (!isSingleInstance) {
   /** Kept referenced so the tray icon is not garbage-collected. */
   let tray: Tray | undefined
 
+  /** The tray menu; it offers the restart into a downloaded hub update, as the Library does. */
+  let updateTrayMenu: () => void = () => undefined
   const showWindow = () => {
     if (!mainWindow) {
       const window = createWindow()
@@ -128,23 +131,58 @@ if (!isSingleInstance) {
     // Node's global fetch, as for the local model: the catalog and components are public HTTPS files whose
     // signatures the engine verifies, and it is the fetch type the engine is written and tested against.
     // The hub's own update (D10): after each check, a newer verified installer is handed to electron-updater.
-    const selfUpdate = startSelfUpdate({ userData, currentVersion: app.getVersion() })
+    // update.log in the logs folder: each check, each hub update step and why one failed.
+    const updateLog = join(app.getPath('logs'), 'update.log')
+    const log = (message: string) => {
+      console.error(message)
+      void appendFile(
+        updateLog,
+        `${new Date().toISOString()} ${message}
+`
+      ).catch(() => undefined)
+    }
+    const selfUpdate = startSelfUpdate({
+      userData,
+      currentVersion: app.getVersion(),
+      log,
+      // The Library and the tray show each step of the hub's update as it happens.
+      onStatus: (status) => {
+        log(`self-update status: ${JSON.stringify(status)}`)
+        mainWindow?.webContents.send('hub:library-checked')
+        updateTrayMenu()
+      }
+    })
     const updates = startUpdateChecks({
       userData,
       database: paths.database,
       fetch,
       // Modules first, so a server the check also switched starts with the new modules already set.
       onChecked: (report) => {
+        log(`check: ${JSON.stringify({ catalog: report.catalog, installs: report.installs })}`)
         library.observe(report)
         mainWindow?.webContents.send('hub:library-checked')
         void moduleSwitch.refresh().then(() => serverSwitch.refresh(report))
       },
       onReport: selfUpdate.onReport
     })
+    updateTrayMenu = () => {
+      const update = selfUpdate.status()
+      tray?.setContextMenu(
+        Menu.buildFromTemplate([
+          { label: 'Open Stylistic Hub', click: showWindow },
+          ...(update?.state === 'ready'
+            ? [{ label: `Restart and update to ${update.version}`, click: () => selfUpdate.restart() }]
+            : []),
+          { type: 'separator' },
+          { label: 'Quit Stylistic Hub', click: () => app.quit() }
+        ])
+      )
+    }
     const library = createLibrary({
       engine: updates.engine,
       check: updates.check,
-      hubVersion: app.getVersion()
+      hubVersion: app.getVersion(),
+      hubUpdate: selfUpdate
     })
     const serverSwitch = createServerSwitch({
       engine: updates.engine,
@@ -167,6 +205,31 @@ if (!isSingleInstance) {
       moduleManifests: () => moduleSwitch.manifests(),
       componentsRoot: join(userData, 'components')
     })
+    const wordSession = createWordSession({
+      script: join(WORD_DIR, 'word-session.ps1'),
+      document: join(WORD_DIR, 'Stylistic.docx'),
+      parentPid: process.pid,
+      logFile: join(app.getPath('logs'), 'word-session.log')
+    })
+    app.on('will-quit', () => wordSession.stop())
+    // Invalidate old status reads when a newer read or an explicit Word action takes precedence.
+    let wordSessionRevision = 0
+    // While Stylistic is in Word, the hub starts with Windows and keeps loading it into every Word session.
+    const keepInWord = (enabled: boolean) => {
+      wordSessionRevision++
+      if (enabled) wordSession.start()
+      else wordSession.stop()
+      if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: enabled, args: [BACKGROUND_FLAG] })
+    }
+    const restoreWordSession = () => {
+      const revision = ++wordSessionRevision
+      return word.status().then(
+        (current) => {
+          if (revision === wordSessionRevision) keepInWord(current.addinRegistered)
+        },
+        (error: unknown) => console.error('Could not read Word status:', error)
+      )
+    }
     const hubRequest = (path: string) =>
       hubStatusRequest({ port: HUB_PORT, token, caFile: paths.caCert, leafFile: paths.leafCert, path })
     const moduleSwitch = createModuleSwitch({
@@ -192,6 +255,7 @@ if (!isSingleInstance) {
         void word
           .sync()
           .catch((error: unknown) => console.error('Could not update Stylistic in Word:', error))
+          .then(restoreWordSession)
           .then(() => mainWindow?.webContents.send('hub:library-checked')),
       report: status.setReason
     })
@@ -199,13 +263,16 @@ if (!isSingleInstance) {
     // modules resolved: tidying first would delete an upgrade's legacy registration before knowing the module
     // that replaces it, and a later sync adds nothing while Word holds no entry. A failing tidy still starts
     // the server.
-    void moduleSwitch
+    const modulesReady = moduleSwitch
       .start()
       .catch((error: unknown) => console.error('Could not resolve the modules:', error))
       .then(() =>
         word.sync().catch((error: unknown) => console.error('Could not tidy Stylistic in Word:', error))
       )
+    // Server health/rollback must not block restoration of an already registered Word module.
+    void modulesReady
       .then(() => serverSwitch.start())
+      .catch((error: unknown) => console.error('Could not start the local server:', error))
     app.on('will-quit', () => {
       updates.stop()
       selfUpdate.stop()
@@ -216,19 +283,6 @@ if (!isSingleInstance) {
       createLocalModel({ modelsFile: join(paths.piDir, 'models.json'), fetch }),
       () => mainWindow?.webContents
     )
-    const wordSession = createWordSession({
-      script: join(WORD_DIR, 'word-session.ps1'),
-      document: join(WORD_DIR, 'Stylistic.docx'),
-      parentPid: process.pid,
-      logFile: join(app.getPath('logs'), 'word-session.log')
-    })
-    app.on('will-quit', () => wordSession.stop())
-    // While Stylistic is in Word, the hub starts with Windows and keeps loading it into every Word session.
-    const keepInWord = (enabled: boolean) => {
-      if (enabled) wordSession.start()
-      else wordSession.stop()
-      if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: enabled, args: [BACKGROUND_FLAG] })
-    }
     registerScreenIpc(
       status,
       backend,
@@ -236,10 +290,12 @@ if (!isSingleInstance) {
       {
         ...word,
         connect: async () => {
+          wordSessionRevision++
           await word.connect()
           keepInWord(true)
         },
         disconnect: async () => {
+          wordSessionRevision++
           await word.disconnect()
           keepInWord(false)
         }
@@ -261,24 +317,15 @@ if (!isSingleInstance) {
     const icon = nativeImage.createFromPath(join(app.getAppPath(), 'resources', 'icon.png'))
     tray = new Tray(icon.resize({ width: 16, height: 16 }))
     tray.setToolTip('Stylistic Hub')
-    tray.setContextMenu(
-      Menu.buildFromTemplate([
-        { label: 'Open Stylistic Hub', click: showWindow },
-        { type: 'separator' },
-        { label: 'Quit Stylistic Hub', click: () => app.quit() }
-      ])
-    )
+    updateTrayMenu()
     tray.on('click', showWindow)
 
     if (!process.argv.includes(BACKGROUND_FLAG)) showWindow()
     app.on('activate', showWindow)
 
-    // Follows Word's actual state, also when Stylistic was removed outside the hub. A failure here must not
-    // leave the hub without its window and tray, which already exist.
-    word.status().then(
-      (current) => keepInWord(current.addinRegistered),
-      (error: unknown) => console.error('Could not read Word status:', error)
-    )
+    // An unresolved module set looks unregistered. Decide only after resolution and registration sync;
+    // later module readiness notifications repeat the decision without delaying the window or tray.
+    void modulesReady.then(restoreWordSession)
   })
 
   // Closing the window leaves the hub in the tray: Word needs its server and its session loader.

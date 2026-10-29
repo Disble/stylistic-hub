@@ -22,9 +22,49 @@ export function inRollout(installId: string, entry: CatalogEntry): boolean {
   return digest.readUInt32BE(0) % 100 < entry.rolloutPercent
 }
 
-/** Whether `entry` is offered to an install `installId` following `channel`: same channel, not pulled, rolled out. */
+/**
+ * Whether `entry` is offered to an install `installId` following `channel`: on that channel (`beta` also takes
+ * `stable` entries, so it is never behind stable: odd/tasks/catalog-auto-update.md S1), not pulled, rolled out.
+ */
 export function offered(entry: CatalogEntry, channel: Channel, installId: string): boolean {
-  return entry.channel === channel && !entry.blocked.includes(entry.version) && inRollout(installId, entry)
+  const onChannel = entry.channel === channel || channel === 'beta'
+  return onChannel && !entry.blocked.includes(entry.version) && inRollout(installId, entry)
+}
+
+/** A release version: semver with an optional `-beta.N` (the signing schemas' pattern). */
+const VERSION = /^(\d+)\.(\d+)\.(\d+)(?:-beta\.(\d+))?$/
+
+/** Major, minor, patch and beta number; a release sorts after all its betas. */
+function versionKey(version: string): number[] | undefined {
+  const match = VERSION.exec(version)
+  return match ? [1, 2, 3, 4].map((group) => Number(match[group] ?? Number.MAX_SAFE_INTEGER)) : undefined
+}
+
+/**
+ * Whether `candidate` is a newer version than `current`; false when either is not a release version. Ours,
+ * because `semver` is not a dependency and the versions are held to the four-number pattern above.
+ */
+export function isNewer(candidate: string, current: string): boolean {
+  const [next, now] = [versionKey(candidate), versionKey(current)]
+  if (!next || !now) return false
+  return (next.map((part, position) => part - Number(now[position])).find((diff) => diff !== 0) ?? 0) > 0
+}
+
+/**
+ * The newest of `entries` offered to `installId` on `channel`, whatever their catalog order (S2): what the
+ * engine installs, the self-update serves and the Library shows. The caller narrows `entries` to one component.
+ */
+export function newestOffered(
+  entries: readonly CatalogEntry[],
+  channel: Channel,
+  installId: string
+): CatalogEntry | undefined {
+  return entries
+    .filter((entry) => offered(entry, channel, installId))
+    .reduce<CatalogEntry | undefined>(
+      (newest, entry) => (!newest || isNewer(entry.version, newest.version) ? entry : newest),
+      undefined
+    )
 }
 
 /** The two channels the Server screen chooses. */

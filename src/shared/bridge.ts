@@ -78,6 +78,21 @@ export interface HistoryLine {
   reason: string | null
 }
 
+/**
+ * The hub's own update: none newer offered; the installer downloading and being verified; downloaded and verified,
+ * installing when the hub restarts; or why the last attempt failed (the next check tries again).
+ */
+export type HubUpdateStatus =
+  | { state: 'up-to-date' }
+  | { state: 'downloading' | 'ready'; version: string }
+  | { state: 'failed'; version: string; reason: string }
+
+/** The last catalog check since the hub opened: when it ended and `ok` or why it failed. */
+export interface LastCheck {
+  time: string
+  result: string
+}
+
 /** One card of the Library screen (odd/tasks/module-library.md S5). */
 export interface LibraryComponent {
   id: string
@@ -89,6 +104,8 @@ export interface LibraryComponent {
   channel: Channel
   /** The version the last verified catalog offers this install on the component's channel. */
   available: string | null
+  /** Hub card only: where the hub's own update stands, once a catalog check verified. */
+  update?: HubUpdateStatus
   /** The newest history lines first. */
   history: HistoryLine[]
 }
@@ -99,6 +116,10 @@ export interface Library {
   firstRun: boolean
   /** A catalog check succeeded since the hub opened, so `available` is known. */
   catalog: boolean
+  /** A check the Library asked for (Check now, an install or uninstall) is running. */
+  checking?: boolean
+  /** The last check that ended since the hub opened. */
+  lastCheck?: LastCheck
   /** The server, the hub, then the modules by id. */
   components: LibraryComponent[]
 }
@@ -148,6 +169,8 @@ export interface HubBridge {
     uninstall(id: string): Promise<void>
     /** Runs a catalog check now. */
     check(): Promise<void>
+    /** Quits the hub and installs its `ready` update, which starts the hub again. */
+    restart(): Promise<void>
     /** Subscribes to the end of each catalog check; returns the unsubscribe function. */
     onChecked(listener: () => void): () => void
   }
