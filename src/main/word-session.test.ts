@@ -31,7 +31,7 @@ afterEach(() => {
 })
 
 describe('createWordSession', () => {
-  it('runs the loader script hidden in PowerShell for the bundled document and this hub', () => {
+  it('runs the loader script hidden in PowerShell for the bundled document, this hub and its port', () => {
     const { spawn } = loaders()
 
     createWordSession({ ...files, spawn, parentPid: 4242 }).start()
@@ -48,7 +48,9 @@ describe('createWordSession', () => {
       '-Document',
       files.document,
       '-ParentPid',
-      '4242'
+      '4242',
+      '-HubPort',
+      '41730'
     ])
   })
 
@@ -57,9 +59,11 @@ describe('createWordSession', () => {
 
     createWordSession({ ...files, spawn, parentPid: 4242, logFile: 'C:\\logs\\word-session.log' }).start()
 
-    expect(spawn.mock.calls[0]?.[1].slice(-4)).toEqual([
+    expect(spawn.mock.calls[0]?.[1].slice(-6)).toEqual([
       '-ParentPid',
       '4242',
+      '-HubPort',
+      '41730',
       '-LogFile',
       'C:\\logs\\word-session.log'
     ])

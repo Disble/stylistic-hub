@@ -32,7 +32,7 @@ Use when building the Windows installer on this machine (the current mode: there
 2. `bun run check`.
 3. `bun run dist`: the NSIS installer `release/StylisticHub-Setup-<version>.exe` (about a minute). It stages the Word loader and trigger into `out/word` first; no add-in checkout is needed, because the installer ships no add-in and Word loads the catalog module. For an unpacked app to try without installing: `bun run dist:dir` → `release/win-unpacked/`.
 4. Verify the artifact: the file exists, its size (about 160 MB) and its timestamp is from this run (`ls -l release/*.exe`).
-5. To install here: stop `bun run dev` first (the installed hub and the dev hub both want port 3000), then run the `.exe`; it installs per user without asking.
+5. To install here: stop `bun run dev` first (the installed hub and the dev hub both want port 41730), then run the `.exe`; it installs per user without asking.
 
 ### Output Contract
 

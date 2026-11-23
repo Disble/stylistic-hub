@@ -71,7 +71,7 @@ if (-not $Loader) { $Loader = Join-Path (Split-Path -Parent $PSScriptRoot) 'word
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
 # The hub serves the add-in's page from this origin; Word fetches it when the add-in really starts.
-$origin = 'localhost:3000'
+$origin = 'localhost:41730'
 $addinDir = Join-Path $env:LOCALAPPDATA 'Microsoft\Office\16.0\Wef\webview2'
 
 function Get-Frame([string]$Title) {
@@ -179,7 +179,7 @@ if (-not $NoLoader) {
   Write-Output "loader started with -Document $((Resolve-Path $Trigger).Path)"
 }
 Start-Sleep -Seconds $Seconds
-foreach ($connection in @(Get-NetTCPConnection -RemotePort 3000 -State Established -ErrorAction SilentlyContinue)) {
+foreach ($connection in @(Get-NetTCPConnection -RemotePort 41730 -State Established -ErrorAction SilentlyContinue)) {
   $owner = (Get-Process -Id $connection.OwningProcess -ErrorAction SilentlyContinue).ProcessName
   $connections.Add("$owner (pid $($connection.OwningProcess))")
 }
