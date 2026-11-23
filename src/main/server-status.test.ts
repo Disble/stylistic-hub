@@ -5,14 +5,14 @@ describe('createServerStatus', () => {
   it('starts as starting, with the server version and address', () => {
     const status = createServerStatus({
       version: '0.0.1',
-      address: 'https://localhost:3000',
+      address: 'https://localhost:41730',
       onChange: () => undefined
     })
 
     expect(status.get()).toEqual({
       state: 'starting',
       version: '0.0.1',
-      address: 'https://localhost:3000',
+      address: 'https://localhost:41730',
       crashes: 0
     })
   })

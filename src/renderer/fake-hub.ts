@@ -4,7 +4,7 @@ import type { HubBridge, ServerStatus } from '../shared/bridge'
 export const RUNNING: ServerStatus = {
   state: 'running',
   version: '0.0.1',
-  address: 'https://localhost:3000',
+  address: 'https://localhost:41730',
   crashes: 0
 }
 

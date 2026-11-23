@@ -120,7 +120,7 @@ describe('WordScreen', () => {
 
     const details = await screen.findByRole('complementary', { name: 'Details' })
     expect(details.textContent).toContain('1.0.0.0')
-    expect(details.textContent).toContain('https://localhost:3000')
+    expect(details.textContent).toContain('https://localhost:41730')
   })
 
   it('installs Stylistic for Word from the Library when nothing is downloaded yet', async () => {

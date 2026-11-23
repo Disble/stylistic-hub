@@ -49,7 +49,7 @@ async function versionAssets(html: string, dir: string): Promise<string> {
 }
 
 /**
- * Serves the built add-in at the origin its manifest names (`https://localhost:3000`). The task
+ * Serves the built add-in at the origin its manifest names (`https://localhost:41730`). The task
  * pane receives the hub token in a meta tag: only loopback clients with our Host reach this page,
  * other sites cannot read it (no CORS) and a process of the same user could read the token file
  * anyway. The page is never cached, so a new token is picked up on the next load, and it names

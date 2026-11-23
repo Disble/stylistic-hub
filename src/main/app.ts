@@ -3,7 +3,8 @@ import { appendFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app, BrowserWindow, Menu, nativeImage, shell, Tray } from 'electron'
 import { safeExternalUrl } from '../shared/login/external-link'
-import { HUB_PORT, SERVER_VERSION } from '../shared/versions'
+import { HUB_ORIGIN, HUB_PORT } from '../shared/hub-origin'
+import { SERVER_VERSION } from '../shared/versions'
 import { BUILT_IN_ENTRY, createBackend } from './backend-host'
 import { waitUntilHealthy } from './health-check'
 import { hubStatusRequest } from './health-request'
@@ -114,7 +115,7 @@ if (!isSingleInstance) {
     const token = loadOrCreateHubToken(paths.token)
     const status = createServerStatus({
       version: SERVER_VERSION,
-      address: `https://localhost:${HUB_PORT}`,
+      address: HUB_ORIGIN,
       onChange: (current) => mainWindow?.webContents.send('hub:server-status', current)
     })
     const backend = createBackend({

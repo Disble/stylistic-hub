@@ -351,7 +351,7 @@ export function WordScreen() {
   const styles = useStyles()
   const { status, refresh } = useWordStatus()
   const { library, refresh: refreshLibrary } = useLibrary()
-  const address = useServerStatus()?.address ?? 'https://localhost:3000'
+  const address = useServerStatus()?.address ?? 'https://localhost:41730'
   const [busy, setBusy] = useState<'connect' | 'disconnect' | undefined>()
   const [error, setError] = useState<string | undefined>()
   const [download, setDownload] = useState<'install' | 'check' | undefined>()
