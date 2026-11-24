@@ -16,7 +16,7 @@ import { Details, Page, Section, Surface } from '../ui/layout'
 
 /** Griffel classes from the Stylistic theme tokens. */
 const useStyles = makeStyles({
-  cards: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '12px' },
+  cards: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '12px' },
   cardTitle: { margin: 0, fontSize: tokens.fontSizeBase300, fontWeight: tokens.fontWeightSemibold },
   status: { margin: 0, fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground2 },
   ready: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '8px' },
