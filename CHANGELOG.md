@@ -1,5 +1,11 @@
 # Stylistic Hub changelog
 
+## [1.3.2-beta.1](https://github.com/Disble/stylistic-hub/compare/hub-v1.3.1...hub-v1.3.2-beta.1) (2026-11-24)
+
+### Bug Fixes
+
+* **renderer:** let screens use the whole window width ([769d568](https://github.com/Disble/stylistic-hub/commit/769d5688132960a645eb0f55ef977a37946c67cb))
+
 ## [1.3.1](https://github.com/Disble/stylistic-hub/compare/hub-v1.3.0...hub-v1.3.1) (2026-11-24)
 
 ### Bug Fixes
