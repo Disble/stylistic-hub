@@ -1,5 +1,11 @@
 # Local server changelog
 
+## [server-v1.1.0](https://github.com/Disble/stylistic-hub/compare/server-v1.0.1...server-v1.1.0) (2026-11-24)
+
+### Features
+
+* **server:** move the hub to port 41730 ([7487d4a](https://github.com/Disble/stylistic-hub/commit/7487d4a9a2450ec2532dc0b929675d43a8e80388))
+
 ## [server-v1.1.0-beta.1](https://github.com/Disble/stylistic-hub/compare/server-v1.0.1...server-v1.1.0-beta.1) (2026-11-24)
 
 ### Features
