@@ -13,7 +13,11 @@ import AdmZip from 'adm-zip'
  */
 export const PRODUCTION_ADDIN_ID = '5d0c6b1e-7f2a-4c3e-9b8d-1a2f3e4c5d6e'
 
-/** The version a staged trigger refers to; Word loads the registered add-in by id. */
+/**
+ * The version the bundled trigger refers to. Word only loads a sideloaded add-in whose registered manifest has
+ * this exact `<Version>`, so the hub rewrites it for each module version it registers (src/main/word-trigger.ts);
+ * the bundled trigger is the template and the fallback.
+ */
 export const TRIGGER_VERSION = '1.0.0.0'
 
 /** The part that tells Word which add-in to load and open as a task pane. */

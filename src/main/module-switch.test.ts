@@ -1,3 +1,4 @@
+import AdmZip from 'adm-zip'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
@@ -67,13 +68,15 @@ function makeSwitch({
   serverHealthy = async () => true,
   servesModules = async () => true,
   devModules = {},
-  restartAllowed = () => true
+  restartAllowed = () => true,
+  wordTrigger
 }: {
   healthy?: (id: string) => Promise<boolean>
   serverHealthy?: () => Promise<boolean>
   servesModules?: () => Promise<boolean>
   devModules?: Record<string, string>
   restartAllowed?: () => boolean
+  wordTrigger?: { id: string; template: string }
 } = {}) {
   const backend = { setModules: vi.fn<(value: string | undefined) => void>(), restart: vi.fn() }
   const onChange = vi.fn()
@@ -91,7 +94,8 @@ function makeSwitch({
     servesModules,
     onChange,
     report,
-    log
+    log,
+    ...(wordTrigger ? { wordTrigger } : {})
   })
   /** The modules the backend was last given, parsed. */
   const served = () => {
@@ -100,6 +104,74 @@ function makeSwitch({
   }
   return { moduleSwitch, backend, onChange, report, healthCheck, served, log }
 }
+
+/** The reference part of a Word trigger document. */
+const TRIGGER_PART = 'word/webextensions/webextension.xml'
+
+/** Writes a trigger template like the bundled Stylistic.docx, referring to version 1.0.0.0. */
+function makeTriggerTemplate(): string {
+  const zip = new AdmZip()
+  zip.addFile(
+    TRIGGER_PART,
+    Buffer.from('<we:reference id="module-id" version="1.0.0.0" store="developer" storeType="Registry" />')
+  )
+  zip.addFile('word/document.xml', Buffer.from('<w:document/>'))
+  const file = join(world.root, '..', 'Stylistic.docx')
+  zip.writeZip(file)
+  return file
+}
+
+/** The trigger Word is shown for module `ID`, beside its stable manifest. */
+function trigger(): string {
+  return join(world.root, ID, 'Stylistic.docx')
+}
+
+/** The `<we:reference>` of the trigger document. */
+function triggerReference(): string | undefined {
+  return /<we:reference[^>]*>/.exec(new AdmZip(trigger()).readAsText(TRIGGER_PART))?.[0]
+}
+
+describe('word trigger', () => {
+  it('refers to the version of the module manifest registered in Word', async () => {
+    await install('1.1.0')
+    const { moduleSwitch } = makeSwitch({ wordTrigger: { id: ID, template: makeTriggerTemplate() } })
+
+    await moduleSwitch.start()
+
+    expect(triggerReference()).toBe(
+      '<we:reference id="module-id" version="1.1.0.0" store="developer" storeType="Registry" />'
+    )
+    expect(new AdmZip(trigger()).readAsText('word/document.xml')).toBe('<w:document/>')
+  })
+
+  it('follows the module to its next version, and survives the install that brings it', async () => {
+    await install('1.0.0')
+    const { moduleSwitch } = makeSwitch({ wordTrigger: { id: ID, template: makeTriggerTemplate() } })
+    await moduleSwitch.start()
+    expect(triggerReference()).toContain('version="1.0.0.0"')
+
+    await install('1.2.0')
+    await moduleSwitch.refresh()
+
+    expect(triggerReference()).toContain('version="1.2.0.0"')
+  })
+
+  it('leaves no trigger beside the manifest when it cannot write one, and says why', async () => {
+    await install('1.0.0')
+    const template = join(world.root, '..', 'not-a-trigger.docx')
+    writeFileSync(template, 'not a zip')
+    const { moduleSwitch, log } = makeSwitch({ wordTrigger: { id: ID, template } })
+
+    await moduleSwitch.start()
+
+    expect(existsSync(trigger())).toBe(false)
+    expect(log).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /^module word-addin 1\.0\.0: cannot write its Word trigger, so Word is shown the bundled one: /
+      )
+    )
+  })
+})
 
 describe('moduleDirFlags', () => {
   it('reads every --module <id>=<dir> as an absolute directory', () => {

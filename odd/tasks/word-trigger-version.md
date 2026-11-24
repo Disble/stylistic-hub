@@ -15,8 +15,8 @@ Cross-project: hub (T1, this repo, branch `feature/word-trigger-version` from `d
 
 | ID | Specs | Route | Status | Commit |
 | --- | --- | --- | --- | --- |
-| T1 | S1-S3 (hub) | worker | pending | |
-| T2 | S4-S5 (addon) | inline | pending | |
+| T1 | S1-S3 (hub) | inline (worker unavailable) | done | see L6 |
+| T2 | S4-S5 (addon) | inline | done | stylistic-addon `fix/remove-privacy-note` c4a534b, see L5 |
 
 ## Log
 
@@ -24,3 +24,5 @@ Cross-project: hub (T1, this repo, branch `feature/word-trigger-version` from `d
 - **L2** (evidence): registry `Wef\Developer` names `components\stylistic-word-addin\manifest.xml`; that manifest is `<Version>1.1.0.0` with 10 URLs on `https://localhost:41730`; Office cache `Wef\{352B…}\…\Manifests\5d0c…_1.1.0.0` names 41730 (no stale 3000 copy). Bundled trigger refers to `version="1.0.0.0"`.
 - **L3** (experiment): a copy of the installed `Stylistic.docx` with `version="1.1.0.0"`, opened in the user's Word, loaded Stylistic (user confirmed "Carga Stylistic", second capture shows the task pane). Workaround applied: installed `resources/word/Stylistic.docx` replaced with that copy (backup kept in the session temp dir).
 - **L4** (user, verbatim, on the second capture): "BORRA ESTO", striking the privacy note under "Analizar y sugerir".
+- **L5** (T2): `AnalyzeSection` no longer renders the privacy note (constant, style slot and test id removed); voseo fixed in `HeroEmptyState` ("Analiza … selecciona …") and `CorrectionInstructionsSection.constants.ts` ("quieres", "Vigila"), plus the two examples in `docs/frontend-user-preferences.md`. Test fixtures that simulate text the user typed ("Vigilá X.") are left as they are. RED 3 (AnalyzeSection, HeroEmptyState, constants), GREEN; full suite 557/557, hooks green.
+- **L6** (T1): the gentle-ai-worker failed again with `unavailable` (same cause as the reviewer: Anthropic credentials), not relaunched; done inline. `src/main/word-trigger.ts` rewrites the bundled trigger's `<we:reference version>` to the registered manifest's `<Version>` with `adm-zip` (already used by `scripts/addin-document.ts`, bundled into main), staged and renamed. `module-switch.ts` writes `components/<id>/Stylistic.docx` after each stable manifest (option `wordTrigger`, export `wordTriggerOf`); on failure it removes the file and logs `cannot write its Word trigger, so Word is shown the bundled one`. `updates/install.ts` prune keeps `Stylistic.docx`. `word-session.ts` resolves `-Document` on each spawn; `app.ts` gives the module trigger when it exists, else the bundled one. The loader reads the add-in names from the manifest beside its document, so it now finds the module's names too. RED: 3 module-switch + 1 word-session; GREEN 164/164 in the touched suites; typecheck green. Open: user documents saved while the 1.0.0 pane was open may still refer to 1.0.0.0.
