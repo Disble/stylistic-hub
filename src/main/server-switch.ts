@@ -145,6 +145,18 @@ export function createServerSwitch({
   let rollingBack = false
   /** A rollback was refused: the server stays stopped until a newer component is installed. */
   let refused = false
+  /** A component's health check is running: a restart now would cut it short and fail a healthy version. */
+  let checking = false
+  /** The restart asked while `checking`, run once the check passes or the component keeps running. */
+  let heldRestart: (() => void) | undefined
+
+  /** Ends a check: runs the held restart when the same backend keeps running, else drops it. */
+  const endCheck = (backendKept: boolean) => {
+    checking = false
+    const restart = heldRestart
+    heldRestart = undefined
+    if (backendKept) restart?.()
+  }
 
   /** The target for the current state; an unreadable state.json must not keep the server from starting. */
   const currentTarget = async () => {
@@ -155,24 +167,53 @@ export function createServerSwitch({
     return resolveServerTarget({ devServerDir, componentsRoot, builtIn, server })
   }
 
-  /** Starts `next`; a component must then pass its health check or it is rolled back. */
-  const launch = async (next: ServerTarget): Promise<void> => {
+  /**
+   * Starts `next`; a component must then pass its health check or it is rolled back. A `resumed` component, the one
+   * the hub ran before it started again, only gets the reason: it already passed its check when it was switched in,
+   * so a miss right after the hub starts says more about that start than about the version, and marking it bad
+   * would keep a working server out for good. A resumed server that really fails still crash-loops into a rollback.
+   */
+  const launch = async (next: ServerTarget, resumed = false): Promise<void> => {
     generation += 1
     const run = generation
+    // An older check is now late: the backend started below serves what its held restart was for.
+    endCheck(false)
     target = next
     refused = false
     status.setVersion(next.version)
     await backend.startFrom(next.entry)
-    if (next.component === null) return
-    if (!(await healthy()) && run === generation && !rollingBack) {
-      await rollBack(next.component, 'health_check_failed')
+    // A newer launch replaced this one while its backend started: that launch owns the check (and the hold).
+    if (next.component === null || run !== generation) return
+    checking = true
+    const component = next.component
+    const ok = await healthy().catch((error: unknown) => {
+      log(`server ${component} health check threw: ${String(error)}`)
+      return false
+    })
+    if (run !== generation) return
+    // A rollback owns the backend now; drop the hold so a failed rollback cannot leave restarts held for good.
+    if (rollingBack) return endCheck(false)
+    if (ok) return endCheck(true)
+    if (resumed) {
+      log(
+        `server ${next.component} did not answer its health check after the hub started, so it is not marked bad`
+      )
+      status.setReason(
+        `Server ${next.component} did not answer its health check after the hub started; it keeps running, and ` +
+          'the hub checks it again at its next start.'
+      )
+      return endCheck(true)
     }
+    endCheck(false)
+    await rollBack(next.component, 'health_check_failed')
   }
 
   /** Marks `failed` bad and goes back to the previous version (or the built-in backend), applying the data rule. */
   const rollBack = async (failed: string, reason: 'health_check_failed' | 'crash_loop'): Promise<void> => {
     rollingBack = true
     generation += 1
+    // The rollback starts a backend of its own, which serves what a held restart was for.
+    endCheck(false)
     const what = `Server ${failed} ${reason === 'crash_loop' ? 'kept crashing' : 'failed its health check'}`
     let next: ServerTarget
     try {
@@ -223,8 +264,16 @@ export function createServerSwitch({
   }
 
   return {
-    /** Starts the backend from the resolved target (at hub start). */
-    start: async () => launch(await currentTarget()),
+    /**
+     * Starts the backend from the resolved target. At hub start the target is `resumed`: a missed health check is
+     * reported, not held against the version (see `launch`).
+     */
+    start: async ({ resumed = false }: { resumed?: boolean } = {}) => launch(await currentTarget(), resumed),
+    /** Runs `restart` now, or holds it until the running health check ends, so it cannot cut the check short. */
+    requestRestart(restart: () => void): void {
+      if (checking) heldRestart = restart
+      else restart()
+    },
     /**
      * After a catalog check: shows why a server install was held by the schema guard (odd/tasks/channels.md S2),
      * then moves to the newly resolved target when it changed.
@@ -234,6 +283,8 @@ export function createServerSwitch({
       if (held) status.setReason(`The server ${held}.`)
       if (rollingBack || !target) return
       const next = await currentTarget()
+      // A rollback (a crash loop) may have begun while the state was read: it picks the backend, not this refresh.
+      if (rollingBack) return
       if (next.entry === target?.entry || (refused && next.component === null)) return
       await launch(next)
     },

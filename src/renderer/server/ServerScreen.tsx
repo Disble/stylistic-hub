@@ -26,7 +26,7 @@ export const SERVER_STATE = {
 
 /** Griffel classes from the Stylistic theme tokens. */
 const useStyles = makeStyles({
-  services: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '12px' },
+  services: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' },
   serviceTop: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' },
   serviceTitle: { margin: 0, fontSize: tokens.fontSizeBase300, fontWeight: tokens.fontWeightSemibold },
   mono: { margin: 0, fontFamily: tokens.fontFamilyMonospace, fontSize: tokens.fontSizeBase200 },

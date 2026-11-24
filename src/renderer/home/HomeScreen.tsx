@@ -68,7 +68,7 @@ const useStyles = makeStyles({
   nextText: { flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' },
   nextTitle: { margin: 0, fontSize: tokens.fontSizeBase300, fontWeight: tokens.fontWeightSemibold },
   muted: { margin: 0, color: tokens.colorNeutralForeground2 },
-  cards: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '12px' },
+  cards: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '12px' },
   cardTop: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' },
   cardIcon: {
     width: '40px',

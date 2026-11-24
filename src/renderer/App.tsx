@@ -69,7 +69,8 @@ const useStyles = makeStyles({
     backgroundColor: tokens.colorNeutralBackground2,
     padding: '36px 44px'
   },
-  content: { maxWidth: '1120px' }
+  // No max width: each screen uses the whole window, and its card grids (auto-fit) stretch to fill the row.
+  content: { minWidth: 0 }
 })
 
 /** Root of the hub window: the navigation rail and the selected screen on its surface. */

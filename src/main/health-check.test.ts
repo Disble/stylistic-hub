@@ -30,6 +30,23 @@ describe('waitUntilHealthy', () => {
     expect(request).toHaveBeenCalledTimes(31)
   })
 
+  it('says what the last request got when it times out, and nothing when it is healthy', async () => {
+    const answered = vi.fn()
+    await waitUntilHealthy({ request: vi.fn(async () => 401), log: answered, ...fakeClock() })
+    expect(answered.mock.calls).toEqual([['no 200 within 30 s; the last request got 401']])
+
+    const failed = vi.fn()
+    const refused = async () => Promise.reject(new Error('connect ECONNREFUSED 127.0.0.1:41730'))
+    await waitUntilHealthy({ request: refused, log: failed, ...fakeClock() })
+    expect(failed.mock.calls).toEqual([
+      ['no 200 within 30 s; the last request failed: Error: connect ECONNREFUSED 127.0.0.1:41730']
+    ])
+
+    const healthy = vi.fn()
+    await waitUntilHealthy({ request: async () => 200, log: healthy, ...fakeClock() })
+    expect(healthy).not.toHaveBeenCalled()
+  })
+
   it('times out when every request fails to connect', async () => {
     const clock = fakeClock()
     const request = vi.fn(async () => Promise.reject(new Error('ECONNREFUSED')))
