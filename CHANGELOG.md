@@ -1,5 +1,15 @@
 # Stylistic Hub changelog
 
+## [1.3.0](https://github.com/Disble/stylistic-hub/compare/hub-v1.2.0...hub-v1.3.0) (2026-11-24)
+
+### Features
+
+* **server:** move the hub to port 41730 ([7487d4a](https://github.com/Disble/stylistic-hub/commit/7487d4a9a2450ec2532dc0b929675d43a8e80388))
+
+### Bug Fixes
+
+* **word:** pass the hub port to the Word session loader ([da01713](https://github.com/Disble/stylistic-hub/commit/da01713127b318b56b4e6a6b1f8252b6afcf057c))
+
 ## [1.3.0-beta.1](https://github.com/Disble/stylistic-hub/compare/hub-v1.2.0...hub-v1.3.0-beta.1) (2026-11-24)
 
 ### Features
