@@ -1,5 +1,12 @@
 # Stylistic Hub changelog
 
+## [1.3.1](https://github.com/Disble/stylistic-hub/compare/hub-v1.3.0...hub-v1.3.1) (2026-11-24)
+
+### Bug Fixes
+
+* **word:** keep the trigger Word had when the next one cannot be written ([754e954](https://github.com/Disble/stylistic-hub/commit/754e954f3be44e43d9c00ed6251f436da8f43a9c))
+* **word:** refer the trigger to the registered module version ([9b5b3ba](https://github.com/Disble/stylistic-hub/commit/9b5b3ba7f1d13a46562b88b7fe4f8de9c0e84c2d))
+
 ## [1.3.1-beta.1](https://github.com/Disble/stylistic-hub/compare/hub-v1.3.0...hub-v1.3.1-beta.1) (2026-11-24)
 
 ### Bug Fixes
