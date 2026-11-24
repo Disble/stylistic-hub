@@ -103,7 +103,7 @@ describe('HomeScreen', () => {
     expect(word.textContent).toContain('1.0.0.0')
     expect(word.textContent).toContain('Not added')
     expect(server.textContent).toContain('0.0.1')
-    expect(server.textContent).toContain('https://localhost:3000')
+    expect(server.textContent).toContain('https://localhost:41730')
     expect(server.textContent).toContain('Running')
 
     fireEvent.click(within(word).getByRole('button', { name: 'Add to Word' }))
@@ -125,7 +125,7 @@ describe('HomeScreen', () => {
     window.hub = fakeHub()
     render(<HomeScreen onOpen={() => undefined} />)
 
-    expect(await screen.findByText('Server running · localhost:3000')).toBeTruthy()
+    expect(await screen.findByText('Server running · localhost:41730')).toBeTruthy()
   })
 
   it.each([

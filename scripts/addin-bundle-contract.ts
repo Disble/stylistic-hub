@@ -2,10 +2,8 @@
 // hold, and what the hub does to that output before serving it. Used by scripts/bundle-addin.ts.
 import { cpSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { HUB_ORIGIN } from '../src/shared/hub-origin'
 import { writeAddinDocument } from './addin-document'
-
-/** Where the hub serves the add-in, so where Word must load it from. */
-export const HUB_ORIGIN = 'https://localhost:3000'
 
 /** The task pane page Word opens: `<DefaultSettings><SourceLocation DefaultValue="…"/>`. */
 const TASKPANE_SOURCE = /<DefaultSettings>[\s\S]*?<SourceLocation\s+DefaultValue="([^"]+)"/

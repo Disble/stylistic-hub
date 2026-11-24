@@ -1,4 +1,5 @@
 import { spawn as spawnProcess } from 'node:child_process'
+import { HUB_PORT } from '../shared/hub-origin'
 import { createSupervisor, type SupervisedChild, type Supervisor } from './supervisor'
 
 /** Starts the loader process; Node's `child_process.spawn` fits it. */
@@ -54,6 +55,8 @@ export function createWordSession({
     document,
     '-ParentPid',
     String(parentPid),
+    '-HubPort',
+    String(HUB_PORT),
     ...(logFile ? ['-LogFile', logFile] : [])
   ]
   let supervisor: Supervisor | undefined

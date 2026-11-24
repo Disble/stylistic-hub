@@ -4,8 +4,9 @@
 // the stable `components/<id>/manifest.xml` is written from it and the module must answer its health check, or
 // it is marked bad and goes back to the previous version, as server-switch.ts does for the server.
 import { existsSync, readFileSync } from 'node:fs'
-import { copyFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
+import { pointAtHub } from '../shared/hub-origin'
 import { componentSchema } from '../shared/signing/documents'
 import type { UpdateEngine } from './updates/engine'
 import { readInstalled } from './updates/install'
@@ -192,12 +193,12 @@ export function createModuleSwitch({
     // A newer switch, or the module leaving and coming back, makes any older check late.
     const run = (generations.get(id) ?? 0) + 1
     generations.set(id, run)
-    await copyFile(
-      join(componentsRoot, id, version, 'manifest.xml'),
-      stableManifest(componentsRoot, id)
-    ).catch((error: unknown) =>
-      log(`module ${id} ${version}: cannot write its stable manifest: ${String(error)}`)
-    )
+    // A module published for the former hub origin is registered at the current one; its signed copy is untouched.
+    await readFile(join(componentsRoot, id, version, 'manifest.xml'), 'utf8')
+      .then((manifest) => writeFile(stableManifest(componentsRoot, id), pointAtHub(manifest)))
+      .catch((error: unknown) =>
+        log(`module ${id} ${version}: cannot write its stable manifest: ${String(error)}`)
+      )
     return {
       check: check(id, version, run).catch((error: unknown) =>
         log(`module ${id} ${version}: ${String(error)}`)

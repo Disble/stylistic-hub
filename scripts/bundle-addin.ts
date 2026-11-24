@@ -1,6 +1,6 @@
 // Builds an add-in checkout and copies its output into resources/addin, where the hub serves it from in development
 // and packs it from. The checkout builds with its `build:hub` script when it has one, else with `build`; the hub then
-// checks the build against its contract and points the manifest at https://localhost:3000, whatever origin the build
+// checks the build against its contract and points the manifest at https://localhost:41730, whatever origin the build
 // wrote. A build that breaks the contract fails with what is missing and leaves resources/addin as it was.
 // Contract: docs/addin-contract.md.
 // Usage: bun run addin:bundle [path to the add-in checkout, default ../stylistic-addon]

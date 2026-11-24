@@ -2,13 +2,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import {
-  buildScript,
-  checkAddinBuild,
-  HUB_ORIGIN,
-  pointManifestAt,
-  stageAddin
-} from './addin-bundle-contract'
+import { buildScript, checkAddinBuild, pointManifestAt, stageAddin } from './addin-bundle-contract'
+import { HUB_ORIGIN } from '../src/shared/hub-origin'
 
 /** A manifest as the add-in's production build writes it. */
 const CONTOSO_MANIFEST = `<?xml version="1.0" encoding="UTF-8"?>
@@ -74,11 +69,11 @@ describe('pointManifestAt', () => {
   it('replaces the task pane origin everywhere with the hub origin', () => {
     const manifest = pointManifestAt(CONTOSO_MANIFEST)
     expect(manifest).not.toContain('https://www.contoso.com/')
-    expect(manifest).toContain('<SourceLocation DefaultValue="https://localhost:3000/taskpane.html"/>')
-    expect(manifest).toContain('<IconUrl DefaultValue="https://localhost:3000/assets/icon-32.png"/>')
-    expect(manifest).toContain('<SupportUrl DefaultValue="https://localhost:3000/help"/>')
+    expect(manifest).toContain('<SourceLocation DefaultValue="https://localhost:41730/taskpane.html"/>')
+    expect(manifest).toContain('<IconUrl DefaultValue="https://localhost:41730/assets/icon-32.png"/>')
+    expect(manifest).toContain('<SupportUrl DefaultValue="https://localhost:41730/help"/>')
     expect(manifest).toContain(
-      '<bt:Url id="Taskpane.Url" DefaultValue="https://localhost:3000/taskpane.html"/>'
+      '<bt:Url id="Taskpane.Url" DefaultValue="https://localhost:41730/taskpane.html"/>'
     )
   })
 
@@ -90,7 +85,14 @@ describe('pointManifestAt', () => {
 
   it('replaces a bare origin with no path', () => {
     const manifest = CONTOSO_MANIFEST.replace('https://www.contoso.com.example', 'https://www.contoso.com')
-    expect(pointManifestAt(manifest)).toContain('<AppDomain>https://localhost:3000</AppDomain>')
+    expect(pointManifestAt(manifest)).toContain('<AppDomain>https://localhost:41730</AppDomain>')
+  })
+
+  it('moves a manifest still on the former hub origin, localhost:3000, to the hub origin', () => {
+    const former = CONTOSO_MANIFEST.replaceAll('https://www.contoso.com/', 'https://localhost:3000/')
+    const manifest = pointManifestAt(former)
+    expect(manifest).not.toContain('localhost:3000')
+    expect(manifest).toContain('<SourceLocation DefaultValue="https://localhost:41730/taskpane.html"/>')
   })
 
   it('leaves a manifest that already names the hub origin unchanged', () => {
@@ -101,7 +103,7 @@ describe('pointManifestAt', () => {
   it('fails instead of leaving the manifest on an origin it could not replace', () => {
     const upper = CONTOSO_MANIFEST.replaceAll('https://www.contoso.com/', 'https://WWW.Contoso.com/')
     expect(() => pointManifestAt(upper)).toThrow(
-      'The add-in manifest names its task pane at https://WWW.Contoso.com/taskpane.html, whose origin the hub could not replace with https://localhost:3000'
+      'The add-in manifest names its task pane at https://WWW.Contoso.com/taskpane.html, whose origin the hub could not replace with https://localhost:41730'
     )
   })
 
