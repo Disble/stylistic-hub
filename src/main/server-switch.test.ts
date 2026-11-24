@@ -240,6 +240,28 @@ describe('createServerSwitch', () => {
     expect(restart).toHaveBeenCalledTimes(1)
   })
 
+  it('does not launch from a refresh once a rollback has begun, so a failed rollback holds no restart', async () => {
+    const { serverSwitch, started, status } = makeSwitch(async () => true)
+    await serverSwitch.start()
+    await install('1.2.0')
+    let fail: ((error: Error) => void) | undefined
+    vi.spyOn(world.engine, 'markBad').mockImplementationOnce(
+      () => new Promise<void>((_resolve, reject) => (fail = reject))
+    )
+
+    const refreshing = serverSwitch.refresh()
+    serverSwitch.crashLoop()
+    await refreshing
+    await vi.waitFor(() => expect(fail).toBeDefined())
+    fail?.(new Error('disk full'))
+    await vi.waitFor(() => expect(status.get().reason).toContain('the rollback failed'))
+    const restart = vi.fn()
+    serverSwitch.requestRestart(restart)
+
+    expect(started).toEqual([entryOf('1.1.0')])
+    expect(restart).toHaveBeenCalledTimes(1)
+  })
+
   it('restarts at once when no health check runs', async () => {
     const { serverSwitch } = makeSwitch(async () => true)
     await serverSwitch.start()

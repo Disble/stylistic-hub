@@ -190,7 +190,9 @@ export function createServerSwitch({
       log(`server ${component} health check threw: ${String(error)}`)
       return false
     })
-    if (run !== generation || rollingBack) return
+    if (run !== generation) return
+    // A rollback owns the backend now; drop the hold so a failed rollback cannot leave restarts held for good.
+    if (rollingBack) return endCheck(false)
     if (ok) return endCheck(true)
     if (resumed) {
       log(
@@ -281,6 +283,8 @@ export function createServerSwitch({
       if (held) status.setReason(`The server ${held}.`)
       if (rollingBack || !target) return
       const next = await currentTarget()
+      // A rollback (a crash loop) may have begun while the state was read: it picks the backend, not this refresh.
+      if (rollingBack) return
       if (next.entry === target?.entry || (refused && next.component === null)) return
       await launch(next)
     },
