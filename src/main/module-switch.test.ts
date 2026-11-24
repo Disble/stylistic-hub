@@ -156,6 +156,43 @@ describe('word trigger', () => {
     expect(triggerReference()).toContain('version="1.2.0.0"')
   })
 
+  it('goes back to the previous version with the module after a failed health check', async () => {
+    await install('1.0.0')
+    await install('1.1.0')
+    const healthy = vi
+      .fn<(id: string) => Promise<boolean>>()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValue(true)
+    const { moduleSwitch, onChange } = makeSwitch({
+      healthy,
+      wordTrigger: { id: ID, template: makeTriggerTemplate() }
+    })
+
+    await moduleSwitch.start()
+
+    await vi.waitFor(() => expect(onChange).toHaveBeenCalledTimes(1))
+    expect(triggerReference()).toContain('version="1.0.0.0"')
+  })
+
+  it('keeps the trigger it had when it cannot write the next one, and says why', async () => {
+    await install('1.0.0')
+    const template = makeTriggerTemplate()
+    const { moduleSwitch, log } = makeSwitch({ wordTrigger: { id: ID, template } })
+    await moduleSwitch.start()
+    writeFileSync(template, 'not a zip')
+
+    await install('1.2.0')
+    await moduleSwitch.refresh()
+
+    expect(triggerReference()).toContain('version="1.0.0.0"')
+    expect(existsSync(`${trigger()}.tmp`)).toBe(false)
+    expect(log).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /^module word-addin 1\.2\.0: cannot write its Word trigger, so Word keeps the one it had: /
+      )
+    )
+  })
+
   it('leaves no trigger beside the manifest when it cannot write one, and says why', async () => {
     await install('1.0.0')
     const template = join(world.root, '..', 'not-a-trigger.docx')
@@ -167,7 +204,7 @@ describe('word trigger', () => {
     expect(existsSync(trigger())).toBe(false)
     expect(log).toHaveBeenCalledWith(
       expect.stringMatching(
-        /^module word-addin 1\.0\.0: cannot write its Word trigger, so Word is shown the bundled one: /
+        /^module word-addin 1\.0\.0: cannot write its Word trigger, so Word keeps the one it had: /
       )
     )
   })

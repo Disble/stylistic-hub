@@ -4,7 +4,7 @@
 // the stable `components/<id>/manifest.xml` is written from it and the module must answer its health check, or
 // it is marked bad and goes back to the previous version, as server-switch.ts does for the server.
 import { existsSync, readFileSync } from 'node:fs'
-import { readFile, rm, writeFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { pointAtHub } from '../shared/hub-origin'
 import { componentSchema } from '../shared/signing/documents'
@@ -204,23 +204,16 @@ export function createModuleSwitch({
   }
 
   /**
-   * Rewrites the trigger of `id` for its registered `manifest`. Without one it removes the trigger, so a trigger
-   * for another version never stays behind and Word is shown the bundled one (app.ts).
+   * Rewrites the trigger of `id` for its registered `manifest`. When it cannot, the trigger it had stays: the
+   * registered version may not have changed, and with no trigger at all Word is shown the bundled one (app.ts).
    */
-  const writeTrigger = async (
-    id: string,
-    version: string,
-    manifest: string | undefined,
-    template: string
-  ) => {
-    const output = wordTriggerOf(componentsRoot, id)
+  const writeTrigger = (id: string, version: string, manifest: string | undefined, template: string) => {
     try {
       if (manifest === undefined) throw new Error('its stable manifest was not written')
-      writeWordTrigger(template, manifest, output)
+      writeWordTrigger(template, manifest, wordTriggerOf(componentsRoot, id))
     } catch (error) {
-      await rm(output, { force: true })
       log(
-        `module ${id} ${version}: cannot write its Word trigger, so Word is shown the bundled one: ${String(error)}`
+        `module ${id} ${version}: cannot write its Word trigger, so Word keeps the one it had: ${String(error)}`
       )
     }
   }
@@ -241,7 +234,7 @@ export function createModuleSwitch({
         log(`module ${id} ${version}: cannot write its stable manifest: ${String(error)}`)
         return undefined
       })
-    if (wordTrigger?.id === id) await writeTrigger(id, version, manifest, wordTrigger.template)
+    if (wordTrigger?.id === id) writeTrigger(id, version, manifest, wordTrigger.template)
     return {
       check: check(id, version, run).catch((error: unknown) =>
         log(`module ${id} ${version}: ${String(error)}`)

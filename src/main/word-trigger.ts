@@ -5,7 +5,7 @@
 // with. adm-zip is the zip library the build scripts already use (scripts/addin-document.ts); it is bundled
 // into the main process.
 import AdmZip from 'adm-zip'
-import { renameSync } from 'node:fs'
+import { renameSync, rmSync, writeFileSync } from 'node:fs'
 
 /** The part that tells Word which add-in to load and open as a task pane. */
 const PART = 'word/webextensions/webextension.xml'
@@ -24,8 +24,15 @@ export function writeWordTrigger(template: string, manifest: string, output: str
   const part = document.readAsText(PART)
   if (!REFERENCE_VERSION.test(part)) throw new Error(`${PART} has no <we:reference version="…">`)
   document.updateFile(PART, Buffer.from(part.replace(REFERENCE_VERSION, `$1${version}"`)))
-  // Written beside and renamed, so the loader never opens a half-written document.
+  // Written beside and renamed, so the loader never opens a half-written document; on failure the previous
+  // trigger stays and nothing staged is left. writeFileSync, not adm-zip's writeZip, which returns quietly
+  // when it cannot write.
   const staged = `${output}.tmp`
-  document.writeZip(staged)
-  renameSync(staged, output)
+  try {
+    writeFileSync(staged, document.toBuffer())
+    renameSync(staged, output)
+  } catch (error) {
+    rmSync(staged, { recursive: true, force: true })
+    throw error
+  }
 }

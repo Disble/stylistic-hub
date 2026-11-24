@@ -1,5 +1,5 @@
 import AdmZip from 'adm-zip'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -44,6 +44,18 @@ describe('writeWordTrigger', () => {
       '<we:reference id="module-id" version="1.2.0.0" store="developer" />'
     )
     expect(existsSync(`${output}.tmp`)).toBe(false)
+  })
+
+  it('leaves the previous trigger and no staged file when it cannot write the next one', () => {
+    const output = join(dir, 'Stylistic.docx')
+    const good = template('<we:reference id="module-id" version="1.0.0.0" store="developer" />')
+    writeWordTrigger(good, MANIFEST, output)
+    const before = readFileSync(output)
+    mkdirSync(`${output}.tmp`)
+    writeFileSync(join(`${output}.tmp`, 'blocker'), '')
+
+    expect(() => writeWordTrigger(good, MANIFEST.replace('1.2.0.0', '1.3.0.0'), output)).toThrow()
+    expect(readFileSync(output)).toEqual(before)
   })
 
   it('names the missing manifest version and writes nothing', () => {
