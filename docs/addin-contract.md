@@ -40,7 +40,14 @@ The backend serves the folder its `--addin <dir>` flag names (`src/backend/entry
 The installer ships no add-in. `bun run dist` stages the Word directory with `bun scripts/stage-word.ts`
 (default `out/word/`, gitignored): the session loader plus its trigger document, outside any content bundle.
 The trigger carries the production add-in id below, which module releases kept, so the same trigger loads
-them. `scripts/require-addin.ts` and `scripts/stage-prod-addin.ts` stay for the retired bundle staging and are
+them. Word also checks its version: a sideloaded add-in is refused ("This add-in is no longer available") when
+the document's `<we:reference version>` is not the `<Version>` of the manifest registered for that id. So the
+bundled trigger, which refers to `1.0.0.0`, is only the template: each time the hub registers a module version
+it writes `components/<id>/Stylistic.docx` beside the stable manifest, referring to that version
+(`src/main/word-trigger.ts`, called from `src/main/module-switch.ts`; installs keep the file), and the loader
+opens it, or the bundled trigger while no module trigger exists (`src/main/app.ts`). When the trigger for a new version cannot be written,
+the one it had stays and the hub logs why: the registered version may not have changed, and removing it would
+send the loader back to the bundled `1.0.0.0` trigger. `scripts/require-addin.ts` and `scripts/stage-prod-addin.ts` stay for the retired bundle staging and are
 no longer part of `bun run dist`.
 
 The production add-in id is `5d0c6b1e-7f2a-4c3e-9b8d-1a2f3e4c5d6e`

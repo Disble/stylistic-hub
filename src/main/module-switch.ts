@@ -9,6 +9,7 @@ import { join, resolve } from 'node:path'
 import { pointAtHub } from '../shared/hub-origin'
 import { componentSchema } from '../shared/signing/documents'
 import type { UpdateEngine } from './updates/engine'
+import { writeWordTrigger } from './word-trigger'
 import { readInstalled } from './updates/install'
 
 /**
@@ -63,6 +64,14 @@ function stableManifest(componentsRoot: string, id: string): string {
 }
 
 /**
+ * The trigger document Word is shown for module `id`, beside its stable manifest: the loader reads the add-in's
+ * names from the manifest next to its document (resources/word/word-session.ps1).
+ */
+export function wordTriggerOf(componentsRoot: string, id: string): string {
+  return join(componentsRoot, id, 'Stylistic.docx')
+}
+
+/**
  * How the backend serves version `version` of installed component `id`: its directory and the known scopes its
  * verified component.json declares in `requires.scopes`; undefined when it is not a servable office-addin module.
  */
@@ -98,6 +107,7 @@ export function createModuleSwitch({
   servesModules,
   onChange,
   report,
+  wordTrigger,
   log = console.warn
 }: {
   engine: Pick<UpdateEngine, 'readState' | 'markBad' | 'setCurrent'>
@@ -107,6 +117,11 @@ export function createModuleSwitch({
   backend: ModuleBackend
   /** False while the server switch rolls back: it starts the backend itself, with the modules set here. */
   restartAllowed: () => boolean
+  /**
+   * The module Word loads through the trigger document, and the bundled trigger it is written from: each switch
+   * of that module rewrites `wordTriggerOf(componentsRoot, id)` to refer to the version now registered.
+   */
+  wordTrigger?: { id: string; template: string }
   /** Waits for module `id`'s manifest and task pane at `/m/<id>/`: true when both answered 200 in time. */
   healthy: (id: string) => Promise<boolean>
   /** Waits for the server's own health check; a module gets no verdict while the server is down. */
@@ -188,17 +203,38 @@ export function createModuleSwitch({
     started = true
   }
 
+  /**
+   * Rewrites the trigger of `id` for its registered `manifest`. When it cannot, the trigger it had stays: the
+   * registered version may not have changed, and with no trigger at all Word is shown the bundled one (app.ts).
+   */
+  const writeTrigger = (id: string, version: string, manifest: string | undefined, template: string) => {
+    try {
+      if (manifest === undefined) throw new Error('its stable manifest was not written')
+      writeWordTrigger(template, manifest, wordTriggerOf(componentsRoot, id))
+    } catch (error) {
+      log(
+        `module ${id} ${version}: cannot write its Word trigger, so Word keeps the one it had: ${String(error)}`
+      )
+    }
+  }
+
   /** Writes the stable manifest of `id` from `version`, then starts its health check (in an object, not awaited). */
   const switchTo = async (id: string, version: string): Promise<{ check: Promise<void> }> => {
     // A newer switch, or the module leaving and coming back, makes any older check late.
     const run = (generations.get(id) ?? 0) + 1
     generations.set(id, run)
     // A module published for the former hub origin is registered at the current one; its signed copy is untouched.
-    await readFile(join(componentsRoot, id, version, 'manifest.xml'), 'utf8')
-      .then((manifest) => writeFile(stableManifest(componentsRoot, id), pointAtHub(manifest)))
-      .catch((error: unknown) =>
+    const manifest = await readFile(join(componentsRoot, id, version, 'manifest.xml'), 'utf8')
+      .then(async (signed) => {
+        const pointed = pointAtHub(signed)
+        await writeFile(stableManifest(componentsRoot, id), pointed)
+        return pointed
+      })
+      .catch((error: unknown) => {
         log(`module ${id} ${version}: cannot write its stable manifest: ${String(error)}`)
-      )
+        return undefined
+      })
+    if (wordTrigger?.id === id) writeTrigger(id, version, manifest, wordTrigger.template)
     return {
       check: check(id, version, run).catch((error: unknown) =>
         log(`module ${id} ${version}: ${String(error)}`)
