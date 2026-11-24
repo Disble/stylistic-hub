@@ -197,9 +197,16 @@ if (!isSingleInstance) {
       backend,
       healthy: () =>
         waitUntilHealthy({
-          request: hubStatusRequest({ port: HUB_PORT, token, caFile: paths.caCert, leafFile: paths.leafCert })
+          request: hubStatusRequest({
+            port: HUB_PORT,
+            token,
+            caFile: paths.caCert,
+            leafFile: paths.leafCert
+          }),
+          log: (reason) => log(`server health check: ${reason}`)
         }),
-      status
+      status,
+      log
     })
     // Word gets the stable manifests of the downloaded modules only; the installer ships no add-in (S1).
     const word = createWordIntegration({
@@ -245,7 +252,11 @@ if (!isSingleInstance) {
       wordTrigger: { id: WORD_MODULE_ID, template: join(WORD_DIR, 'Stylistic.docx') },
       // `--module <id>=<dir>` serves a development build of a module (unpackaged hub only).
       devModules: moduleDirFlags(process.argv, app.isPackaged),
-      backend,
+      // A restart for a new module set waits for the server's running health check, which it would cut short.
+      backend: {
+        setModules: (value) => backend.setModules(value),
+        restart: () => serverSwitch.requestRestart(() => backend.restart())
+      },
       restartAllowed: () => serverSwitch.restartAllowed(),
       // A module is healthy once its manifest and its task pane both answer 200 at `/m/<id>/`.
       healthy: (id) =>
@@ -253,9 +264,14 @@ if (!isSingleInstance) {
           request: async () => {
             const manifest = await hubRequest(`/m/${id}/manifest.xml`)()
             return manifest === 200 ? hubRequest(`/m/${id}/taskpane.html`)() : manifest
-          }
+          },
+          log: (reason) => log(`module ${id} health check: ${reason}`)
         }),
-      serverHealthy: () => waitUntilHealthy({ request: hubRequest('/api/v1/status') }),
+      serverHealthy: () =>
+        waitUntilHealthy({
+          request: hubRequest('/api/v1/status'),
+          log: (reason) => log(`server health check before a module check: ${reason}`)
+        }),
       servesModules: async () => (await hubRequest('/api/v1/modules')().catch(() => 0)) !== 404,
       // The catalog notification precedes async resolution/health. Notify again only after Word's
       // registration sync settles, so mounted screens see the module that actually became ready (B2).
@@ -278,8 +294,9 @@ if (!isSingleInstance) {
         word.sync().catch((error: unknown) => console.error('Could not tidy Stylistic in Word:', error))
       )
     // Server health/rollback must not block restoration of an already registered Word module.
+    // The server the hub ran before: a missed check now is reported, not held against its version.
     void modulesReady
-      .then(() => serverSwitch.start())
+      .then(() => serverSwitch.start({ resumed: true }))
       .catch((error: unknown) => console.error('Could not start the local server:', error))
     app.on('will-quit', () => {
       updates.stop()
