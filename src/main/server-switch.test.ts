@@ -198,6 +198,48 @@ describe('createServerSwitch', () => {
     expect(restart).toHaveBeenCalledTimes(1)
   })
 
+  it('does not hold restarts for a launch replaced while its backend was still starting', async () => {
+    const { serverSwitch, backend, started } = makeSwitch(async () => true)
+    let release: (() => void) | undefined
+    backend.startFrom.mockImplementationOnce(
+      (entry: string) =>
+        new Promise<undefined>((resolve) => {
+          started.push(entry)
+          release = () => resolve(undefined)
+        })
+    )
+    const first = serverSwitch.start()
+    await vi.waitFor(() => expect(release).toBeDefined())
+
+    await install('1.2.0')
+    await serverSwitch.refresh()
+    release?.()
+    await first
+    const restart = vi.fn()
+    serverSwitch.requestRestart(restart)
+
+    expect(started).toEqual([entryOf('1.1.0'), entryOf('1.2.0')])
+    expect(restart).toHaveBeenCalledTimes(1)
+  })
+
+  it('counts a health check that throws as a miss, and holds no restart after it', async () => {
+    const log = vi.fn()
+    const { serverSwitch, started } = makeSwitch(
+      vi.fn<() => Promise<boolean>>().mockRejectedValueOnce(new Error('boom')).mockResolvedValue(true),
+      undefined,
+      log
+    )
+
+    await serverSwitch.start()
+    const restart = vi.fn()
+    serverSwitch.requestRestart(restart)
+
+    expect(started).toEqual([entryOf('1.1.0'), entryOf('1.0.0')])
+    expect((await world.engine.readState()).components['server']?.bad).toEqual(['1.1.0'])
+    expect(log).toHaveBeenCalledWith('server 1.1.0 health check threw: Error: boom')
+    expect(restart).toHaveBeenCalledTimes(1)
+  })
+
   it('restarts at once when no health check runs', async () => {
     const { serverSwitch } = makeSwitch(async () => true)
     await serverSwitch.start()

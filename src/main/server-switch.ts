@@ -182,9 +182,14 @@ export function createServerSwitch({
     refused = false
     status.setVersion(next.version)
     await backend.startFrom(next.entry)
-    if (next.component === null) return
+    // A newer launch replaced this one while its backend started: that launch owns the check (and the hold).
+    if (next.component === null || run !== generation) return
     checking = true
-    const ok = await healthy()
+    const component = next.component
+    const ok = await healthy().catch((error: unknown) => {
+      log(`server ${component} health check threw: ${String(error)}`)
+      return false
+    })
     if (run !== generation || rollingBack) return
     if (ok) return endCheck(true)
     if (resumed) {
