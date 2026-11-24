@@ -90,6 +90,24 @@ describe('createWordSession', () => {
     expect(spawn).toHaveBeenCalledTimes(2)
   })
 
+  it('asks the hub which document to show Word each time the loader starts', () => {
+    vi.useFakeTimers()
+    const { spawn, spawned } = loaders()
+    const documents = ['C:/hub/word/Stylistic.docx', 'C:/data/components/word/Stylistic.docx']
+    let next = 0
+    createWordSession({ ...files, document: () => documents[next++] ?? '', spawn, parentPid: 1 }).start()
+
+    spawned[0]?.emit('exit', 1)
+    vi.advanceTimersByTime(60_000)
+
+    const documentOf = (call: number) => {
+      const args = spawn.mock.calls[call]?.[1] ?? []
+      return args[args.indexOf('-Document') + 1]
+    }
+    expect(documentOf(0)).toBe('C:/hub/word/Stylistic.docx')
+    expect(documentOf(1)).toBe('C:/data/components/word/Stylistic.docx')
+  })
+
   it('stops the loader and can start it again later', () => {
     const { spawn, spawned } = loaders()
     const session = createWordSession({ ...files, spawn, parentPid: 1 })

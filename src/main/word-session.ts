@@ -9,8 +9,11 @@ export type SpawnLoader = (command: string, args: string[]) => SupervisedChild
 export interface WordSessionOptions {
   /** `word-session.ps1`, which watches Word and loads Stylistic into each new session. */
   script: string
-  /** The bundled document that refers to the sideloaded add-in. */
-  document: string
+  /**
+   * The document that refers to the sideloaded add-in, or a function that names it each time the loader starts:
+   * the trigger written for the registered module version, else the bundled one (app.ts, word-trigger.ts).
+   */
+  document: string | (() => string)
   /** The hub's process id; the script exits when the hub is gone. */
   parentPid: number
   /** Where the script keeps a log of what it did; the packaged hub has no console to read. */
@@ -42,7 +45,7 @@ export function createWordSession({
   logFile,
   spawn = spawnHidden
 }: WordSessionOptions) {
-  const args = [
+  const args = (): string[] => [
     '-NoProfile',
     '-NonInteractive',
     '-ExecutionPolicy',
@@ -52,7 +55,7 @@ export function createWordSession({
     '-File',
     script,
     '-Document',
-    document,
+    typeof document === 'function' ? document() : document,
     '-ParentPid',
     String(parentPid),
     '-HubPort',
@@ -65,7 +68,7 @@ export function createWordSession({
     start() {
       if (supervisor) return
       supervisor = createSupervisor({
-        spawn: () => spawn('powershell.exe', args),
+        spawn: () => spawn('powershell.exe', args()),
         backoffMs: [2_000, 10_000, 60_000]
       })
       supervisor.start()

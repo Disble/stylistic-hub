@@ -224,9 +224,11 @@ export async function stageHubInstaller(
 
 /** Deletes every version folder and record except `keep`, and the staging directory. */
 async function prune(dir: string, keep: (string | null)[]): Promise<void> {
-  // manifest.xml is the stable copy Word is registered with (module-switch.ts), not a version.
+  // manifest.xml is the stable copy Word is registered with and Stylistic.docx the trigger Word is shown for it
+  // (module-switch.ts), not versions.
   const kept = new Set([
     'manifest.xml',
+    'Stylistic.docx',
     ...keep.flatMap((version) => (version ? [version, `${version}.json`] : []))
   ])
   for (const name of await readdir(dir)) {

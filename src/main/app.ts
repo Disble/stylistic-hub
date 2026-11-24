@@ -1,7 +1,9 @@
 import { arch, release, type } from 'node:os'
+import { existsSync } from 'node:fs'
 import { appendFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app, BrowserWindow, Menu, nativeImage, shell, Tray } from 'electron'
+import { WORD_MODULE_ID } from '../shared/bridge'
 import { safeExternalUrl } from '../shared/login/external-link'
 import { HUB_ORIGIN, HUB_PORT } from '../shared/hub-origin'
 import { SERVER_VERSION } from '../shared/versions'
@@ -15,7 +17,7 @@ import { createLibrary } from './library'
 import { registerProviderIpc } from './ipc-provider'
 import { registerScreenIpc } from './ipc-screens'
 import { createPiProvider } from './pi-provider'
-import { createModuleSwitch, moduleDirFlags } from './module-switch'
+import { createModuleSwitch, moduleDirFlags, wordTriggerOf } from './module-switch'
 import { createServerStatus } from './server-status'
 import { createServerSwitch, serverDirFlag } from './server-switch'
 import { channelControls } from './updates/channels'
@@ -208,7 +210,11 @@ if (!isSingleInstance) {
     })
     const wordSession = createWordSession({
       script: join(WORD_DIR, 'word-session.ps1'),
-      document: join(WORD_DIR, 'Stylistic.docx'),
+      // The trigger written for the registered module version; the bundled one until a module is switched in.
+      document: () => {
+        const trigger = wordTriggerOf(join(userData, 'components'), WORD_MODULE_ID)
+        return existsSync(trigger) ? trigger : join(WORD_DIR, 'Stylistic.docx')
+      },
       parentPid: process.pid,
       logFile: join(app.getPath('logs'), 'word-session.log')
     })
@@ -236,6 +242,7 @@ if (!isSingleInstance) {
     const moduleSwitch = createModuleSwitch({
       engine: updates.engine,
       componentsRoot: join(userData, 'components'),
+      wordTrigger: { id: WORD_MODULE_ID, template: join(WORD_DIR, 'Stylistic.docx') },
       // `--module <id>=<dir>` serves a development build of a module (unpackaged hub only).
       devModules: moduleDirFlags(process.argv, app.isPackaged),
       backend,
