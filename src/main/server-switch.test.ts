@@ -66,7 +66,11 @@ function rowsOf(file: string): string[] {
 }
 
 /** A switch over the world's engine, with a fake backend and a real status, and `healthy` as the health check. */
-function makeSwitch(healthy: () => Promise<boolean>, devServerDir?: string) {
+function makeSwitch(
+  healthy: () => Promise<boolean>,
+  devServerDir?: string,
+  log: (message: string) => void = () => undefined
+) {
   const started: string[] = []
   const backend = {
     startFrom: vi.fn(async (entry: string) => void started.push(entry)),
@@ -82,7 +86,7 @@ function makeSwitch(healthy: () => Promise<boolean>, devServerDir?: string) {
     backend,
     healthy: vi.fn(healthy),
     status,
-    log: () => undefined
+    log
   })
   return { serverSwitch, backend, started, status }
 }
@@ -140,6 +144,143 @@ describe('createServerSwitch', () => {
     expect(status.get()).toMatchObject({ version: '1.1.0', state: 'starting' })
     expect(status.get().reason).toBeUndefined()
     expect((await world.engine.readState()).components['server']).toMatchObject({ current: '1.1.0', bad: [] })
+  })
+
+  it('keeps a resumed component running, unmarked, when it misses its health check at hub start', async () => {
+    const log = vi.fn()
+    const { serverSwitch, started, status, backend } = makeSwitch(async () => false, undefined, log)
+
+    await serverSwitch.start({ resumed: true })
+
+    expect(started).toEqual([entryOf('1.1.0')])
+    expect(backend.halt).not.toHaveBeenCalled()
+    const state = await world.engine.readState()
+    expect(state.components['server']).toMatchObject({ current: '1.1.0', bad: [] })
+    expect(state.history.some((entry) => entry.outcome === 'marked_bad')).toBe(false)
+    expect(status.get()).toMatchObject({
+      version: '1.1.0',
+      reason:
+        'Server 1.1.0 did not answer its health check after the hub started; it keeps running, and the hub ' +
+        'checks it again at its next start.'
+    })
+    expect(log).toHaveBeenCalledWith(
+      'server 1.1.0 did not answer its health check after the hub started, so it is not marked bad'
+    )
+  })
+
+  it('holds a restart asked during a health check until the check passes', async () => {
+    let pass: ((ok: boolean) => void) | undefined
+    const { serverSwitch } = makeSwitch(() => new Promise<boolean>((resolve) => (pass = resolve)))
+    const restart = vi.fn()
+
+    const starting = serverSwitch.start()
+    await vi.waitFor(() => expect(pass).toBeDefined())
+    serverSwitch.requestRestart(restart)
+    expect(restart).not.toHaveBeenCalled()
+    pass?.(true)
+    await starting
+
+    expect(restart).toHaveBeenCalledTimes(1)
+  })
+
+  it('stops holding restarts once a newer start replaces the one being checked', async () => {
+    const { serverSwitch, started } = makeSwitch(() => new Promise<boolean>(() => undefined))
+    void serverSwitch.start()
+    await vi.waitFor(() => expect(started).toEqual([entryOf('1.1.0')]))
+
+    await world.engine.markBad('server', '1.1.0', 'test')
+    await world.engine.markBad('server', '1.0.0', 'test')
+    await serverSwitch.refresh()
+    expect(started).toEqual([entryOf('1.1.0'), BUILT_IN.entry])
+    const restart = vi.fn()
+    serverSwitch.requestRestart(restart)
+
+    expect(restart).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not hold restarts for a launch replaced while its backend was still starting', async () => {
+    const { serverSwitch, backend, started } = makeSwitch(async () => true)
+    let release: (() => void) | undefined
+    backend.startFrom.mockImplementationOnce(
+      (entry: string) =>
+        new Promise<undefined>((resolve) => {
+          started.push(entry)
+          release = () => resolve(undefined)
+        })
+    )
+    const first = serverSwitch.start()
+    await vi.waitFor(() => expect(release).toBeDefined())
+
+    await install('1.2.0')
+    await serverSwitch.refresh()
+    release?.()
+    await first
+    const restart = vi.fn()
+    serverSwitch.requestRestart(restart)
+
+    expect(started).toEqual([entryOf('1.1.0'), entryOf('1.2.0')])
+    expect(restart).toHaveBeenCalledTimes(1)
+  })
+
+  it('counts a health check that throws as a miss, and holds no restart after it', async () => {
+    const log = vi.fn()
+    const { serverSwitch, started } = makeSwitch(
+      vi.fn<() => Promise<boolean>>().mockRejectedValueOnce(new Error('boom')).mockResolvedValue(true),
+      undefined,
+      log
+    )
+
+    await serverSwitch.start()
+    const restart = vi.fn()
+    serverSwitch.requestRestart(restart)
+
+    expect(started).toEqual([entryOf('1.1.0'), entryOf('1.0.0')])
+    expect((await world.engine.readState()).components['server']?.bad).toEqual(['1.1.0'])
+    expect(log).toHaveBeenCalledWith('server 1.1.0 health check threw: Error: boom')
+    expect(restart).toHaveBeenCalledTimes(1)
+  })
+
+  it('restarts at once when no health check runs', async () => {
+    const { serverSwitch } = makeSwitch(async () => true)
+    await serverSwitch.start()
+    const restart = vi.fn()
+
+    serverSwitch.requestRestart(restart)
+
+    expect(restart).toHaveBeenCalledTimes(1)
+  })
+
+  it('drops a held restart when the check fails, as the rollback starts the backend again', async () => {
+    let fail: ((ok: boolean) => void) | undefined
+    const healthy = vi
+      .fn<() => Promise<boolean>>()
+      .mockImplementationOnce(() => new Promise<boolean>((resolve) => (fail = resolve)))
+      .mockResolvedValue(true)
+    const { serverSwitch, started } = makeSwitch(healthy)
+    const restart = vi.fn()
+
+    const starting = serverSwitch.start()
+    await vi.waitFor(() => expect(fail).toBeDefined())
+    serverSwitch.requestRestart(restart)
+    fail?.(false)
+    await starting
+
+    expect(started).toEqual([entryOf('1.1.0'), entryOf('1.0.0')])
+    expect(restart).not.toHaveBeenCalled()
+  })
+
+  it('runs a held restart when a resumed component misses its check, as it keeps running', async () => {
+    let fail: ((ok: boolean) => void) | undefined
+    const { serverSwitch } = makeSwitch(() => new Promise<boolean>((resolve) => (fail = resolve)))
+    const restart = vi.fn()
+
+    const starting = serverSwitch.start({ resumed: true })
+    await vi.waitFor(() => expect(fail).toBeDefined())
+    serverSwitch.requestRestart(restart)
+    fail?.(false)
+    await starting
+
+    expect(restart).toHaveBeenCalledTimes(1)
   })
 
   it('rolls back to the previous version after a failed health check and marks the failed one bad', async () => {
