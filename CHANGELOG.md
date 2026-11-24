@@ -1,5 +1,13 @@
 # Stylistic Hub changelog
 
+## [1.3.2-beta.2](https://github.com/Disble/stylistic-hub/compare/hub-v1.3.2-beta.1...hub-v1.3.2-beta.2) (2026-11-24)
+
+### Bug Fixes
+
+* **main:** keep a refresh from launching over a rollback in progress ([a8301e7](https://github.com/Disble/stylistic-hub/commit/a8301e7a4109a46d6e5c97ac1c59f04f3c3c76ae))
+* **main:** never leave a server restart held by a replaced launch ([ac5f6f4](https://github.com/Disble/stylistic-hub/commit/ac5f6f49dc6b17133c3f70193a60e0cd3ea0135c))
+* **main:** stop marking a resumed server bad for a missed health check ([b1c44fa](https://github.com/Disble/stylistic-hub/commit/b1c44fa5a1ceaee6892980601cbce4c6d674b949))
+
 ## [1.3.2-beta.1](https://github.com/Disble/stylistic-hub/compare/hub-v1.3.1...hub-v1.3.2-beta.1) (2026-11-24)
 
 ### Bug Fixes
