@@ -27,7 +27,8 @@ function manifestOf(version: string): string {
 /** Publishes module `version` (with `requires`) and lets the engine install it. */
 async function install(
   version: string,
-  requires: Record<string, unknown> = { scopes: ['status', 'documents', 'no-such-scope', 7] }
+  requires: Record<string, unknown> = { scopes: ['status', 'documents', 'no-such-scope', 7] },
+  manifest = manifestOf(version)
 ) {
   const release = await makeRelease(
     {
@@ -38,7 +39,7 @@ async function install(
       provides: {},
       requires,
       items: [
-        { name: 'manifest.xml', data: manifestOf(version) },
+        { name: 'manifest.xml', data: manifest },
         { name: 'taskpane.html', data: '<html><head></head></html>' }
       ]
     },
@@ -142,6 +143,20 @@ describe('createModuleSwitch', () => {
     expect(backend.setModules).toHaveBeenCalledWith(undefined)
     expect(backend.restart).not.toHaveBeenCalled()
     expect(moduleSwitch.manifests()).toEqual([])
+  })
+
+  it('registers a module published for the former hub origin, localhost:3000, at the hub origin', async () => {
+    const former = (origin: string): string =>
+      `<OfficeApp><Version>1.0.0.0</Version><SupportUrl DefaultValue="${origin}"/>` +
+      `<SourceLocation DefaultValue="${origin}/m/${ID}/taskpane.html"/></OfficeApp>`
+    await install('1.0.0', undefined, former('https://localhost:3000'))
+    const { moduleSwitch } = makeSwitch()
+
+    await moduleSwitch.start()
+
+    expect(readFileSync(stableManifest(), 'utf8')).toBe(former('https://localhost:41730'))
+    // The signed copy keeps its bytes.
+    expect(readFileSync(join(dirOf('1.0.0'), 'manifest.xml'), 'utf8')).toBe(former('https://localhost:3000'))
   })
 
   it('serves the current version of each installed module with the known scopes it declared', async () => {

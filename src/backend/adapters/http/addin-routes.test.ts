@@ -140,7 +140,7 @@ describe('addinRoutes', () => {
     const page = await app.request(`${mount}/taskpane.html`)
     const html = await page.text()
     const script = html.match(/src="([^"]+)"/)?.[1] ?? ''
-    const asset = await app.request(new URL(script, `https://localhost:3000${mount}/taskpane.html`).href)
+    const asset = await app.request(new URL(script, `https://localhost:41730${mount}/taskpane.html`).href)
     const icon = await app.request(`${mount}/assets/icon-32.png`)
 
     expect(page.headers.get('cache-control')).toBe('no-store')
@@ -177,7 +177,7 @@ function runGuard({ url, bridged, reloads }: { url: string; bridged: boolean; re
 
 describe('HOST_BRIDGE_GUARD', () => {
   const inWord =
-    'https://localhost:3000/m/stylistic-word-addin/taskpane.html?_host_Info=Word$Win32$16.01$en-US$$$$0'
+    'https://localhost:41730/m/stylistic-word-addin/taskpane.html?_host_Info=Word$Win32$16.01$en-US$$$$0'
 
   it('reloads the task pane once when Word opened it without its host bridge', () => {
     expect(runGuard({ url: inWord, bridged: false })).toEqual({ reloaded: 1, stored: '1' })
@@ -192,7 +192,7 @@ describe('HOST_BRIDGE_GUARD', () => {
   })
 
   it('never reloads the page outside Word', () => {
-    expect(runGuard({ url: 'https://localhost:3000/taskpane.html', bridged: false })).toEqual({
+    expect(runGuard({ url: 'https://localhost:41730/taskpane.html', bridged: false })).toEqual({
       reloaded: 0,
       stored: undefined
     })

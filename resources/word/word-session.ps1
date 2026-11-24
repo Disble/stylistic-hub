@@ -27,8 +27,9 @@ param(
   [int]$PresenceTimeoutSeconds = 20,
   # The names the add-in puts in the window, read from the manifest next to the document when this is empty.
   [string[]]$AddinNames,
-  # The hub's port, to tell whether Word asked for the add-in's page at all.
-  [int]$HubPort = 3000
+  # The hub's port, to tell whether Word asked for the add-in's page at all. The hub passes HUB_PORT
+  # (src/shared/hub-origin.ts); the default matches it for runs by hand.
+  [int]$HubPort = 41730
 )
 $ErrorActionPreference = 'Stop'
 $installed = @{}

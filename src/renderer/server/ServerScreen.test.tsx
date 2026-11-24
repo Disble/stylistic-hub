@@ -21,7 +21,7 @@ describe('ServerScreen', () => {
     const services = screen.getByRole('region', { name: 'Services' })
     const api = within(services).getByRole('article', { name: 'Analysis API' })
     expect(api.textContent).toContain('Running')
-    expect(api.textContent).toContain('https://localhost:3000/api')
+    expect(api.textContent).toContain('https://localhost:41730/api')
     expect(within(services).getByRole('article', { name: 'Database' }).textContent).toContain('Ready')
     expect(within(services).getByRole('article', { name: 'Word access' }).textContent).toContain('Secured')
     expect(screen.queryByRole('alert')).toBeNull()

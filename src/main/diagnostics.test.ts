@@ -12,7 +12,7 @@ import { loadOrCreateHubToken } from './hub-token'
 const SERVER: ServerStatus = {
   state: 'running',
   version: '1.2.0',
-  address: 'https://localhost:3000',
+  address: 'https://localhost:41730',
   crashes: 1,
   lastExitCode: 9
 }
