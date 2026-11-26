@@ -93,6 +93,20 @@ describe('ProviderScreen', () => {
     expect(screen.queryByRole('listitem', { name: 'Groq' })).toBeNull()
   })
 
+  it('marks a subscription sign-in that expired and offers to sign in again', async () => {
+    providers = providers.map((p) =>
+      p.id === 'anthropic' ? { ...p, authError: 'OAuth refresh failed for anthropic' } : p
+    )
+    await renderScreen()
+
+    const anthropic = screen.getByRole('listitem', { name: 'Anthropic' })
+    expect(within(anthropic).getByText('Sign-in expired')).toBeTruthy()
+    expect(within(anthropic).queryByText('Connected')).toBeNull()
+    fireEvent.click(within(anthropic).getByRole('button', { name: 'Sign in again' }))
+
+    await waitFor(() => expect(api.startLogin).toHaveBeenCalledWith('anthropic', 'oauth'))
+  })
+
   it('shows the chosen model and stores a new choice', async () => {
     await renderScreen()
     const select = screen.getByLabelText('Model for corrections') as HTMLSelectElement

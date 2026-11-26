@@ -56,7 +56,10 @@ export function useWordStatus(): { status: WordStatus | undefined; refresh: () =
 
 /** The signed-in providers and the model the corrections use. */
 export interface ProviderState {
+  /** Signed in with a credential that works. */
   connected: ProviderSummary[]
+  /** Signed in, but the credential stopped working (`authError`): they need a new sign-in. */
+  expired: ProviderSummary[]
   model: ModelSummary | undefined
 }
 
@@ -67,7 +70,13 @@ export function useProviderState(): ProviderState | undefined {
   useEffect(() => {
     let live = true
     void Promise.all([window.hub.provider.list(), window.hub.provider.getModel()]).then(
-      ([providers, model]) => live && setState({ connected: providers.filter((p) => p.configured), model })
+      ([providers, model]) =>
+        live &&
+        setState({
+          connected: providers.filter((p) => p.configured && !p.authError),
+          expired: providers.filter((p) => p.configured && p.authError),
+          model
+        })
     )
     return () => {
       live = false
@@ -77,9 +86,16 @@ export function useProviderState(): ProviderState | undefined {
   return state
 }
 
-/** True once a provider is signed in and a model is chosen: the workflows refuse to run without one. */
+/** True once a model is chosen and its provider's credential works: the workflows refuse to run without one. */
 export function providerReady(state: ProviderState | undefined): boolean {
-  return Boolean(state?.connected.length && state.model)
+  const model = state?.model
+  return Boolean(model && state.connected.some((p) => p.id === model.provider))
+}
+
+/** The signed-in provider to sign in to again: the chosen model's, or the only kind left. */
+export function expiredProvider(state: ProviderState): ProviderSummary | undefined {
+  const ofModel = state.expired.find((p) => p.id === state.model?.provider)
+  return ofModel ?? (state.connected.length ? undefined : state.expired[0])
 }
 
 /** True once Windows trusts the hub certificate and Word lists the add-in. */
