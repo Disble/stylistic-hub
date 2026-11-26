@@ -6,7 +6,7 @@ import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { componentSchema, type Catalog, type KeyList } from '../../shared/signing/documents'
 import { checkCatalog, type CatalogCheck, type EngineContext } from './catalog'
-import { channelOf, isNewer, newestInstallable } from './channels'
+import { channelOf, newestInstallable, replaces } from './channels'
 import type { StagedInstaller } from './feed'
 import {
   HUB_ID,
@@ -72,16 +72,6 @@ async function revoke(context: EngineContext, keys: KeyList): Promise<void> {
       component.keyId = null
     }
   })
-}
-
-/**
- * Whether `version` may replace `current` on `channel`: anything other than the current version, but on `beta` only
- * a newer one. An older version is a switch back to `stable` (S2); on `beta`, which also takes stable, a bad newest
- * beta or a stable outside the rollout must not send the install back (odd/tasks/catalog-auto-update.md S2).
- */
-function replaces(version: string, current: string | null | undefined, channel: Channel): boolean {
-  if (!current) return true
-  return version !== current && (channel === 'stable' || isNewer(version, current))
 }
 
 /**

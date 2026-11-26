@@ -71,6 +71,24 @@ describe('buildLibrary', () => {
     expect(library.components.map((c) => c.available)).toEqual(['1.1.0', '1.3.2', '2.0.0'])
   })
 
+  it('shows the version kept on a channel that would not install its offer, as the engine keeps it', () => {
+    const library = buildLibrary(
+      state({ server: { ...installed('1.2.0-beta.1', 'beta'), bad: ['1.3.0-beta.1'] } }),
+      verified([
+        entry('server', '1.1.0'),
+        entry('server', '1.3.0-beta.1', { channel: 'beta' }),
+        entry(HUB_ID, '1.3.2')
+      ]),
+      '1.4.0-beta.1'
+    )
+
+    expect(library.components.map((c) => c.offers)).toEqual([
+      { stable: '1.1.0', beta: '1.2.0-beta.1' },
+      { stable: '1.3.2', beta: '1.4.0-beta.1' }
+    ])
+    expect(library.components[0]?.available).toBe('1.2.0-beta.1')
+  })
+
   it('offers nothing on any channel before a catalog check verified', () => {
     const library = buildLibrary(state({ server: installed('1.0.0') }), undefined, '1.3.2')
 

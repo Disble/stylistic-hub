@@ -68,6 +68,16 @@ export function newestOffered(
 }
 
 /**
+ * Whether `version` may replace `current` on `channel`: anything other than the current version, but on `beta` only
+ * a newer one. An older version is a switch back to `stable` (S2); on `beta`, which also takes stable, a bad newest
+ * beta or a stable outside the rollout must not send the install back (odd/tasks/catalog-auto-update.md S2).
+ */
+export function replaces(version: string, current: string | null | undefined, channel: Channel): boolean {
+  if (!current) return true
+  return version !== current && (channel === 'stable' || isNewer(version, current))
+}
+
+/**
  * What the engine installs for component `id` on `channel`: the newest of its `entries` offered to `installId`,
  * leaving out the versions marked `bad` on this install (odd/tasks/catalog-auto-update.md S2). The Library shows the
  * same answer for every channel (odd/tasks/library-clarity.md S1).

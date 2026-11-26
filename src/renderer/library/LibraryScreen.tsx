@@ -64,12 +64,26 @@ const REASONS: Record<string, string> = {
   revoked_key: 'its signing key was revoked',
   no_catalog: 'the catalog could not be read',
   no_hub_entry: 'the catalog does not list this hub',
+  crash_loop: 'it kept crashing',
+  bad_signature: 'its signature did not verify',
+  unknown_key: 'it was signed by a key the hub does not know',
+  wrong_scope: 'its signing key may not publish it',
+  sha256_mismatch: 'the download was damaged',
+  size_mismatch: 'the download was incomplete',
+  bad_zip: 'the download was damaged',
+  symlink: 'its package was refused as unsafe',
+  reserved_name: 'its package was refused as unsafe',
+  too_large: 'its package was too large',
+  already_installed: 'it is already installed',
   not_newer: 'it is not newer than the installed version',
   already_served: 'that version is already running'
 }
 
+/** A code the hub does not describe, as words. */
+const words = (code: string): string => code.replaceAll('_', ' ')
+
 /** `: why` when there is a reason, else nothing. */
-const because = (reason: string | null): string => (reason ? `: ${REASONS[reason] ?? reason}` : '')
+const because = (reason: string | null): string => (reason ? `: ${REASONS[reason] ?? words(reason)}` : '')
 
 /** What happened, in plain words, for each outcome the update engine records. */
 const HAPPENED: Record<HistoryLine['outcome'], (line: HistoryLine, version: string) => string> = {
@@ -77,17 +91,16 @@ const HAPPENED: Record<HistoryLine['outcome'], (line: HistoryLine, version: stri
     from && to ? `Updated from ${from} to ${to}` : `Installed ${version}`,
   switched: ({ from, to }) => `Switched from ${from ?? '?'} to ${to ?? '?'}`,
   failed: ({ reason }, version) => `Could not install ${version}${because(reason)}`,
-  marked_bad: ({ reason }, version) =>
-    reason === 'health_check_failed'
-      ? `${version} did not start correctly, so the hub will not install it again`
-      : `The hub will not install ${version} again${because(reason)}`,
+  marked_bad: ({ reason }, version) => `The hub will not install ${version} again${because(reason)}`,
   disabled: ({ reason }, version) =>
     reason === 'uninstalled' ? `Uninstalled ${version}` : `Turned off ${version}${because(reason)}`
 }
 
-/** What happened, in plain words. */
+/** What happened, in plain words; an outcome a newer hub wrote, as words, instead of breaking the screen. */
 function whatHappened(line: HistoryLine): string {
-  return HAPPENED[line.outcome](line, line.to ?? line.from ?? '')
+  const version = line.to ?? line.from ?? ''
+  const happened = HAPPENED[line.outcome] as (typeof HAPPENED)[keyof typeof HAPPENED] | undefined
+  return happened ? happened(line, version) : `${version}: ${words(String(line.outcome))}`
 }
 
 /** One history line: the date, then what happened. */

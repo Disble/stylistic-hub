@@ -1,7 +1,7 @@
 // The Library screen's data and actions (odd/tasks/module-library.md S5): one entry per component, from
 // `state.json` and the last catalog a check verified, which only this module keeps (in memory, since it opened).
 import type { Channel, HubUpdateStatus, LastCheck, Library, LibraryComponent } from '../shared/bridge'
-import { channelOf, newestInstallable } from './updates/channels'
+import { channelOf, newestInstallable, replaces } from './updates/channels'
 import type { CheckReport, UpdateEngine } from './updates/engine'
 import { HUB_ID, type CatalogEntry } from './updates/install'
 import type { SelfUpdate } from './updates/self-update'
@@ -20,8 +20,9 @@ function kindOf(id: string): LibraryComponent['kind'] {
 }
 
 /**
- * The cards: the server and the hub always, then every module in the state or in the catalog. `offers` is what each
- * channel would install, by the engine's own rules, and `available` the offer of the channel the component follows;
+ * The cards: the server and the hub always, then every module in the state or in the catalog. `offers` is the version
+ * each channel would leave installed, by the engine's own rules: its newest offer, or the installed version when that
+ * channel would not replace it (a beta never goes back); `available` is the offer of the channel the component follows;
  * `hubUpdate`, where the hub's own update stands.
  */
 export function buildLibrary(
@@ -37,13 +38,17 @@ export function buildLibrary(
   const components = ['server', HUB_ID, ...modules].map((id): LibraryComponent => {
     const channel = channelOf(state, id)
     const entry = state.components[id]
-    const offerOn = (on: Channel): string | null =>
-      (verified && newestInstallable(entries, id, entry?.bad ?? [], on, verified.installId)?.version) ?? null
+    const current = id === HUB_ID ? hubVersion : (entry?.current ?? null)
+    const offerOn = (on: Channel): string | null => {
+      const offer = verified && newestInstallable(entries, id, entry?.bad ?? [], on, verified.installId)
+      if (!offer) return null
+      return replaces(offer.version, current, on) ? offer.version : current
+    }
     const offers = { stable: offerOn('stable'), beta: offerOn('beta') }
     return {
       id,
       kind: kindOf(id),
-      installed: id === HUB_ID ? hubVersion : (entry?.current ?? null),
+      installed: current,
       requested: Boolean(entry && !entry.current),
       channel,
       available: offers[channel],

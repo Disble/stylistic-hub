@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { HubUpdateStatus, Library, LibraryComponent } from '../../shared/bridge'
+import type { HistoryLine, HubUpdateStatus, Library, LibraryComponent } from '../../shared/bridge'
 import { fakeHub } from '../fake-hub'
 import { WORD_MODULE_ID } from '../hub-state'
 import { LibraryScreen } from './LibraryScreen'
@@ -154,7 +154,10 @@ describe('LibraryScreen', () => {
       { time: at('22'), from: null, to: '1.2.0', outcome: 'failed', reason: 'network' },
       { time: at('21'), from: '0.9.0', to: null, outcome: 'disabled', reason: 'revoked_key' },
       { time: at('20'), from: '0.8.0', to: null, outcome: 'disabled', reason: 'uninstalled' },
-      { time: at('19'), from: null, to: '0.7.0', outcome: 'failed', reason: 'something_new' }
+      { time: at('19'), from: null, to: '0.7.0', outcome: 'failed', reason: 'something_new' },
+      { time: at('18'), from: '0.6.0', to: null, outcome: 'marked_bad', reason: 'crash_loop' },
+      { time: at('17'), from: null, to: '0.5.0', outcome: 'failed', reason: 'bad_signature' },
+      { time: at('16'), from: null, to: '0.4.0', outcome: 'later' as HistoryLine['outcome'], reason: null }
     ]
     await renderLibrary({ ...LIBRARY, components: [card('server', 'server', { history })] })
 
@@ -163,12 +166,15 @@ describe('LibraryScreen', () => {
       .map((item) => item.textContent)
     expect(lines).toEqual([
       '2026-11-25 · Switched from 1.4.0-beta.1 to 1.3.2',
-      '2026-11-24 · 1.1.0 did not start correctly, so the hub will not install it again',
+      '2026-11-24 · The hub will not install 1.1.0 again: it did not start correctly',
       '2026-11-23 · Updated from 1.0.0 to 1.1.0',
       '2026-11-22 · Could not install 1.2.0: the download failed',
       '2026-11-21 · Turned off 0.9.0: its signing key was revoked',
       '2026-11-20 · Uninstalled 0.8.0',
-      '2026-11-19 · Could not install 0.7.0: something_new'
+      '2026-11-19 · Could not install 0.7.0: something new',
+      '2026-11-18 · The hub will not install 0.6.0 again: it kept crashing',
+      '2026-11-17 · Could not install 0.5.0: its signature did not verify',
+      '2026-11-16 · 0.4.0: later'
     ])
   })
 
