@@ -57,11 +57,11 @@
       "kind": "hub",
       "publisher": "stylistic-hub",
       "channel": "beta",
-      "version": "1.4.0-beta.1",
-      "sha256": "30fcfcb10f8f6954652dea3e7f7e86175f00c28ea07e836a5eef521d6c7b4ffa",
-      "size": 127910636,
-      "artifactUrl": "https://github.com/Disble/stylistic-hub/releases/download/hub-v1.4.0-beta.1/StylisticHub-Setup-1.4.0-beta.1.exe",
-      "componentUrl": "https://github.com/Disble/stylistic-hub/releases/download/hub-v1.4.0-beta.1/component.json",
+      "version": "1.4.0-beta.2",
+      "sha256": "6e92f1a5cda44c0b2290a3eddd8ad3129e8e8325c586bab57573a25c78e76ab2",
+      "size": 127911382,
+      "artifactUrl": "https://github.com/Disble/stylistic-hub/releases/download/hub-v1.4.0-beta.2/StylisticHub-Setup-1.4.0-beta.2.exe",
+      "componentUrl": "https://github.com/Disble/stylistic-hub/releases/download/hub-v1.4.0-beta.2/component.json",
       "rolloutPercent": 100,
       "blocked": []
     }
