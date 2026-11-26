@@ -1,5 +1,11 @@
 # Stylistic Hub changelog
 
+## [1.4.0-beta.1](https://github.com/Disble/stylistic-hub/compare/hub-v1.3.2...hub-v1.4.0-beta.1) (2026-11-26)
+
+### Features
+
+* **provider:** show expired subscription sign-ins ([cb17ef0](https://github.com/Disble/stylistic-hub/commit/cb17ef01517897050fa8190c6637543f3cc2c7e9))
+
 ## [1.3.2](https://github.com/Disble/stylistic-hub/compare/hub-v1.3.1...hub-v1.3.2) (2026-11-24)
 
 ### Bug Fixes
