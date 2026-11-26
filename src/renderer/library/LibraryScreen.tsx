@@ -11,7 +11,7 @@ import {
 import { ArrowSync20Regular } from '@fluentui/react-icons'
 import { useCallback, useEffect, useState } from 'react'
 import type { Channel, HistoryLine, HubUpdateStatus, Library, LibraryComponent } from '../../shared/bridge'
-import { errorMessage } from '../hub-state'
+import { errorMessage, WORD_MODULE_ID } from '../hub-state'
 import { Details, Page, Section, Surface } from '../ui/layout'
 
 /** Griffel classes from the Stylistic theme tokens. */
@@ -28,11 +28,26 @@ const useStyles = makeStyles({
   }
 })
 
-/** The card title of a component. */
-function titleOf({ id, kind }: LibraryComponent): string {
-  if (kind === 'server') return 'Server'
-  return kind === 'hub' ? 'Stylistic Hub' : id
+/** Plain names and one-line descriptions; a module the hub does not know keeps its catalog id and no description. */
+const NAMES: Record<string, { title: string; description: string }> = {
+  server: { title: 'Server', description: 'Runs the analysis on this computer.' },
+  hub: {
+    title: 'Stylistic Hub',
+    description: 'This app. It installs the other components and keeps them up to date.'
+  },
+  [WORD_MODULE_ID]: { title: 'Stylistic for Word', description: 'The Stylistic pane in Word.' }
 }
+
+/** The card name of a component: the server and the hub by kind, a module by id. */
+function nameOf({ id, kind }: LibraryComponent): { title: string; description?: string } {
+  return NAMES[kind === 'module' ? id : kind] ?? { title: id }
+}
+
+/** The channels a card lists, with their labels. */
+const CHANNELS: { value: Channel; label: string }[] = [
+  { value: 'stable', label: 'Stable' },
+  { value: 'beta', label: 'Beta' }
+]
 
 /** What is installed: the version, a pending request, or nothing. */
 function installedText({ installed, requested }: LibraryComponent): string {
@@ -40,10 +55,44 @@ function installedText({ installed, requested }: LibraryComponent): string {
   return requested ? 'Install requested' : 'Not installed'
 }
 
-/** One history line: date, version, what happened and why. */
-function historyText({ time, from, to, outcome, reason }: HistoryLine): string {
-  const why = reason ? ` (${reason})` : ''
-  return `${time.slice(0, 10)} ${to ?? from ?? ''} ${outcome.replace('_', ' ')}${why}`
+/** Why something happened, in plain words, for the reasons the update engine records; any other reason as it is. */
+const REASONS: Record<string, string> = {
+  health_check_failed: 'it did not start correctly',
+  network: 'the download failed',
+  invalid_document: 'its files did not pass the signature check',
+  binding_mismatch: 'its files did not match the catalog',
+  revoked_key: 'its signing key was revoked',
+  no_catalog: 'the catalog could not be read',
+  no_hub_entry: 'the catalog does not list this hub',
+  not_newer: 'it is not newer than the installed version',
+  already_served: 'that version is already running'
+}
+
+/** `: why` when there is a reason, else nothing. */
+const because = (reason: string | null): string => (reason ? `: ${REASONS[reason] ?? reason}` : '')
+
+/** What happened, in plain words, for each outcome the update engine records. */
+const HAPPENED: Record<HistoryLine['outcome'], (line: HistoryLine, version: string) => string> = {
+  installed: ({ from, to }, version) =>
+    from && to ? `Updated from ${from} to ${to}` : `Installed ${version}`,
+  switched: ({ from, to }) => `Switched from ${from ?? '?'} to ${to ?? '?'}`,
+  failed: ({ reason }, version) => `Could not install ${version}${because(reason)}`,
+  marked_bad: ({ reason }, version) =>
+    reason === 'health_check_failed'
+      ? `${version} did not start correctly, so the hub will not install it again`
+      : `The hub will not install ${version} again${because(reason)}`,
+  disabled: ({ reason }, version) =>
+    reason === 'uninstalled' ? `Uninstalled ${version}` : `Turned off ${version}${because(reason)}`
+}
+
+/** What happened, in plain words. */
+function whatHappened(line: HistoryLine): string {
+  return HAPPENED[line.outcome](line, line.to ?? line.from ?? '')
+}
+
+/** One history line: the date, then what happened. */
+function historyText(line: HistoryLine): string {
+  return `${line.time.slice(0, 10)} · ${whatHappened(line)}`
 }
 
 /** The hub's own update on its card: each step as it happens, the restart once it is ready, or why it failed. */
@@ -97,17 +146,22 @@ function ComponentCard({
   run: (action: () => Promise<void>) => void
 }) {
   const styles = useStyles()
-  const { id, kind, available, channel, history } = component
+  const { id, kind, offers, channel, history } = component
   const inState = kind !== 'module' || Boolean(component.installed) || component.requested
-  const availableText = catalog ? (available ?? 'None offered') : 'Not checked yet'
-  const title = titleOf(component)
+  const offerText = (on: Channel) => (catalog ? (offers[on] ?? 'None offered') : 'Not checked yet')
+  const { title, description } = nameOf(component)
   return (
     <Surface as="article" label={title}>
       <h3 className={styles.cardTitle}>{title}</h3>
+      {description && <p className={styles.status}>{description}</p>}
       <Details
         items={[
           { term: 'Installed', value: installedText(component), mono: true },
-          { term: 'Available', value: availableText, mono: true }
+          ...CHANNELS.map(({ value, label }) => ({
+            term: `${label} channel`,
+            value: offerText(value),
+            mono: true
+          }))
         ]}
       />
       {inState && (
@@ -118,8 +172,11 @@ function ComponentCard({
               run(() => window.hub.server.setChannel(kind === 'hub' ? 'hub' : id, data.value as Channel))
             }
           >
-            <option value="stable">Stable</option>
-            <option value="beta">Beta</option>
+            {CHANNELS.map(({ value, label }) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
           </Select>
         </Field>
       )}

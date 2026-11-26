@@ -6,7 +6,7 @@ import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { componentSchema, type Catalog, type KeyList } from '../../shared/signing/documents'
 import { checkCatalog, type CatalogCheck, type EngineContext } from './catalog'
-import { channelOf, isNewer, newestOffered } from './channels'
+import { channelOf, isNewer, newestInstallable } from './channels'
 import type { StagedInstaller } from './feed'
 import {
   HUB_ID,
@@ -93,8 +93,7 @@ function wanted(state: UpdateState, entries: readonly CatalogEntry[], installId:
   return [...new Set(entries.map((entry) => entry.id))].flatMap((id) => {
     const installed = state.components[id]
     const channel = channelOf(state, id)
-    const candidates = entries.filter((entry) => entry.id === id && !installed?.bad.includes(entry.version))
-    const entry = newestOffered(candidates, channel, installId)
+    const entry = newestInstallable(entries, id, installed?.bad ?? [], channel, installId)
     if (!entry || (entry.kind !== 'server' && !installed)) return []
     return replaces(entry.version, installed?.current, channel) ? [entry] : []
   })

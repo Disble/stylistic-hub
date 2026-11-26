@@ -109,6 +109,11 @@ export interface LibraryComponent {
   channel: Channel
   /** The version the last verified catalog offers this install on the component's channel. */
   available: string | null
+  /**
+   * What each channel would install, by the update engine's rules (rollout, pulled, versions marked bad on this
+   * install); null when that channel offers nothing or no catalog check has verified yet.
+   */
+  offers: Record<Channel, string | null>
   /** Hub card only: where the hub's own update stands, once a catalog check verified. */
   update?: HubUpdateStatus
   /** The newest history lines first. */

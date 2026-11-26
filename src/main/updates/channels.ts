@@ -67,6 +67,22 @@ export function newestOffered(
     )
 }
 
+/**
+ * What the engine installs for component `id` on `channel`: the newest of its `entries` offered to `installId`,
+ * leaving out the versions marked `bad` on this install (odd/tasks/catalog-auto-update.md S2). The Library shows the
+ * same answer for every channel (odd/tasks/library-clarity.md S1).
+ */
+export function newestInstallable(
+  entries: readonly CatalogEntry[],
+  id: string,
+  bad: readonly string[],
+  channel: Channel,
+  installId: string
+): CatalogEntry | undefined {
+  const candidates = entries.filter((entry) => entry.id === id && !bad.includes(entry.version))
+  return newestOffered(candidates, channel, installId)
+}
+
 /** The two channels the Server screen chooses. */
 const targetSchema = z.enum(['server', 'hub'])
 

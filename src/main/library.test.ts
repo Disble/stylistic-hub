@@ -49,6 +49,37 @@ const line = (component: string, to: string, time = '2026-10-18T00:00:00.000Z'):
 const verified = (components: CatalogEntry[]) => ({ catalog: { components }, installId: 'install-1' })
 
 describe('buildLibrary', () => {
+  it('offers what each channel would install, leaving out versions marked bad on this install', () => {
+    const library = buildLibrary(
+      state({ server: { ...installed('1.0.0'), bad: ['1.2.0-beta.1'] }, addin: installed('2.0.0') }),
+      verified([
+        entry('server', '1.1.0'),
+        entry('server', '1.2.0-beta.1', { channel: 'beta' }),
+        entry(HUB_ID, '1.3.2'),
+        entry(HUB_ID, '1.4.0-beta.1', { channel: 'beta' }),
+        entry('addin', '2.0.0'),
+        entry('addin', '2.1.0', { channel: 'beta', blocked: ['2.1.0'] })
+      ]),
+      '1.3.2'
+    )
+
+    expect(Object.fromEntries(library.components.map((c) => [c.id, c.offers]))).toEqual({
+      server: { stable: '1.1.0', beta: '1.1.0' },
+      [HUB_ID]: { stable: '1.3.2', beta: '1.4.0-beta.1' },
+      addin: { stable: '2.0.0', beta: '2.0.0' }
+    })
+    expect(library.components.map((c) => c.available)).toEqual(['1.1.0', '1.3.2', '2.0.0'])
+  })
+
+  it('offers nothing on any channel before a catalog check verified', () => {
+    const library = buildLibrary(state({ server: installed('1.0.0') }), undefined, '1.3.2')
+
+    expect(library.components.map((c) => c.offers)).toEqual([
+      { stable: null, beta: null },
+      { stable: null, beta: null }
+    ])
+  })
+
   it('shows the server, the hub and each module, installed or in the catalog', () => {
     const library = buildLibrary(
       state({ server: installed('1.0.0'), addin: installed('2.0.0') }),
@@ -66,6 +97,7 @@ describe('buildLibrary', () => {
         requested: false,
         channel: 'stable',
         available: '1.1.0',
+        offers: { stable: '1.1.0', beta: '1.1.0' },
         history: []
       },
       {
@@ -75,6 +107,7 @@ describe('buildLibrary', () => {
         requested: false,
         channel: 'stable',
         available: null,
+        offers: { stable: null, beta: null },
         history: []
       },
       {
@@ -84,6 +117,7 @@ describe('buildLibrary', () => {
         requested: false,
         channel: 'stable',
         available: '2.0.0',
+        offers: { stable: '2.0.0', beta: '2.0.0' },
         history: []
       },
       {
@@ -93,6 +127,7 @@ describe('buildLibrary', () => {
         requested: false,
         channel: 'stable',
         available: '0.1.0',
+        offers: { stable: '0.1.0', beta: '0.1.0' },
         history: []
       }
     ])

@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { HubUpdateStatus, Library, LibraryComponent } from '../../shared/bridge'
 import { fakeHub } from '../fake-hub'
+import { WORD_MODULE_ID } from '../hub-state'
 import { LibraryScreen } from './LibraryScreen'
 
 afterEach(cleanup)
@@ -20,6 +21,7 @@ function card(
     requested: false,
     channel: 'stable',
     available: null,
+    offers: { stable: null, beta: null },
     history: [],
     ...extra
   }
@@ -33,6 +35,7 @@ const LIBRARY: Library = {
     card('server', 'server', {
       installed: '1.0.0',
       available: '1.1.0',
+      offers: { stable: '1.1.0', beta: '1.2.0-beta.1' },
       history: [
         {
           time: '2026-10-18T10:00:00.000Z',
@@ -61,8 +64,9 @@ describe('LibraryScreen', () => {
     const server = await renderLibrary(LIBRARY)
 
     expect(server.textContent).toContain('Installed1.0.0')
-    expect(server.textContent).toContain('Available1.1.0')
-    expect(server.textContent).toContain('1.0.0 installed')
+    expect(server.textContent).toContain('Stable channel1.1.0')
+    expect(server.textContent).toContain('Beta channel1.2.0-beta.1')
+    expect(server.textContent).toContain('2026-10-18 · Installed 1.0.0')
     expect(within(server).getByRole('combobox', { name: 'Channel' })).toHaveProperty('value', 'stable')
     expect(within(server).queryByRole('button', { name: /Install|Uninstall/ })).toBeNull()
 
@@ -113,6 +117,60 @@ describe('LibraryScreen', () => {
     components: LIBRARY.components.map((c) => (c.kind === 'hub' ? { ...c, update } : c))
   })
   const hubCard = () => screen.getByRole('article', { name: 'Stylistic Hub' })
+
+  it('shows the version each channel would install, or that it offers none or was not checked', async () => {
+    const glossary = (await renderLibrary(LIBRARY), screen.getByRole('article', { name: 'glossary' }))
+    expect(glossary.textContent).toContain('Stable channelNone offered')
+    expect(glossary.textContent).toContain('Beta channelNone offered')
+    cleanup()
+
+    const server = await renderLibrary({ ...LIBRARY, catalog: false })
+    expect(server.textContent).toContain('Stable channelNot checked yet')
+    expect(server.textContent).toContain('Beta channelNot checked yet')
+  })
+
+  it('names each component in plain words and says what it is', async () => {
+    const word = card(WORD_MODULE_ID, 'module', { installed: '1.2.0' })
+    await renderLibrary({ ...LIBRARY, components: [...LIBRARY.components, word] })
+
+    expect(screen.getByRole('article', { name: 'Server' }).textContent).toContain(
+      'Runs the analysis on this computer.'
+    )
+    expect(screen.getByRole('article', { name: 'Stylistic Hub' }).textContent).toContain(
+      'This app. It installs the other components and keeps them up to date.'
+    )
+    const addin = screen.getByRole('article', { name: 'Stylistic for Word' })
+    expect(addin.textContent).toContain('The Stylistic pane in Word.')
+    expect(screen.queryByText(WORD_MODULE_ID)).toBeNull()
+    expect(screen.getByRole('article', { name: 'glossary' })).toBeTruthy()
+  })
+
+  it('tells the history in plain words', async () => {
+    const at = (day: string) => `2026-11-${day}T10:00:00.000Z`
+    const history: LibraryComponent['history'] = [
+      { time: at('25'), from: '1.4.0-beta.1', to: '1.3.2', outcome: 'switched', reason: null },
+      { time: at('24'), from: '1.1.0', to: null, outcome: 'marked_bad', reason: 'health_check_failed' },
+      { time: at('23'), from: '1.0.0', to: '1.1.0', outcome: 'installed', reason: null },
+      { time: at('22'), from: null, to: '1.2.0', outcome: 'failed', reason: 'network' },
+      { time: at('21'), from: '0.9.0', to: null, outcome: 'disabled', reason: 'revoked_key' },
+      { time: at('20'), from: '0.8.0', to: null, outcome: 'disabled', reason: 'uninstalled' },
+      { time: at('19'), from: null, to: '0.7.0', outcome: 'failed', reason: 'something_new' }
+    ]
+    await renderLibrary({ ...LIBRARY, components: [card('server', 'server', { history })] })
+
+    const lines = within(screen.getByRole('list', { name: 'Server history' }))
+      .getAllByRole('listitem')
+      .map((item) => item.textContent)
+    expect(lines).toEqual([
+      '2026-11-25 · Switched from 1.4.0-beta.1 to 1.3.2',
+      '2026-11-24 · 1.1.0 did not start correctly, so the hub will not install it again',
+      '2026-11-23 · Updated from 1.0.0 to 1.1.0',
+      '2026-11-22 · Could not install 1.2.0: the download failed',
+      '2026-11-21 · Turned off 0.9.0: its signing key was revoked',
+      '2026-11-20 · Uninstalled 0.8.0',
+      '2026-11-19 · Could not install 0.7.0: something_new'
+    ])
+  })
 
   it('offers a restart only on a hub card with a downloaded update, and restarts on click', async () => {
     const restart = vi.fn(async () => undefined)
@@ -226,7 +284,7 @@ describe('LibraryScreen', () => {
       components: [card('server', 'server', { installed: '1.0.0' })]
     })
 
-    expect(server.textContent).toContain('AvailableNot checked yet')
+    expect(server.textContent).toContain('Stable channelNot checked yet')
     expect(screen.getByText(/No catalog check has succeeded/)).toBeTruthy()
   })
 })
