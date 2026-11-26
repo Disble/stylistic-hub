@@ -20,6 +20,7 @@ import { useState } from 'react'
 import type { LibraryComponent, ServerStatus, WordStatus } from '../../shared/bridge'
 import {
   errorMessage,
+  expiredProvider,
   providerReady,
   useLibrary,
   useProviderState,
@@ -124,6 +125,15 @@ function nextStep(server: ServerStatus, provider: ProviderState, word: boolean):
       action: 'Open Server',
       screen: 'server',
       icon: Server24Regular
+    } satisfies NextStep
+  const expired = expiredProvider(provider)
+  if (expired)
+    return {
+      title: `Sign in to ${expired.name} again`,
+      body: 'Your sign-in expired and could not be renewed, so corrections fail until you sign in again.',
+      action: 'Sign in again',
+      screen: 'provider',
+      icon: Sparkle24Regular
     } satisfies NextStep
   if (!provider.connected.length)
     return {

@@ -12,6 +12,11 @@ export interface ProviderSummary {
   name: string
   /** True once the provider has a credential. */
   configured: boolean
+  /**
+   * Why the stored credential no longer works, such as a subscription sign-in that expired and could not
+   * be refreshed. Absent while it works or when there is none; the provider then needs a new sign-in.
+   */
+  authError?: string
   /** The sign-in methods Pi offers for this provider. */
   authMethods: { type: LoginAuthType; label: string }[]
 }

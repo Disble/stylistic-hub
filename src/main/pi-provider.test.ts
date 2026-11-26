@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPiProvider } from './pi-provider'
 
 /** Fresh Pi directory for each test. */
@@ -12,6 +12,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.unstubAllGlobals()
   rmSync(agentDir, { recursive: true, force: true })
 })
 
@@ -53,8 +54,28 @@ describe('createPiProvider', () => {
     const models = await provider.listModels()
 
     expect(providers.find((p) => p.id === 'anthropic')?.configured).toBe(true)
+    expect(providers.find((p) => p.id === 'anthropic')?.authError).toBeUndefined()
     expect(models.length).toBeGreaterThan(0)
     expect(models.every((m) => m.provider === 'anthropic')).toBe(true)
+  })
+
+  it('reports a subscription sign-in that expired and cannot be refreshed, and keeps the credential', async () => {
+    const stored = { type: 'oauth', access: 'old', refresh: 'revoked', expires: 0, accountId: 'acct' }
+    writeFileSync(join(agentDir, 'auth.json'), JSON.stringify({ 'openai-codex': stored }))
+    // The refresh is the only request: no model is called. Failing it keeps the test offline.
+    const fetch = vi.fn(async () => new Response('{"error":"invalid_grant"}', { status: 401 }))
+    vi.stubGlobal('fetch', fetch)
+    const provider = await createPiProvider(agentDir)
+
+    const codex = (await provider.listProviders()).find((p) => p.id === 'openai-codex')
+
+    expect(codex).toMatchObject({
+      configured: true,
+      authError:
+        'OAuth refresh failed for openai-codex: OpenAI Codex token refresh failed (401): {"error":"invalid_grant"}'
+    })
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(readFileSync(join(agentDir, 'auth.json'), 'utf8'))).toEqual({ 'openai-codex': stored })
   })
 
   it('stores the chosen model in Pi settings and reads it back after a restart', async () => {

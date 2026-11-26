@@ -140,7 +140,19 @@ export function SubscriptionCard({ providers, onSignIn, onSignOut }: SignInProps
         {providers.map((p) => (
           <li key={p.id} aria-label={p.name} className={styles.row}>
             <Text className={styles.rowName}>{p.name}</Text>
-            {p.configured ? (
+            {p.authError ? (
+              <>
+                <Badge appearance="tint" color="danger">
+                  Sign-in expired
+                </Badge>
+                <Button size="small" onClick={() => onSignIn(p)}>
+                  Sign in again
+                </Button>
+                <Button size="small" appearance="subtle" onClick={() => onSignOut(p)}>
+                  Sign out
+                </Button>
+              </>
+            ) : p.configured ? (
               <>
                 <Badge appearance="tint" color="success">
                   Connected
@@ -177,7 +189,7 @@ export function ApiKeyCard({ providers, onSignIn, onSignOut }: SignInProps) {
           <option value="">Choose a provider</option>
           {providers.map((p) => (
             <option key={p.id} value={p.id}>
-              {p.configured ? `${p.name} (connected)` : p.name}
+              {p.authError ? `${p.name} (sign-in expired)` : p.configured ? `${p.name} (connected)` : p.name}
             </option>
           ))}
         </Select>
