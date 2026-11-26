@@ -67,6 +67,8 @@ const REASONS: Record<string, string> = {
   crash_loop: 'it kept crashing',
   bad_signature: 'its signature did not verify',
   unknown_key: 'it was signed by a key the hub does not know',
+  wrong_role: 'it was signed by a key that may not sign it',
+  writes_since_upgrade_lost: 'the changes made since the upgrade were lost, and the hub restored a backup',
   wrong_scope: 'its signing key may not publish it',
   sha256_mismatch: 'the download was damaged',
   size_mismatch: 'the download was incomplete',
@@ -82,14 +84,22 @@ const REASONS: Record<string, string> = {
 /** A code the hub does not describe, as words. */
 const words = (code: string): string => code.replaceAll('_', ' ')
 
+/** Why, in plain words: a known code, with what follows `code: ` in brackets; anything else as words. */
+function reasonText(reason: string): string {
+  const [code = '', ...rest] = reason.split(': ')
+  const known = REASONS[code]
+  if (!known) return words(reason)
+  return rest.length ? `${known} (${rest.join(': ')})` : known
+}
+
 /** `: why` when there is a reason, else nothing. */
-const because = (reason: string | null): string => (reason ? `: ${REASONS[reason] ?? words(reason)}` : '')
+const because = (reason: string | null): string => (reason ? `: ${reasonText(reason)}` : '')
 
 /** What happened, in plain words, for each outcome the update engine records. */
 const HAPPENED: Record<HistoryLine['outcome'], (line: HistoryLine, version: string) => string> = {
   installed: ({ from, to }, version) =>
     from && to ? `Updated from ${from} to ${to}` : `Installed ${version}`,
-  switched: ({ from, to }) => `Switched from ${from ?? '?'} to ${to ?? '?'}`,
+  switched: ({ from, to, reason }) => `Switched from ${from ?? '?'} to ${to ?? '?'}${because(reason)}`,
   failed: ({ reason }, version) => `Could not install ${version}${because(reason)}`,
   marked_bad: ({ reason }, version) => `The hub will not install ${version} again${because(reason)}`,
   disabled: ({ reason }, version) =>
@@ -100,7 +110,9 @@ const HAPPENED: Record<HistoryLine['outcome'], (line: HistoryLine, version: stri
 function whatHappened(line: HistoryLine): string {
   const version = line.to ?? line.from ?? ''
   const happened = HAPPENED[line.outcome] as (typeof HAPPENED)[keyof typeof HAPPENED] | undefined
-  return happened ? happened(line, version) : `${version}: ${words(String(line.outcome))}`
+  if (happened) return happened(line, version)
+  const outcome = words(String(line.outcome))
+  return version ? `${version}: ${outcome}` : outcome
 }
 
 /** One history line: the date, then what happened. */

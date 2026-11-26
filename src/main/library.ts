@@ -1,7 +1,7 @@
 // The Library screen's data and actions (odd/tasks/module-library.md S5): one entry per component, from
 // `state.json` and the last catalog a check verified, which only this module keeps (in memory, since it opened).
 import type { Channel, HubUpdateStatus, LastCheck, Library, LibraryComponent } from '../shared/bridge'
-import { channelOf, newestInstallable, replaces } from './updates/channels'
+import { channelOf, isNewer, newestInstallable, replaces } from './updates/channels'
 import type { CheckReport, UpdateEngine } from './updates/engine'
 import { HUB_ID, type CatalogEntry } from './updates/install'
 import type { SelfUpdate } from './updates/self-update'
@@ -12,6 +12,16 @@ export const HISTORY_LINES = 5
 
 /** The part of a successful check the library reads. */
 type Verified = { catalog: { components: CatalogEntry[] }; installId: string }
+
+/**
+ * Whether the hub's self-update would replace the running `current` hub with `version` on `channel`: a newer one, or
+ * an older stable after a switch from a beta (the rule of `hubUpdate` in updates/self-update.ts, which this mirrors).
+ */
+function hubReplaces(version: string, current: string, channel: Channel): boolean {
+  return (
+    isNewer(version, current) || (channel === 'stable' && current.includes('-beta.') && version !== current)
+  )
+}
 
 /** The card kind of component `id`. */
 function kindOf(id: string): LibraryComponent['kind'] {
@@ -40,9 +50,13 @@ export function buildLibrary(
     const entry = state.components[id]
     const current = id === HUB_ID ? hubVersion : (entry?.current ?? null)
     const offerOn = (on: Channel): string | null => {
-      const offer = verified && newestInstallable(entries, id, entry?.bad ?? [], on, verified.installId)
+      // The hub keeps no bad list: its self-update takes the newest offered (updates/self-update.ts).
+      const bad = id === HUB_ID ? [] : (entry?.bad ?? [])
+      const offer = verified && newestInstallable(entries, id, bad, on, verified.installId)
       if (!offer) return null
-      return replaces(offer.version, current, on) ? offer.version : current
+      const replaced =
+        id === HUB_ID ? hubReplaces(offer.version, hubVersion, on) : replaces(offer.version, current, on)
+      return replaced ? offer.version : current
     }
     const offers = { stable: offerOn('stable'), beta: offerOn('beta') }
     return {

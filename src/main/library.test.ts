@@ -89,6 +89,15 @@ describe('buildLibrary', () => {
     expect(library.components[0]?.available).toBe('1.2.0-beta.1')
   })
 
+  it('never shows an older stable hub for a stable hub, as the hub only goes back from a beta', () => {
+    const library = buildLibrary(state(), verified([entry(HUB_ID, '1.3.2')]), '1.4.0')
+
+    expect(library.components.find((c) => c.id === HUB_ID)?.offers).toEqual({
+      stable: '1.4.0',
+      beta: '1.4.0'
+    })
+  })
+
   it('offers nothing on any channel before a catalog check verified', () => {
     const library = buildLibrary(state({ server: installed('1.0.0') }), undefined, '1.3.2')
 

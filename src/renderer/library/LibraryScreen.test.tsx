@@ -157,7 +157,22 @@ describe('LibraryScreen', () => {
       { time: at('19'), from: null, to: '0.7.0', outcome: 'failed', reason: 'something_new' },
       { time: at('18'), from: '0.6.0', to: null, outcome: 'marked_bad', reason: 'crash_loop' },
       { time: at('17'), from: null, to: '0.5.0', outcome: 'failed', reason: 'bad_signature' },
-      { time: at('16'), from: null, to: '0.4.0', outcome: 'later' as HistoryLine['outcome'], reason: null }
+      { time: at('16'), from: null, to: '0.4.0', outcome: 'later' as HistoryLine['outcome'], reason: null },
+      {
+        time: at('15'),
+        from: null,
+        to: null,
+        outcome: 'rolled_back' as HistoryLine['outcome'],
+        reason: null
+      },
+      { time: at('14'), from: null, to: '0.3.0', outcome: 'failed', reason: 'wrong_role' },
+      {
+        time: at('13'),
+        from: '0.3.0',
+        to: '0.2.0',
+        outcome: 'switched',
+        reason: 'writes_since_upgrade_lost: backup-12.db'
+      }
     ]
     await renderLibrary({ ...LIBRARY, components: [card('server', 'server', { history })] })
 
@@ -174,7 +189,10 @@ describe('LibraryScreen', () => {
       '2026-11-19 · Could not install 0.7.0: something new',
       '2026-11-18 · The hub will not install 0.6.0 again: it kept crashing',
       '2026-11-17 · Could not install 0.5.0: its signature did not verify',
-      '2026-11-16 · 0.4.0: later'
+      '2026-11-16 · 0.4.0: later',
+      '2026-11-15 · rolled back',
+      '2026-11-14 · Could not install 0.3.0: it was signed by a key that may not sign it',
+      '2026-11-13 · Switched from 0.3.0 to 0.2.0: the changes made since the upgrade were lost, and the hub restored a backup (backup-12.db)'
     ])
   })
 
