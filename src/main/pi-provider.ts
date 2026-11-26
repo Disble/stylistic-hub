@@ -30,6 +30,20 @@ export async function createPiProvider(agentDir: string): Promise<PiProvider> {
   })
   const settings = SettingsManager.create(agentDir, agentDir)
 
+  /**
+   * Why a stored credential no longer works. Pi refreshes a subscription token that expires within five
+   * minutes, which is one request to the provider's sign-in service and no model call; otherwise it only
+   * reads the credential. An API key is not checked against the provider.
+   */
+  const authError = async (providerId: string): Promise<string | undefined> => {
+    try {
+      await runtime.getAuth(providerId)
+      return undefined
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error)
+    }
+  }
+
   const listModels = async (): Promise<ModelSummary[]> =>
     (await runtime.getAvailable()).map((m) => ({ provider: m.provider, id: m.id, name: m.name }))
 
@@ -37,20 +51,25 @@ export async function createPiProvider(agentDir: string): Promise<PiProvider> {
     async listProviders() {
       // Availability refreshes the runtime's view of credentials another process wrote.
       await runtime.getAvailable()
-      return runtime
-        .getProviders()
-        .map((p) => ({
-          id: p.id,
-          name: p.name,
-          configured: runtime.getProviderAuthStatus(p.id).configured,
-          authMethods: [
-            ...(p.auth.oauth
-              ? [{ type: 'oauth' as const, label: p.auth.oauth.loginLabel ?? p.auth.oauth.name }]
-              : []),
-            ...(p.auth.apiKey?.login ? [{ type: 'api_key' as const, label: p.auth.apiKey.name }] : [])
-          ]
-        }))
-        .sort((a, b) => a.name.localeCompare(b.name))
+      const providers = await Promise.all(
+        runtime.getProviders().map(async (p): Promise<ProviderSummary> => {
+          const configured = runtime.getProviderAuthStatus(p.id).configured
+          const error = configured ? await authError(p.id) : undefined
+          return {
+            id: p.id,
+            name: p.name,
+            configured,
+            ...(error === undefined ? {} : { authError: error }),
+            authMethods: [
+              ...(p.auth.oauth
+                ? [{ type: 'oauth' as const, label: p.auth.oauth.loginLabel ?? p.auth.oauth.name }]
+                : []),
+              ...(p.auth.apiKey?.login ? [{ type: 'api_key' as const, label: p.auth.apiKey.name }] : [])
+            ]
+          }
+        })
+      )
+      return providers.sort((a, b) => a.name.localeCompare(b.name))
     },
 
     listModels,

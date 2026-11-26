@@ -1,5 +1,22 @@
 # Stylistic Hub changelog
 
+## [1.4.0-beta.2](https://github.com/Disble/stylistic-hub/compare/hub-v1.4.0-beta.1...hub-v1.4.0-beta.2) (2026-11-26)
+
+### Features
+
+* **library:** show what each channel would install ([b034c3f](https://github.com/Disble/stylistic-hub/commit/b034c3f9c0a599594a18d3bbb61bc570a3a18840))
+
+### Bug Fixes
+
+* **library:** match the hub's own update rule and describe every reason ([9a72b7a](https://github.com/Disble/stylistic-hub/commit/9a72b7aa9dc6494c951144850ff5d62ab0f92313))
+* **library:** show the version a channel would really leave installed ([f170d25](https://github.com/Disble/stylistic-hub/commit/f170d256a98c67dd87d67373a710d8f8ef73d34f))
+
+## [1.4.0-beta.1](https://github.com/Disble/stylistic-hub/compare/hub-v1.3.2...hub-v1.4.0-beta.1) (2026-11-26)
+
+### Features
+
+* **provider:** show expired subscription sign-ins ([cb17ef0](https://github.com/Disble/stylistic-hub/commit/cb17ef01517897050fa8190c6637543f3cc2c7e9))
+
 ## [1.3.2](https://github.com/Disble/stylistic-hub/compare/hub-v1.3.1...hub-v1.3.2) (2026-11-24)
 
 ### Bug Fixes

@@ -26,6 +26,7 @@ function wordModule(extra: Partial<LibraryComponent> = {}): LibraryComponent {
     requested: false,
     channel: 'stable',
     available: '2.0.0',
+    offers: { stable: '2.0.0', beta: '2.0.0' },
     history: [],
     ...extra
   }
@@ -66,6 +67,20 @@ describe('HomeScreen', () => {
     const next = await screen.findByRole('region', { name: 'Next step' })
     expect(await within(next).findByRole('heading', { name: 'Choose a model for corrections' })).toBeTruthy()
     expect(screen.getByRole('listitem', { name: 'AI provider connected · to do' })).toBeTruthy()
+  })
+
+  it('asks to sign in again when the sign-in of the chosen model provider expired', async () => {
+    const onOpen = vi.fn()
+    const expired = { ...CHATGPT, authError: 'OAuth refresh failed for openai-codex' }
+    window.hub = fakeHub({ provider: { list: async () => [expired], getModel: async () => SOL } })
+    render(<HomeScreen onOpen={onOpen} />)
+
+    const next = await screen.findByRole('region', { name: 'Next step' })
+    expect(await within(next).findByRole('heading', { name: 'Sign in to ChatGPT again' })).toBeTruthy()
+    expect(screen.getByRole('listitem', { name: 'AI provider connected · to do' })).toBeTruthy()
+    fireEvent.click(within(next).getByRole('button', { name: 'Sign in again' }))
+
+    expect(onOpen).toHaveBeenCalledWith('provider')
   })
 
   it('offers to add Stylistic to Word once the provider is ready', async () => {

@@ -1,7 +1,7 @@
 // The Library screen's data and actions (odd/tasks/module-library.md S5): one entry per component, from
 // `state.json` and the last catalog a check verified, which only this module keeps (in memory, since it opened).
-import type { HubUpdateStatus, LastCheck, Library, LibraryComponent } from '../shared/bridge'
-import { channelOf, newestOffered } from './updates/channels'
+import type { Channel, HubUpdateStatus, LastCheck, Library, LibraryComponent } from '../shared/bridge'
+import { channelOf, isNewer, newestInstallable, replaces } from './updates/channels'
 import type { CheckReport, UpdateEngine } from './updates/engine'
 import { HUB_ID, type CatalogEntry } from './updates/install'
 import type { SelfUpdate } from './updates/self-update'
@@ -13,6 +13,16 @@ export const HISTORY_LINES = 5
 /** The part of a successful check the library reads. */
 type Verified = { catalog: { components: CatalogEntry[] }; installId: string }
 
+/**
+ * Whether the hub's self-update would replace the running `current` hub with `version` on `channel`: a newer one, or
+ * an older stable after a switch from a beta (the rule of `hubUpdate` in updates/self-update.ts, which this mirrors).
+ */
+function hubReplaces(version: string, current: string, channel: Channel): boolean {
+  return (
+    isNewer(version, current) || (channel === 'stable' && current.includes('-beta.') && version !== current)
+  )
+}
+
 /** The card kind of component `id`. */
 function kindOf(id: string): LibraryComponent['kind'] {
   if (id === 'server') return 'server'
@@ -20,9 +30,10 @@ function kindOf(id: string): LibraryComponent['kind'] {
 }
 
 /**
- * The cards: the server and the hub always, then every module in the state or in the catalog. `available` is the
- * newest catalog entry offered on the component's channel, the one the engine installs; `hubUpdate`, where the hub's own
- * update stands.
+ * The cards: the server and the hub always, then every module in the state or in the catalog. `offers` is the version
+ * each channel would leave installed, by the engine's own rules: its newest offer, or the installed version when that
+ * channel would not replace it (a beta never goes back); `available` is the offer of the channel the component follows;
+ * `hubUpdate`, where the hub's own update stands.
  */
 export function buildLibrary(
   state: UpdateState,
@@ -37,20 +48,25 @@ export function buildLibrary(
   const components = ['server', HUB_ID, ...modules].map((id): LibraryComponent => {
     const channel = channelOf(state, id)
     const entry = state.components[id]
-    const available =
-      verified &&
-      newestOffered(
-        entries.filter((e) => e.id === id),
-        channel,
-        verified.installId
-      )
+    const current = id === HUB_ID ? hubVersion : (entry?.current ?? null)
+    const offerOn = (on: Channel): string | null => {
+      // The hub keeps no bad list: its self-update takes the newest offered (updates/self-update.ts).
+      const bad = id === HUB_ID ? [] : (entry?.bad ?? [])
+      const offer = verified && newestInstallable(entries, id, bad, on, verified.installId)
+      if (!offer) return null
+      const replaced =
+        id === HUB_ID ? hubReplaces(offer.version, hubVersion, on) : replaces(offer.version, current, on)
+      return replaced ? offer.version : current
+    }
+    const offers = { stable: offerOn('stable'), beta: offerOn('beta') }
     return {
       id,
       kind: kindOf(id),
-      installed: id === HUB_ID ? hubVersion : (entry?.current ?? null),
+      installed: current,
       requested: Boolean(entry && !entry.current),
       channel,
-      available: available ? available.version : null,
+      available: offers[channel],
+      offers,
       ...(id === HUB_ID && hubUpdate && { update: hubUpdate }),
       history: state.history
         .filter((line) => line.component === id)

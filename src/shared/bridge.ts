@@ -12,6 +12,11 @@ export interface ProviderSummary {
   name: string
   /** True once the provider has a credential. */
   configured: boolean
+  /**
+   * Why the stored credential no longer works, such as a subscription sign-in that expired and could not
+   * be refreshed. Absent while it works or when there is none; the provider then needs a new sign-in.
+   */
+  authError?: string
   /** The sign-in methods Pi offers for this provider. */
   authMethods: { type: LoginAuthType; label: string }[]
 }
@@ -104,6 +109,11 @@ export interface LibraryComponent {
   channel: Channel
   /** The version the last verified catalog offers this install on the component's channel. */
   available: string | null
+  /**
+   * What each channel would install, by the update engine's rules (rollout, pulled, versions marked bad on this
+   * install); null when that channel offers nothing or no catalog check has verified yet.
+   */
+  offers: Record<Channel, string | null>
   /** Hub card only: where the hub's own update stands, once a catalog check verified. */
   update?: HubUpdateStatus
   /** The newest history lines first. */
