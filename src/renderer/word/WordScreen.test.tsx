@@ -32,6 +32,7 @@ function wordModule(extra: Partial<LibraryComponent> = {}): LibraryComponent {
     requested: false,
     channel: 'stable',
     available: '2.0.0',
+    offers: { stable: '2.0.0', beta: '2.0.0' },
     history: [],
     ...extra
   }
